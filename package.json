@@ -1,0 +1,27 @@
+{
+  "name": "electron-ui",
+  "version": "1.0.0",
+  "description": "Collaborative whiteboard and chat application",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "python-backend": "cd backend && python3 python_backend.py",
+    "dev": "concurrently \"npm run python-backend\" \"npm run start\"",
+    "install-python-deps": "pip3 install -r requirements.txt",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "electron",
+    "whiteboard",
+    "chat",
+    "collaboration",
+    "templates",
+    "ai"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "electron": "^35.1.5"
+  }
+}

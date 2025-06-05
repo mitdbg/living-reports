@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Collaborative Workspace</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Tab Navigation -->
+  <div class="tab-navigation">
+    <div class="tab-list" id="tab-list">
+      <div class="tab-item active" data-tab="main">
+        <span class="tab-title">📋 Main</span>
+      </div>
+    </div>
+    <button class="new-document-btn" id="new-document-btn" title="Create New Document">➕</button>
+  </div>
+
+  <!-- Main Page -->
+  <div class="tab-content active" id="main-tab">
+    <div class="main-page">
+      <div class="main-header">
+        <h1>📋 Document Workspace</h1>
+        <p>Create and manage your template documents</p>
+      </div>
+      
+      <div class="document-actions">
+        <button class="create-document-btn" id="create-document-btn">
+          <span class="icon">📄</span>
+          <span class="text">Create New Document</span>
+        </button>
+      </div>
+      
+      <div class="recent-documents" id="recent-documents">
+        <div class="document-list" id="document-list">
+          <div class="no-documents">
+            <p>No documents yet. Create your first document to get started!</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- User Selection Dialog for Sharing -->
+  <div class="share-dialog" id="share-dialog" style="display: none;">
+    <div class="dialog-overlay">
+      <div class="dialog-content">
+        <h3>📤 Share Document</h3>
+        <p>Select users to share this document with:</p>
+        
+        <div class="document-info">
+          <div class="document-title" id="share-document-title">Document Title</div>
+          <div class="document-preview" id="share-document-preview">Document preview...</div>
+        </div>
+        
+        <div class="user-selection">
+          <h4>Available Users:</h4>
+          <div class="user-list" id="share-user-list">
+            <!-- Users will be populated here -->
+          </div>
+        </div>
+        
+        <div class="dialog-actions">
+          <button class="btn-primary" id="confirm-share-btn">Share Document</button>
+          <button class="btn-secondary" id="cancel-share-btn">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Document Template (hidden, will be cloned for each document) -->
+  <div class="tab-content document-tab-template" id="document-tab-template" style="display: none;">
+    <div class="container">
+      <div class="content-panel" id="content-panel">
+        <div class="content-header">
+          <h3 id="content-title">Template Editor</h3>
+          <div class="action-buttons">
+            <button class="share-btn mode-toggle">📤 Share</button>
+            <button class="clear-comments-btn mode-toggle">Clear Comments</button>
+            <button class="toggle-mode mode-toggle">Switch to Preview</button>
+          </div>
+        </div>
+        
+        <div class="content-area">
+          <!-- Code editing mode -->
+          <div class="code-panel active">
+            <div class="code-editor" contenteditable="true" data-placeholder="Budget calculation: 
+{{expense1:=100}}
+{{expense2:=200}}
+{{expense3:=50}}
+
+$expense1
+$expense2
+$expense3
+
+Total expenses: {{total:=SUM($expense1, $expense2, $expense3)}} = $total
+Average expense: {{avg:=AVG($expense1, $expense2, $expense3)}} = $avg
+
+Try more examples:
+Math: {{result:=SUM(10, 20, 30)}} or {{mean:=AVG(5, 15, 25)}}
+AI: {{name:=LLM(Generate a random name)}}
+Variables: Use $variableName to reference values"></div>
+            <div class="code-controls">
+              <button class="execute-btn">Execute Template</button>
+              <span class="execution-status"></span>
+            </div>
+          </div>
+          
+          <!-- Preview mode -->
+          <div class="preview-panel">
+            <div class="preview-content" contenteditable="true">
+              <h2>Template Output</h2>
+              <p>Click "Execute Template" in code mode to see the processed output here.</p>
+            </div>
+            <div class="variables-display" style="display: none;">
+              <h4>Variables</h4>
+              <div class="variables-list"></div>
+            </div>
+          </div>
+          
+          <!-- Diff view mode -->
+          <div class="diff-view">
+            <div class="diff-container">
+              <div class="diff-side diff-current">
+                <div class="diff-header">Current Template</div>
+                <div class="diff-current-content diff-content"></div>
+              </div>
+              <div class="diff-side diff-suggested">
+                <div class="diff-header">Suggested Template</div>
+                <div class="diff-suggested-content diff-content"></div>
+              </div>
+            </div>
+            <div class="diff-actions">
+              <button class="accept-suggestion accept-btn">Accept Suggestion</button>
+              <button class="reject-suggestion reject-btn">Reject Suggestion</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="chat-panel">
+        <div class="panel-header">
+          <h3>Chat Assistant</h3>
+          <div class="action-buttons">
+            <button class="open-file-btn mode-toggle">Load Context</button>
+            <button class="clear-context-btn mode-toggle">Clear Context</button>
+          </div>
+        </div>
+        
+        <!-- Context Files Display -->
+        <div class="context-files-section" style="display: none;">
+          <div class="context-files-header">
+            <span class="context-icon">📁</span>
+            <span class="context-label">Context Files:</span>
+          </div>
+          <div class="context-files-list"></div>
+        </div>
+        
+        <div class="panel-content">
+          <div class="chat-messages"></div>
+        </div>
+        
+        <div class="panel-footer">
+          <div class="chat-input">
+            <textarea class="message-input" placeholder="Ask for help or template improvements..."></textarea>
+            <button class="send-button">Send</button>
+            <button class="clear-chat-btn">Clear</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="floating-comment">
+      <div class="floating-comment-header">
+        <h3 class="floating-comment-title">Add Comment</h3>
+      </div>
+      <div class="floating-comment-body">
+        <textarea class="comment-text" placeholder="Share your thoughts, ask questions, or add notes..."></textarea>
+        <div class="action-buttons">
+          <button class="ask-llm">Ask AI</button>
+          <button class="add-comment">Add Comment</button>
+          <button class="cancel-comment">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="js/app.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+</body>
+</html>

@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Select User - Collaborative Workspace</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .login-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      min-height: 100vh;
+      padding: 20px 0;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      overflow-y: auto;
+    }
+
+    .login-card {
+      background: white;
+      border-radius: 16px;
+      padding: 40px;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+      text-align: center;
+      max-width: 450px;
+      width: 90%;
+      margin: auto;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+
+    .login-title {
+      font-size: 28px;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 8px;
+    }
+
+    .login-subtitle {
+      font-size: 16px;
+      color: #666;
+      margin-bottom: 32px;
+    }
+
+    .demo-mode-section {
+      margin-bottom: 32px;
+      padding: 20px;
+      background: #f8f9fa;
+      border-radius: 12px;
+      border: 2px dashed #dee2e6;
+    }
+
+    .demo-mode-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: #495057;
+      margin-bottom: 12px;
+    }
+
+    .demo-mode-description {
+      font-size: 14px;
+      color: #6c757d;
+      margin-bottom: 16px;
+      line-height: 1.4;
+    }
+
+    .demo-launch-btn {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+
+    .demo-launch-btn:hover {
+      transform: translateY(-2px);
+    }
+
+    .divider {
+      display: flex;
+      align-items: center;
+      margin: 24px 0;
+      color: #999;
+      font-size: 14px;
+    }
+
+    .divider::before,
+    .divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: #ddd;
+    }
+
+    .divider::before {
+      margin-right: 16px;
+    }
+
+    .divider::after {
+      margin-left: 16px;
+    }
+
+    .user-selection {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+    }
+
+    .user-option {
+      display: flex;
+      align-items: center;
+      padding: 16px;
+      border: 2px solid #e9ecef;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: white;
+    }
+
+    .user-option:hover {
+      border-color: #667eea;
+      background: #f8f9ff;
+      transform: translateY(-1px);
+    }
+
+    .user-option.selected {
+      border-color: #667eea;
+      background: #f8f9ff;
+    }
+
+    .user-emoji {
+      font-size: 32px;
+      margin-right: 16px;
+    }
+
+    .user-info {
+      flex: 1;
+      text-align: left;
+    }
+
+    .user-name {
+      font-size: 18px;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 4px;
+    }
+
+    .user-role {
+      font-size: 14px;
+      color: #666;
+    }
+
+    .user-color {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      margin-left: 12px;
+    }
+
+    .action-buttons {
+      margin-top: 24px;
+      display: flex;
+      gap: 12px;
+    }
+
+    .btn {
+      flex: 1;
+      padding: 12px 24px;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      background: #667eea;
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: #5a6fd8;
+    }
+
+    .btn-primary:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+
+    .btn-secondary {
+      background: #6c757d;
+      color: white;
+    }
+
+    .btn-secondary:hover {
+      background: #5a6268;
+    }
+
+    .status-message {
+      margin-top: 16px;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 14px;
+      display: none;
+    }
+
+    .status-message.success {
+      background: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+
+    .status-message.error {
+      background: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+  </style>
+</head>
+<body>
+  <div class="login-container">
+    <div class="login-card">
+      <h1 class="login-title">🚀 Collaboration Demo</h1>
+      <p class="login-subtitle">Choose how you want to start the demo</p>
+      
+      <!-- Demo Mode Section -->
+      <div class="demo-mode-section">
+        <h3 class="demo-mode-title">👩‍💻👨‍💼 Quick Demo Mode</h3>
+        <p class="demo-mode-description">
+          Launch two windows automatically (Alice & Bob) to see collaboration in action
+        </p>
+        <button class="demo-launch-btn" id="demo-mode-btn">
+          Launch Demo (2 Windows)
+        </button>
+      </div>
+
+      <div class="divider">or select a user manually</div>
+
+      <!-- Manual User Selection -->
+      <div class="user-selection" id="user-selection">
+        <div class="user-option" data-user="alice">
+          <div class="user-emoji">👩‍💻</div>
+          <div class="user-info">
+            <div class="user-name">Alice</div>
+            <div class="user-role">Frontend Developer</div>
+          </div>
+          <div class="user-color" style="background-color: #4285f4;"></div>
+        </div>
+
+        <div class="user-option" data-user="bob">
+          <div class="user-emoji">👨‍💼</div>
+          <div class="user-info">
+            <div class="user-name">Bob</div>
+            <div class="user-role">Product Manager</div>
+          </div>
+          <div class="user-color" style="background-color: #34a853;"></div>
+        </div>
+
+        <div class="user-option" data-user="charlie">
+          <div class="user-emoji">🧑‍🎨</div>
+          <div class="user-info">
+            <div class="user-name">Charlie</div>
+            <div class="user-role">UX Designer</div>
+          </div>
+          <div class="user-color" style="background-color: #fbbc04;"></div>
+        </div>
+      </div>
+
+      <div class="action-buttons">
+        <button class="btn btn-secondary" id="cancel-btn">Cancel</button>
+        <button class="btn btn-primary" id="continue-btn" disabled>Continue</button>
+      </div>
+
+      <div class="status-message" id="status-message"></div>
+    </div>
+  </div>
+
+  <script>
+    const { ipcRenderer } = require('electron');
+    
+    // Demo users configuration
+    const DEMO_USERS = {
+      alice: { id: 'alice', name: 'Alice', emoji: '👩‍💻', color: '#4285f4', role: 'Frontend Developer' },
+      bob: { id: 'bob', name: 'Bob', emoji: '👨‍💼', color: '#34a853', role: 'Product Manager' },
+      charlie: { id: 'charlie', name: 'Charlie', emoji: '🧑‍🎨', color: '#fbbc04', role: 'UX Designer' }
+    };
+
+    let selectedUser = null;
+
+    // DOM elements
+    const userOptions = document.querySelectorAll('.user-option');
+    const continueBtn = document.getElementById('continue-btn');
+    const cancelBtn = document.getElementById('cancel-btn');
+    const demoModeBtn = document.getElementById('demo-mode-btn');
+    const statusMessage = document.getElementById('status-message');
+
+    // User selection handling
+    userOptions.forEach(option => {
+      option.addEventListener('click', () => {
+        // Remove previous selection
+        userOptions.forEach(opt => opt.classList.remove('selected'));
+        
+        // Select current option
+        option.classList.add('selected');
+        selectedUser = option.dataset.user;
+        
+        // Enable continue button
+        continueBtn.disabled = false;
+      });
+    });
+
+    // Continue button
+    continueBtn.addEventListener('click', () => {
+      if (selectedUser) {
+        const userData = DEMO_USERS[selectedUser];
+        showStatus('Launching workspace...', 'success');
+        
+        // Send user data to main process
+        ipcRenderer.send('user-selected', userData);
+      }
+    });
+
+    // Cancel button
+    cancelBtn.addEventListener('click', () => {
+      ipcRenderer.send('login-cancelled');
+    });
+
+    // Demo mode button
+    demoModeBtn.addEventListener('click', () => {
+      showStatus('Launching demo mode with 2 windows...', 'success');
+      ipcRenderer.send('launch-demo-mode');
+    });
+
+    // Status message helper
+    function showStatus(message, type) {
+      statusMessage.textContent = message;
+      statusMessage.className = `status-message ${type}`;
+      statusMessage.style.display = 'block';
+      
+      if (type === 'success') {
+        setTimeout(() => {
+          statusMessage.style.display = 'none';
+        }, 2000);
+      }
+    }
+
+    // Handle responses from main process
+    ipcRenderer.on('demo-launched', () => {
+      showStatus('Demo windows launched successfully!', 'success');
+      setTimeout(() => {
+        window.close();
+      }, 1500);
+    });
+
+    ipcRenderer.on('workspace-launched', () => {
+      showStatus('Workspace launched successfully!', 'success');
+      setTimeout(() => {
+        window.close();
+      }, 1500);
+    });
+
+    ipcRenderer.on('launch-error', (event, error) => {
+      showStatus(`Error: ${error}`, 'error');
+    });
+  </script>
+</body>
+</html> 
