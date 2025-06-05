@@ -102,9 +102,9 @@ function createShareDialog() {
       </div>
     </div>
   `;
-  
+
   document.body.appendChild(dialog);
-  
+
   return dialog;
 }
 
@@ -262,7 +262,7 @@ async function shareWithSelectedUsers() {
   });
   
   // Update document with current content
-  doc.code_content = elements.codeEditor.textContent;
+  doc.code_content = elements.templateEditor.textContent;
   doc.preview_content = elements.previewContent.innerHTML;
   doc.lastModified = new Date().toISOString();
   
@@ -326,7 +326,7 @@ export async function shareCurrentDocument() {
   }
   
   // Check if we have content to share
-  if (!elements.codeEditor.textContent.trim() && !elements.previewContent.innerHTML.trim()) {
+  if (!elements.templateEditor.textContent.trim() && !elements.previewContent.innerHTML.trim()) {
     addMessageToUI('system', '**No content to share!** Please add some content to the document first.');
     return;
   }

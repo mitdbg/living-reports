@@ -110,15 +110,15 @@ function createDetailedRangeInfo(range) {
   
   try {
     // Get the target container (code editor or preview content)
-    const codeEditor = elements.codeEditor;
+    const templateEditor = elements.templateEditor;
     const previewContent = elements.previewContent;
     
     let containerType = null;
     let containerElement = null;
     
-    if (codeEditor && codeEditor.contains(range.commonAncestorContainer)) {
-      containerType = 'code';
-      containerElement = codeEditor;
+    if (templateEditor && templateEditor.contains(range.commonAncestorContainer)) {
+      containerType = 'template';
+      containerElement = templateEditor;
     } else if (previewContent && previewContent.contains(range.commonAncestorContainer)) {
       containerType = 'preview';
       containerElement = previewContent;
@@ -372,7 +372,7 @@ function reattachHighlightEventListeners() {
 // Export the function so it can be called from other modules when preview content is updated
 export function refreshHighlightEventListeners(skipAnnotationRefresh = false) {
   reattachHighlightEventListeners();
-  reattachCodeEditorHighlightEventListeners();
+  reattachtemplateEditorHighlightEventListeners();
   
   // Only refresh annotation elements if not skipping (to prevent flicker when showing annotations)
   if (!skipAnnotationRefresh) {
@@ -380,14 +380,14 @@ export function refreshHighlightEventListeners(skipAnnotationRefresh = false) {
   }
 }
 
-function highlightInCodeEditor(selectedText, commentId, selectionRange) {
-  const editor = elements.codeEditor;
+function highlightIntemplateEditor(selectedText, commentId, selectionRange) {
+  const editor = elements.templateEditor;
   if (!editor) return;
   
   // Use the stored selection range if available
   if (!selectionRange) {
     console.warn('No selection range provided for code editor highlighting');
-    highlightInCodeEditorFallback(selectedText, commentId, selectionRange);
+    highlightIntemplateEditorFallback(selectedText, commentId, selectionRange);
     return;
   }
   
@@ -403,7 +403,7 @@ function highlightInCodeEditor(selectedText, commentId, selectionRange) {
   // Check if the selection range is within the code editor
   if (!editor.contains(selectionRange.commonAncestorContainer)) {
     console.warn('Selection range is not within code editor, falling back');
-    highlightInCodeEditorFallback(selectedText, commentId, selectionRange);
+    highlightIntemplateEditorFallback(selectedText, commentId, selectionRange);
     return;
   }
   
@@ -434,13 +434,13 @@ function highlightInCodeEditor(selectedText, commentId, selectionRange) {
     console.log('Falling back to text replacement method');
     
     // Fallback to the old method if range highlighting fails
-    highlightInCodeEditorFallback(selectedText, commentId, selectionRange);
+    highlightIntemplateEditorFallback(selectedText, commentId, selectionRange);
   }
 }
 
 // Fallback method using text replacement (for cases where range highlighting fails)
-function highlightInCodeEditorFallback(selectedText, commentId, selectionRange) {
-  const editor = elements.codeEditor;
+function highlightIntemplateEditorFallback(selectedText, commentId, selectionRange) {
+  const editor = elements.templateEditor;
   let content = editor.innerHTML;
   
   // Create a span with yellow background for the selected text
@@ -487,12 +487,12 @@ function highlightInCodeEditorFallback(selectedText, commentId, selectionRange) 
 }
 
 // Function to re-attach event listeners to code editor highlighted text elements
-function reattachCodeEditorHighlightEventListeners() {
-  const codeEditor = elements.codeEditor;
-  if (!codeEditor) return;
+function reattachtemplateEditorHighlightEventListeners() {
+  const templateEditor = elements.templateEditor;
+  if (!templateEditor) return;
   
   // Find all highlighted text elements in code editor
-  const highlightElements = codeEditor.querySelectorAll('.text-comment-highlight');
+  const highlightElements = templateEditor.querySelectorAll('.text-comment-highlight');
   
   highlightElements.forEach(element => {
     // Check if this highlight should be visible in current mode
@@ -732,10 +732,10 @@ function calculateCommentPosition(selectionRect, preferredSide = 'right') {
 
 // Text selection handlers
 export function initTextSelection() {
-  if (!elements.previewContent || !elements.codeEditor || !elements.floatingComment) {
+  if (!elements.previewContent || !elements.templateEditor || !elements.floatingComment) {
     console.error(`[${windowId}] Text selection elements not found!`, {
       previewContent: !!elements.previewContent,
-      codeEditor: !!elements.codeEditor,
+      templateEditor: !!elements.templateEditor,
       floatingComment: !!elements.floatingComment
     });
     return;
@@ -747,16 +747,16 @@ export function initTextSelection() {
       elements.previewContent.removeEventListener('mouseup', commentsData.previewMouseUpHandler);
     }
     if (commentsData.editorMouseUpHandler) {
-      elements.codeEditor.removeEventListener('mouseup', commentsData.editorMouseUpHandler);
+      elements.templateEditor.removeEventListener('mouseup', commentsData.editorMouseUpHandler);
     }
     if (commentsData.editorKeyUpHandler) {
-      elements.codeEditor.removeEventListener('keyup', commentsData.editorKeyUpHandler);
+      elements.templateEditor.removeEventListener('keyup', commentsData.editorKeyUpHandler);
     }
     if (commentsData.editorInputHandler) {
-      elements.codeEditor.removeEventListener('input', commentsData.editorInputHandler);
+      elements.templateEditor.removeEventListener('input', commentsData.editorInputHandler);
     }
     if (commentsData.editorScrollHandler) {
-      elements.codeEditor.removeEventListener('scroll', commentsData.editorScrollHandler);
+      elements.templateEditor.removeEventListener('scroll', commentsData.editorScrollHandler);
     }
   }
   
@@ -771,12 +771,12 @@ export function initTextSelection() {
   elements.previewContent.addEventListener('mouseup', commentsData.previewMouseUpHandler);
   
   // For code editor (contenteditable div) - uses same selection handling as preview
-  elements.codeEditor.addEventListener('mouseup', commentsData.editorMouseUpHandler);
-  elements.codeEditor.addEventListener('keyup', commentsData.editorKeyUpHandler);
+  elements.templateEditor.addEventListener('mouseup', commentsData.editorMouseUpHandler);
+  elements.templateEditor.addEventListener('keyup', commentsData.editorKeyUpHandler);
   
   // Update code highlights when editor content changes or scrolls
-  elements.codeEditor.addEventListener('input', commentsData.editorInputHandler);
-  elements.codeEditor.addEventListener('scroll', commentsData.editorScrollHandler);
+  elements.templateEditor.addEventListener('input', commentsData.editorInputHandler);
+  elements.templateEditor.addEventListener('scroll', commentsData.editorScrollHandler);
   
   // Global click handler to hide floating comment when clicking elsewhere
   document.addEventListener('click', function(e) {
@@ -887,7 +887,7 @@ function validateAndCleanSelectedText(selectedText) {
 export function updateCodeHighlights() {
   // For contenteditable div, we can use the same approach as preview mode
   // Re-attach event listeners to highlighted text elements
-  reattachCodeEditorHighlightEventListeners();
+  reattachtemplateEditorHighlightEventListeners();
 }
 
 // Comment button event handlers
@@ -1063,7 +1063,7 @@ window.closeTextCommentPopup = closeTextCommentPopup;
  * @param {string} options.commentId - The comment ID to associate with the highlight
  * @param {Range} [options.selectionRange] - Live DOM Range (for new comments)
  * @param {Object} [options.detailedRangeInfo] - Saved range info (for restored comments)
- * @param {string} [options.mode] - Mode override ('code' or 'preview')
+ * @param {string} [options.mode] - Mode override ('template' or 'preview')
  * @param {Element} [options.targetElement] - Target element override
  * @returns {boolean} - Success status
  */
@@ -1081,12 +1081,12 @@ export function createTextHighlight(options) {
   
   // Auto-detect mode from selectionRange if available
   if (selectionRange && !mode && !targetElement) {
-    const codeEditor = elements.codeEditor;
+    const templateEditor = elements.templateEditor;
     const previewContent = elements.previewContent;
     
-    if (codeEditor && codeEditor.contains(selectionRange.commonAncestorContainer)) {
-      actualMode = 'code';
-      target = codeEditor;
+    if (templateEditor && templateEditor.contains(selectionRange.commonAncestorContainer)) {
+      actualMode = 'template';
+      target = templateEditor;
     } else if (previewContent && previewContent.contains(selectionRange.commonAncestorContainer)) {
       actualMode = 'preview';
       target = previewContent;
@@ -1095,8 +1095,8 @@ export function createTextHighlight(options) {
   
   // Set target element based on mode if not provided
   if (!target) {
-    if (actualMode === 'code') {
-      target = elements.codeEditor;
+    if (actualMode === 'template') {
+      target = elements.templateEditor;
     } else if (actualMode === 'preview') {
       target = elements.previewContent;
     }
@@ -1168,7 +1168,7 @@ function createHighlightFromSavedRange(targetElement, rangeInfo, selectedText, c
   try {
     // Validate container type matches
     const expectedContainer = rangeInfo.containerType;
-    const actualContainer = targetElement.classList.contains('code-editor') ? 'code' : 'preview';
+    const actualContainer = targetElement.classList.contains('template-editor') ? 'template' : 'preview';
     
     if (expectedContainer !== actualContainer) {
       return false;
@@ -1372,10 +1372,10 @@ function findFirstTextNode(element) {
  * Fallback: Create highlight using text search and replacement
  */
 function createHighlightFromTextSearch(targetElement, selectedText, commentId) {
-  const isCodeEditor = targetElement.classList.contains('code-editor');
+  const istemplateEditor = targetElement.classList.contains('template-editor');
   
-  if (isCodeEditor) {
-    return highlightInCodeEditorFallback(selectedText, commentId, null);
+  if (istemplateEditor) {
+    return highlightIntemplateEditorFallback(selectedText, commentId, null);
   } else {
     return highlightInPreviewFallback(selectedText, commentId, null);
   }

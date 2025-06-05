@@ -2,40 +2,247 @@
 import { state, elements, updateState, windowId } from './state.js';
 import { updateAnnotationsVisibility } from './annotations.js';
 import { refreshHighlightEventListeners, updateCodeHighlights } from './comments.js';
+import { getCurrentUser } from './auth.js';
 
 // Create window-specific storage for initialization flags and handlers
 const MODES_KEY = `modes_${windowId}`;
 if (!window[MODES_KEY]) {
   window[MODES_KEY] = {
     modesInitialized: false,
-    modeToggleHandler: null,
-    currentButton: null, // Track which button currently has the listener
-    lastToggleTime: null
+    eventDelegationSetup: false
   };
 }
 
 const modesData = window[MODES_KEY];
 
-export function switchToCode() {
-  updateState({ currentMode: 'code' });
-  elements.codePanel.classList.add('active');
-  elements.previewPanel.classList.remove('active');
-  elements.diffView.classList.remove('active');
-  elements.toggleModeBtn.textContent = 'Switch to Preview';
-  elements.contentTitle.textContent = 'Template Editor';
+// Check if current user can switch modes
+export function canUserSwitchModes() {
+  const currentUser = getCurrentUser();
+  if (!currentUser) return false;
+  
+  // Alice (Report Consumer) cannot switch modes, only view preview
+  if (currentUser.role === 'Report Consumer') {
+    return false;
+  }
+  
+  return true;
+}
+
+// Setup event delegation for mode buttons (like Clear Comments button)
+function setupModeButtonEventDelegation() {
+  if (modesData.eventDelegationSetup) {
+    return;
+  }
+  
+  // Add global event delegation for mode buttons
+  document.addEventListener('click', (e) => {
+    // Check if user can switch modes
+    if (!canUserSwitchModes()) {
+      return;
+    }
+    
+    // Handle mode button clicks
+    if (e.target.classList.contains('source-mode-btn')) {
+      switchToSource();
+    } else if (e.target.classList.contains('template-mode-btn')) {
+      switchToTemplate();
+    } else if (e.target.classList.contains('preview-mode-btn')) {
+      switchToPreview();
+    }
+  });
+  
+  modesData.eventDelegationSetup = true;
+  window[MODES_KEY] = modesData;
+}
+
+// Helper function to get the active document container
+function getActiveDocumentContainer() {
+  // Find the active document tab content (not the template)
+  const activeContent = document.querySelector('.tab-content.active:not(.document-tab-template)');
+  if (activeContent) {
+    return activeContent;
+  }
+  
+  // Fallback: find any visible tab content that's not the template
+  const visibleContent = document.querySelector('.tab-content[style*="flex"]:not(.document-tab-template), .tab-content:not([style*="none"]):not(.document-tab-template)');
+  if (visibleContent) {
+    return visibleContent;
+  }
+  
+  return null;
+}
+
+// Update active button states
+function updateModeButtonStates(activeMode) {
+  // Find the active document container first
+  const container = getActiveDocumentContainer();
+  if (!container) {
+    return;
+  }
+  
+  // Find buttons within the active document container
+  const sourceModeBtn = container.querySelector('.source-mode-btn');
+  const templateModeBtn = container.querySelector('.template-mode-btn');
+  const previewModeBtn = container.querySelector('.preview-mode-btn');
+  
+  if (!sourceModeBtn || !templateModeBtn || !previewModeBtn) {
+    return;
+  }
+  
+  // Remove active class from all buttons
+  sourceModeBtn.classList.remove('active');
+  templateModeBtn.classList.remove('active');
+  previewModeBtn.classList.remove('active');
+  
+  // Add active class to current mode button
+  switch (activeMode) {
+    case 'source':
+      sourceModeBtn.classList.add('active');
+      break;
+    case 'template':
+      templateModeBtn.classList.add('active');
+      break;
+    case 'preview':
+      previewModeBtn.classList.add('active');
+      break;
+  }
+}
+
+export function switchToSource() {
+  console.log(`[${windowId}] Switching to source mode`);
+  
+  updateState({ currentMode: 'source' });
+  
+  // Find the active document container first
+  const container = getActiveDocumentContainer();
+  if (!container) {
+    return;
+  }
+  
+  // Find panels within the active document container
+  const sourcePanel = container.querySelector('.source-panel');
+  const templatePanel = container.querySelector('.template-panel');
+  const previewPanel = container.querySelector('.preview-panel');
+  const diffView = container.querySelector('.diff-view');
+  const contentTitle = container.querySelector('#content-title, .content-title');
+  
+  if (sourcePanel) {
+    sourcePanel.classList.add('active');
+  }
+  
+  if (templatePanel) {
+    templatePanel.classList.remove('active');
+  }
+  
+  if (previewPanel) {
+    previewPanel.classList.remove('active');
+  }
+  
+  if (diffView) {
+    diffView.classList.remove('active');
+  }
+  
+  if (contentTitle) {
+    contentTitle.textContent = 'Source Code Editor';
+  }
+  
+  updateModeButtonStates('source');
   updateAnnotationsVisibility();
   
-  // Update code highlights when switching to code mode
+  // Update code highlights when switching to source mode
+  setTimeout(() => updateCodeHighlights(), 100);
+}
+
+export function switchToTemplate() {
+  console.log(`[${windowId}] Switching to template mode`);
+  
+  // Check if user can switch to template mode
+  if (!canUserSwitchModes()) {
+    console.log(`[${windowId}] User ${getCurrentUser()?.name} (${getCurrentUser()?.role}) cannot switch to template mode`);
+    return;
+  }
+  
+  updateState({ currentMode: 'template' });
+  
+  // Find the active document container first
+  const container = getActiveDocumentContainer();
+  if (!container) {
+    return;
+  }
+  
+  // Find panels within the active document container
+  const sourcePanel = container.querySelector('.source-panel');
+  const templatePanel = container.querySelector('.template-panel');
+  const previewPanel = container.querySelector('.preview-panel');
+  const diffView = container.querySelector('.diff-view');
+  const contentTitle = container.querySelector('#content-title, .content-title');
+  
+  if (sourcePanel) {
+    sourcePanel.classList.remove('active');
+  }
+  
+  if (templatePanel) {
+    templatePanel.classList.add('active');
+  }
+  
+  if (previewPanel) {
+    previewPanel.classList.remove('active');
+  }
+  
+  if (diffView) {
+    diffView.classList.remove('active');
+  }
+  
+  if (contentTitle) {
+    contentTitle.textContent = 'Template Editor';
+  }
+  
+  updateModeButtonStates('template');
+  updateAnnotationsVisibility();
+  
+  // Update code highlights when switching to template mode
   setTimeout(() => updateCodeHighlights(), 100);
 }
 
 export function switchToPreview() {
+  console.log(`[${windowId}] Switching to preview mode`);
+  
   updateState({ currentMode: 'preview' });
-  elements.codePanel.classList.remove('active');
-  elements.previewPanel.classList.add('active');
-  elements.diffView.classList.remove('active');
-  elements.toggleModeBtn.textContent = 'Switch to Code';
-  elements.contentTitle.textContent = 'Template Output';
+  
+  // Find the active document container first
+  const container = getActiveDocumentContainer();
+  if (!container) {
+    return;
+  }
+  
+  // Find panels within the active document container
+  const sourcePanel = container.querySelector('.source-panel');
+  const templatePanel = container.querySelector('.template-panel');
+  const previewPanel = container.querySelector('.preview-panel');
+  const diffView = container.querySelector('.diff-view');
+  const contentTitle = container.querySelector('#content-title, .content-title');
+  
+  if (sourcePanel) {
+    sourcePanel.classList.remove('active');
+  }
+  
+  if (templatePanel) {
+    templatePanel.classList.remove('active');
+  }
+  
+  if (previewPanel) {
+    previewPanel.classList.add('active');
+  }
+  
+  if (diffView) {
+    diffView.classList.remove('active');
+  }
+  
+  if (contentTitle) {
+    contentTitle.textContent = 'Report Preview';
+  }
+  
+  updateModeButtonStates('preview');
   updateAnnotationsVisibility();
   
   // Re-attach event listeners to highlighted text when switching to preview
@@ -43,12 +250,20 @@ export function switchToPreview() {
 }
 
 export function switchToDiff() {
+  // Check if user can switch to diff mode
+  if (!canUserSwitchModes()) {
+    console.log(`[${windowId}] User ${getCurrentUser()?.name} (${getCurrentUser()?.role}) cannot switch to diff mode`);
+    return;
+  }
+  
   updateState({ currentMode: 'diff' });
-  elements.codePanel.classList.remove('active');
+  elements.sourcePanel.classList.remove('active');
+  elements.templatePanel.classList.remove('active');
   elements.previewPanel.classList.remove('active');
   elements.diffView.classList.add('active');
-  elements.toggleModeBtn.textContent = 'Exit Diff View';
+  
   elements.contentTitle.textContent = 'Template Comparison';
+  // Don't update button states for diff mode - keep the previous active button
   updateAnnotationsVisibility();
 }
 
@@ -57,78 +272,103 @@ export function exitDiffMode() {
   switchToPreview();
 }
 
+// Force preview mode for consumers
+function enforceConsumerMode() {
+  const currentUser = getCurrentUser();
+  if (currentUser && currentUser.role === 'Report Consumer') {
+    // Consumer should always be in preview mode, but only if elements are initialized
+    if (elements.previewPanel && state.currentMode !== 'preview') {
+      switchToPreview();
+    }
+    
+    // Hide mode buttons for consumers
+    const modeButtons = document.querySelector('.mode-buttons');
+    if (modeButtons) {
+      modeButtons.style.display = 'none';
+    }
+    
+    // Hide source and template panels for consumers
+    if (elements.sourcePanel) {
+      elements.sourcePanel.style.display = 'none';
+    }
+    
+    if (elements.templatePanel) {
+      elements.templatePanel.style.display = 'none';
+    }
+    
+    // Hide execute buttons for consumers (they can't execute code or templates)
+    if (elements.executeSourceBtn) {
+      elements.executeSourceBtn.style.display = 'none';
+    }
+    
+    if (elements.executeTemplateBtn) {
+      elements.executeTemplateBtn.style.display = 'none';
+    }
+    
+    // Hide the source and template controls sections
+    const sourceControls = document.querySelector('.source-controls');
+    if (sourceControls) {
+      sourceControls.style.display = 'none';
+    }
+    
+    const templateControls = document.querySelector('.template-controls');
+    if (templateControls) {
+      templateControls.style.display = 'none';
+    }
+    
+    console.log(`[${windowId}] Consumer mode enforced for ${currentUser.name} - hiding source and template UI elements but allowing comments`);
+  }
+}
+
 export function initModes() {
-  if (!elements.toggleModeBtn) {
-    console.error(`[${windowId}] Toggle mode button not found!`);
-    return;
-  }
+  console.log(`[${windowId}] Initializing modes...`);
   
-  // Remove existing event listener from the previous button if it exists
-  if (modesData.modeToggleHandler && modesData.currentButton) {
-    console.log(`[${windowId}] Removing event listener from previous button`);
-    modesData.currentButton.removeEventListener('click', modesData.modeToggleHandler);
-  }
+  // Setup event delegation once
+  setupModeButtonEventDelegation();
   
-  // Create new event handler
-  modesData.modeToggleHandler = () => {
-    const timestamp = new Date().toISOString();
-    const buttonText = elements.toggleModeBtn.textContent;
-    
-    console.log(`[${windowId}] Mode toggle clicked at ${timestamp}`);
-    console.log(`[${windowId}] Current state - mode: ${state.currentMode}, button text: "${buttonText}"`);
-    
-    // Add a small delay to prevent rapid clicking
-    if (modesData.lastToggleTime && Date.now() - modesData.lastToggleTime < 300) {
-      console.log(`[${windowId}] Rapid clicking detected, ignoring toggle (${Date.now() - modesData.lastToggleTime}ms since last)`);
+  // Simple fix: wait a moment for the tab to become visible
+  setTimeout(() => {
+    // Check if buttons exist
+    if (!elements.sourceModeBtn || !elements.templateModeBtn || !elements.previewModeBtn) {
+      console.log(`[${windowId}] Mode buttons not found, they might be in different document tabs`);
       return;
     }
-    modesData.lastToggleTime = Date.now();
     
-    if (state.currentMode === 'code') {
-      console.log(`[${windowId}] Switching from code to preview`);
-      switchToPreview();
-    } else if (state.currentMode === 'preview') {
-      console.log(`[${windowId}] Switching from preview to code`);
-      switchToCode();
-    } else if (state.currentMode === 'diff') {
-      console.log(`[${windowId}] Exiting diff mode to preview`);
-      // In diff mode, toggle button should go back to simple view
-      exitDiffMode();
+    // Check if buttons are actually visible and have dimensions
+    const buttonRect = elements.sourceModeBtn.getBoundingClientRect();
+    if (buttonRect.width === 0 || buttonRect.height === 0) {
+      console.log(`[${windowId}] Mode buttons not visible yet, but event delegation is set up`);
+      return;
     }
     
-    console.log(`[${windowId}] Mode toggle completed, new mode: ${state.currentMode}`);
-  };
-  
-  // Add the event listener to the current button
-  elements.toggleModeBtn.addEventListener('click', modesData.modeToggleHandler);
-  
-  // Debug: Check if there are multiple listeners (this is a rough check)
-  const listenerCount = elements.toggleModeBtn.cloneNode(true);
-  console.log(`[${windowId}] Toggle button element:`, elements.toggleModeBtn);
-  console.log(`[${windowId}] Button classes:`, elements.toggleModeBtn.className);
-  console.log(`[${windowId}] Button parent:`, elements.toggleModeBtn.parentElement?.className);
-  
-  // Track which button currently has the listener
-  modesData.currentButton = elements.toggleModeBtn;
-  
-  console.log(`[${windowId}] Modes initialized, button:`, elements.toggleModeBtn);
-  
-  // Mark as initialized
-  modesData.modesInitialized = true;
-  window[MODES_KEY] = modesData;
+    console.log(`[${windowId}] Mode buttons are visible, finalizing initialization`);
+    
+    // Check user role and enforce restrictions
+    const currentUser = getCurrentUser();
+    console.log(`[${windowId}] Initializing modes for user: ${currentUser?.name} (${currentUser?.role})`);
+    
+    // Enforce consumer mode restrictions
+    enforceConsumerMode();
+    
+    // Update button states to match current mode
+    updateModeButtonStates(state.currentMode);
+    
+    console.log(`[${windowId}] Modes initialized, current mode: ${state.currentMode}`);
+    
+    // Mark as initialized
+    modesData.modesInitialized = true;
+    window[MODES_KEY] = modesData;
+  }, 100); // Small delay to allow DOM to render
 }
 
 // Function to reset initialization flag (for DocumentManager)
 export function resetModesInitialization() {
-  // Clean up the current event listener before resetting
-  if (modesData.modeToggleHandler && modesData.currentButton) {
-    console.log(`[${windowId}] Cleaning up event listener during reset`);
-    modesData.currentButton.removeEventListener('click', modesData.modeToggleHandler);
-  }
-  
+  // Note: We don't reset eventDelegationSetup because it should only be set up once globally
   modesData.modesInitialized = false;
-  modesData.modeToggleHandler = null;
-  modesData.currentButton = null;
-  modesData.lastToggleTime = null;
   window[MODES_KEY] = modesData;
-} 
+  
+  // Re-enforce consumer mode restrictions after reset
+  setTimeout(() => {
+    enforceConsumerMode();
+  }, 50);
+}

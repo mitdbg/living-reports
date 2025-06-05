@@ -6,6 +6,7 @@ import { initializeUser, isUserAuthenticated, getCurrentUser } from './auth.js';
 // Import all core functionality modules
 import { initModes } from './modes.js';
 import { initTemplateExecution } from './template-execution.js';
+import { initSourceExecution } from './source-execution.js';
 import { initChat, initAskLLMButton } from './chat.js';
 import { initTextSelection, initCommentButtons } from './comments.js';
 import { initFileOperations } from './file-operations.js';
@@ -77,8 +78,9 @@ async function initializeCoreModules() {
     console.log('Initializing core functionality modules...');
     
     // Initialize all the core modules that handle UI interactions
-    initModes();
+    initModes(); // Now called at proper time in document-manager.js after tab is visible
     initTemplateExecution();
+    initSourceExecution();
     initChat();
     initTextSelection();
     initCommentButtons();
@@ -110,7 +112,7 @@ function initMainPageFunctionality() {
         // Clear comments for current mode only (unified function handles both highlights and annotations)
         const totalCleared = clearCurrentModeComments();
         
-        const modeText = state.currentMode === 'code' ? 'code editor' : 'preview';
+        const modeText = state.currentMode === 'template' ? 'template editor' : 'preview';
         
         addMessageToUI('system', `Cleared ${totalCleared} comment(s) from ${modeText} mode.`);
       }
@@ -157,7 +159,7 @@ function setupCollaborationEventListeners() {
   
   // Listen for document changes to broadcast to other users
   document.addEventListener('input', (e) => {
-    if (e.target.classList.contains('code-editor')) {
+    if (e.target.classList.contains('template-editor')) {
       // Debounce document changes
       clearTimeout(window.documentChangeTimeout);
       window.documentChangeTimeout = setTimeout(() => {

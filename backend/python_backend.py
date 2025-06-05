@@ -115,7 +115,7 @@ load_documents()
 @app.before_request
 def log_request():
     """Log all incoming requests for debugging."""
-    print(f"📥 Incoming request: {request.method} {request.url}", flush=True)
+    # print(f"📥 Incoming request: {request.method} {request.url}", flush=True)
     if request.method == 'POST' and request.is_json:
         print(f"📄 Request data: {request.get_json()}", flush=True)
 
@@ -676,7 +676,7 @@ def get_user_documents(user_id):
                 }
                 accessible_docs.append(doc_copy)
         
-        logger.info(f"Returning {len(accessible_docs)} accessible documents for user {user_id}")
+        # logger.info(f"Returning {len(accessible_docs)} accessible documents for user {user_id}")
         
         return jsonify({
             'success': True,
@@ -694,7 +694,7 @@ def get_shared_document(document_id):
     try:
         if document_id in documents:
             document = documents[document_id]
-            logger.info(f"Returning shared document: {document['title']}")
+            # logger.info(f"Returning shared document: {document['title']}")
             
             return jsonify({
                 'success': True,

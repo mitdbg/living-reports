@@ -24,15 +24,21 @@ export function initDOMElements() {
   console.log(`Initializing DOM elements for window: ${windowId}`);
   
   // Initialize all DOM element references
-  elements.toggleModeBtn = document.querySelector('.toggle-mode');
-  elements.executeBtn = document.querySelector('.execute-btn');
+  elements.sourceModeBtn = document.querySelector('.source-mode-btn');
+  elements.templateModeBtn = document.querySelector('.template-mode-btn');
+  elements.previewModeBtn = document.querySelector('.preview-mode-btn');
+  elements.executeSourceBtn = document.querySelector('.execute-source-btn');
+  elements.executeTemplateBtn = document.querySelector('.execute-template-btn');
   elements.executionStatus = document.querySelector('.execution-status');
+  elements.sourceExecutionStatus = document.querySelector('.source-execution-status');
+  elements.templateExecutionStatus = document.querySelector('.template-execution-status');
   elements.sendButton = document.querySelector('.send-button');
   elements.clearChatBtn = document.querySelector('.clear-chat-btn');
   elements.messageInput = document.querySelector('.message-input');
   elements.chatMessages = document.querySelector('.chat-messages');
   elements.previewContent = document.querySelector('.preview-content');
-  elements.codeEditor = document.querySelector('.code-editor');
+  elements.sourceEditor = document.querySelector('.source-editor');
+  elements.templateEditor = document.querySelector('.template-editor');
   elements.openFileBtn = document.querySelector('.open-file-btn');
   elements.clearContextBtn = document.querySelector('.clear-context-btn');
   elements.shareBtn = document.querySelector('.share-btn');
@@ -42,7 +48,8 @@ export function initDOMElements() {
   elements.addCommentBtn = document.querySelector('.add-comment');
   elements.cancelCommentBtn = document.querySelector('.cancel-comment');
   elements.previewPanel = document.querySelector('.preview-panel');
-  elements.codePanel = document.querySelector('.code-panel');
+  elements.sourcePanel = document.querySelector('.source-panel');
+  elements.templatePanel = document.querySelector('.template-panel');
   elements.diffView = document.querySelector('.diff-view');
   elements.variablesDisplay = document.querySelector('.variables-display');
   elements.variablesList = document.querySelector('.variables-list');
@@ -59,7 +66,7 @@ export function initDOMElements() {
   window[ELEMENTS_KEY] = elements;
   
   // Initialize DOM elements if not already done
-  if (!elements.executeBtn || !elements.codeEditor || !elements.previewContent) {
+  if (!elements.executeSourceBtn || !elements.templateEditor || !elements.previewContent) {
     console.log(`Initializing DOM elements for window: ${windowId}`);
   }
   
@@ -69,9 +76,10 @@ export function initDOMElements() {
 // Application state - make window-specific
 if (!window[STATE_KEY]) {
   window[STATE_KEY] = {
-    currentMode: 'code', // 'code', 'preview', 'diff'
+    currentMode: 'source', // 'source', 'template', 'preview', 'diff'
     sessionId: Math.random().toString(36).substring(7),
     currentTemplate: '',
+    currentSourceCode: '',
     currentOutput: '',
     variables: {},
     suggestedTemplates: [],

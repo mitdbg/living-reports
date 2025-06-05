@@ -631,7 +631,7 @@ body, html {
   display: flex; /* Change to flex when active */
 }
 
-.code-editor {
+.template-editor {
   width: 100%;
   flex: 1; /* Take available space but leave room for controls */
   min-height: 600px; /* Ensure minimum usable height */
@@ -650,7 +650,7 @@ body, html {
 }
 
 /* Placeholder functionality for contenteditable div */
-.code-editor:empty:before {
+.template-editor:empty:before {
   content: attr(data-placeholder);
   color: #888;
   font-style: italic;
@@ -658,7 +658,7 @@ body, html {
   white-space: pre-wrap;
 }
 
-.code-editor:focus:empty:before {
+.template-editor:focus:empty:before {
   content: "";
 }
 
@@ -2948,6 +2948,29 @@ p {
   --user-color-light: #fbbc0420;
 }
 
+/* Consumer (Report Consumer) role restrictions - hide code-related elements */
+.user-alice .source-panel,
+.user-alice .template-panel,
+.user-alice .execute-source-btn,
+.user-alice .execute-template-btn,
+.user-alice .mode-buttons,
+.user-alice .source-controls,
+.user-alice .template-controls,
+.user-alice .copy-to-editor-btn {
+  display: none !important;
+}
+
+/* Ensure preview panel takes full width for consumers */
+.user-alice .content-area {
+  display: flex;
+  flex-direction: column;
+}
+
+.user-alice .preview-panel {
+  width: 100% !important;
+  display: flex !important;
+}
+
 /* Apply user colors to various elements */
 .collaboration-header {
   background: linear-gradient(135deg, var(--user-color) 0%, #764ba2 100%);
@@ -3615,4 +3638,212 @@ p {
 .suggestion-status.rejected {
   background-color: #f8d7da;
   color: #721c24;
+}
+
+.source-panel, .template-panel, .preview-panel {
+  display: none;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.source-panel.active, .template-panel.active, .preview-panel.active {
+  display: flex;
+}
+
+/* Source Code Editor */
+.source-editor {
+  background: #1e1e1e;
+  color: #d4d4d4;
+  border: 1px solid #3c3c3c;
+  border-radius: 8px;
+  padding: 20px;
+  font-family: 'Courier New', Consolas, monospace;
+  font-size: 14px;
+  line-height: 1.6;
+  min-height: 400px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-y: auto;
+  flex: 1;
+  margin-bottom: 15px;
+  tab-size: 4;
+}
+
+.source-editor:focus {
+  outline: none;
+  border-color: #007acc;
+  box-shadow: 0 0 0 2px rgba(0, 122, 204, 0.2);
+}
+
+.source-editor:empty::before {
+  content: attr(data-placeholder);
+  color: #6a6a6a;
+  pointer-events: none;
+  white-space: pre-wrap;
+}
+
+.source-controls {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  padding: 15px 0;
+  border-top: 1px solid #e0e0e0;
+}
+
+.execute-source-btn {
+  background: #28a745;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.execute-source-btn:hover {
+  background: #218838;
+  transform: translateY(-1px);
+}
+
+.execute-source-btn:active {
+  transform: translateY(0);
+}
+
+.source-execution-status {
+  font-size: 14px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+.source-execution-status.loading {
+  color: #17a2b8;
+  background: #d1ecf1;
+}
+
+.source-execution-status.success {
+  color: #155724;
+  background: #d4edda;
+}
+
+.source-execution-status.error {
+  color: #721c24;
+  background: #f8d7da;
+}
+
+/* Template Controls */
+.template-controls {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  padding: 15px 0;
+  border-top: 1px solid #e0e0e0;
+}
+
+.execute-template-btn {
+  background: #007bff;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.execute-template-btn:hover {
+  background: #0056b3;
+  transform: translateY(-1px);
+}
+
+.execute-template-btn:active {
+  transform: translateY(0);
+}
+
+.template-execution-status {
+  font-size: 14px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+.template-execution-status.loading {
+  color: #17a2b8;
+  background: #d1ecf1;
+}
+
+.template-execution-status.success {
+  color: #155724;
+  background: #d4edda;
+}
+
+.template-execution-status.error {
+  color: #721c24;
+  background: #f8d7da;
+}
+
+/* Mode Buttons */
+.mode-buttons {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 8px;
+  padding: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  position: relative;
+  z-index: 1001;
+}
+
+.mode-btn {
+  background: transparent;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 16px;
+  transition: all 0.2s ease;
+  min-width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6b7280;
+  position: relative;
+  z-index: 1002;
+}
+
+.mode-btn:hover {
+  background: rgba(0, 0, 0, 0.1);
+  color: #374151;
+  transform: translateY(-1px);
+}
+
+.mode-btn.active {
+  background: white;
+  color: #1f2937;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  transform: none;
+}
+
+.mode-btn.active:hover {
+  transform: none;
+}
+
+/* Specific mode button colors - higher specificity to override .mode-btn.active */
+.mode-btn.source-mode-btn.active {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+}
+
+.mode-btn.template-mode-btn.active {
+  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  color: white;
+}
+
+.mode-btn.preview-mode-btn.active {
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+  color: white;
 }

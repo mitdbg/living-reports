@@ -1,8 +1,9 @@
 // Template Execution Module
 import { state, elements, updateState, windowId } from './state.js';
-import { switchToPreview, switchToCode, switchToDiff } from './modes.js';
+import { switchToPreview, switchToTemplate, switchToDiff, canUserSwitchModes } from './modes.js';
 import { addMessageToUI } from './chat.js';
 import { refreshHighlightEventListeners } from './comments.js';
+import { getCurrentUser } from './auth.js';
 
 // Store current diff data for immediate application
 let currentDiffData = null;
@@ -21,7 +22,15 @@ const templateExecData = window[TEMPLATE_EXEC_KEY];
 
 // Basic template execution
 export function executeTemplate(clearCache = false, isLiveUpdate = false) {
-  const templateText = elements.codeEditor.textContent;
+  // Check if user can execute templates
+  const currentUser = getCurrentUser();
+  if (currentUser && currentUser.role === 'Report Consumer') {
+    console.log(`[${windowId}] User ${currentUser.name} (${currentUser.role}) cannot execute templates`);
+    setExecutionStatus('Access denied: Consumers cannot execute templates', 'error');
+    return;
+  }
+  
+  const templateText = elements.templateEditor.textContent;
   if (!templateText.trim()) {
     setExecutionStatus('Please enter a template first', 'error');
     return;
@@ -61,7 +70,10 @@ async function executeTemplateRequest(templateText, clearCache = false, isLiveUp
       
       if (!isLiveUpdate) {
         setExecutionStatus('Executed successfully', 'success');
-        switchToPreview();
+        // Only switch to preview if user can switch modes
+        if (canUserSwitchModes()) {
+          switchToPreview();
+        }
       }
       
       // Update preview (simplified)
@@ -94,12 +106,15 @@ function escapeAndFormatOutput(text) {
 }
 
 function setExecutionStatus(message, type) {
-  elements.executionStatus.textContent = message;
-  elements.executionStatus.className = type;
+  if (!elements.templateExecutionStatus) return;
+  
+  elements.templateExecutionStatus.textContent = message;
+  elements.templateExecutionStatus.className = `template-execution-status ${type}`;
   
   if (type !== 'error') {
     setTimeout(() => {
-      elements.executionStatus.textContent = '';
+      elements.templateExecutionStatus.textContent = '';
+      elements.templateExecutionStatus.className = 'template-execution-status';
     }, 3000);
   }
 }
@@ -113,7 +128,7 @@ export async function sendToBackend(message, suggestTemplate = false) {
       body: JSON.stringify({ 
         message,
         session_id: state.sessionId,
-        current_template: elements.codeEditor.textContent,
+        current_template: elements.templateEditor.textContent,
         current_output: state.currentOutput,
         suggest_template: suggestTemplate
       })
@@ -241,7 +256,7 @@ async function createAISuggestionComment(lineDiffs, currentTemplate, suggestedTe
       id: commentId,
       selectedText: selectedText,
       commentMessage: commentContent,
-      mode: 'code',
+      mode: 'template',
       author: aiAuthor.id,
       authorName: aiAuthor.name,
       authorEmoji: aiAuthor.emoji,
@@ -331,13 +346,13 @@ function summarizeChanges(lineDiffs) {
 
 // Apply inline diff highlighting directly in the code editor
 function applyInlineDiffHighlighting(lineDiffs, commentId) {
-  const codeEditor = elements.codeEditor;
-  if (!codeEditor) return;
+  const templateEditor = elements.templateEditor;
+  if (!templateEditor) return;
   
-  const lines = codeEditor.textContent.split('\n');
+  const lines = templateEditor.textContent.split('\n');
   
   // Clear the editor first
-  codeEditor.innerHTML = '';
+  templateEditor.innerHTML = '';
   
   // Create a map for faster lookup of diffs by line index
   const diffMap = new Map();
@@ -366,7 +381,7 @@ function applyInlineDiffHighlighting(lineDiffs, commentId) {
         removedSpan.setAttribute('data-line-index', String(i));
         removedSpan.setAttribute('data-diff-type', 'removed');
         removedSpan.textContent = lines[i] || diff.originalLine || '';
-        codeEditor.appendChild(removedSpan);
+        templateEditor.appendChild(removedSpan);
         
       } else if (diff.changeType === 'added') {
         // Show green background for added lines
@@ -376,7 +391,7 @@ function applyInlineDiffHighlighting(lineDiffs, commentId) {
         addedSpan.setAttribute('data-line-index', String(i));
         addedSpan.setAttribute('data-diff-type', 'added');
         addedSpan.textContent = diff.suggestedLine || '';
-        codeEditor.appendChild(addedSpan);
+        templateEditor.appendChild(addedSpan);
         
       } else if (diff.changeType === 'modified') {
         // Show both old (strikethrough) and new (green) for modified lines
@@ -386,9 +401,9 @@ function applyInlineDiffHighlighting(lineDiffs, commentId) {
         removedSpan.setAttribute('data-line-index', String(i));
         removedSpan.setAttribute('data-diff-type', 'removed');
         removedSpan.textContent = lines[i] || diff.originalLine || '';
-        codeEditor.appendChild(removedSpan);
+        templateEditor.appendChild(removedSpan);
         
-        codeEditor.appendChild(document.createTextNode('\n'));
+        templateEditor.appendChild(document.createTextNode('\n'));
         
         const addedSpan = document.createElement('span');
         addedSpan.className = 'ai-diff-added';
@@ -396,17 +411,17 @@ function applyInlineDiffHighlighting(lineDiffs, commentId) {
         addedSpan.setAttribute('data-line-index', String(i));
         addedSpan.setAttribute('data-diff-type', 'added');
         addedSpan.textContent = diff.suggestedLine || '';
-        codeEditor.appendChild(addedSpan);
+        templateEditor.appendChild(addedSpan);
       }
       
     } else if (i < lines.length) {
       // Normal line without changes
-      codeEditor.appendChild(document.createTextNode(lines[i]));
+      templateEditor.appendChild(document.createTextNode(lines[i]));
     }
     
     // Add newline after each line except the last one
     if (i < maxLines - 1) {
-      codeEditor.appendChild(document.createTextNode('\n'));
+      templateEditor.appendChild(document.createTextNode('\n'));
     }
   }
 }
@@ -418,7 +433,7 @@ export async function acceptAISuggestion(commentId) {
   if (!comment || !comment.isAISuggestion) return;
   
   // Apply the suggested template
-  elements.codeEditor.textContent = comment.suggestedTemplate;
+  elements.templateEditor.textContent = comment.suggestedTemplate;
   
   // Remove diff highlighting
   removeAIDiffHighlighting(commentId);
@@ -454,7 +469,7 @@ export async function rejectAISuggestion(commentId) {
   if (!comment || !comment.isAISuggestion) return;
   
   // Restore original template (remove diff highlighting)
-  elements.codeEditor.textContent = comment.currentTemplate;
+  elements.templateEditor.textContent = comment.currentTemplate;
   
   // Remove diff highlighting
   removeAIDiffHighlighting(commentId);
@@ -482,7 +497,7 @@ export async function rejectAISuggestion(commentId) {
 
 // Remove AI diff highlighting
 function removeAIDiffHighlighting(commentId) {
-  const highlights = elements.codeEditor.querySelectorAll(`[data-comment-id="${commentId}"]`);
+  const highlights = elements.templateEditor.querySelectorAll(`[data-comment-id="${commentId}"]`);
   highlights.forEach(highlight => {
     highlight.replaceWith(document.createTextNode(highlight.textContent));
   });
@@ -555,13 +570,20 @@ function displayContentInPreview(content) {
   // Detect content type and render appropriately
   let renderedContent = '';
   
+  // Check if user can copy to code editor
+  const currentUser = getCurrentUser();
+  const canCopyToCode = currentUser && currentUser.role !== 'Report Consumer';
+  
+  const copyButton = canCopyToCode ? 
+    '<button onclick="copyTotemplateEditor()" class="copy-to-editor-btn">Copy to Code Editor</button>' : '';
+  
   if (content.includes('{{') && content.includes('}}')) {
     // Looks like a template - display as code with highlighting
     renderedContent = `
       <div class="extracted-content">
         <div class="content-header">
           <h3>Generated Template</h3>
-          <button onclick="copyToCodeEditor()" class="copy-to-editor-btn">Copy to Code Editor</button>
+          ${copyButton}
         </div>
         <div class="template-content">
           <pre><code>${escapeHtml(content)}</code></pre>
@@ -574,7 +596,7 @@ function displayContentInPreview(content) {
       <div class="extracted-content">
         <div class="content-header">
           <h3>Generated Content</h3>
-          <button onclick="copyToCodeEditor()" class="copy-to-editor-btn">Copy to Code Editor</button>
+          ${copyButton}
         </div>
         <div class="markdown-content">
           ${renderSimpleMarkdown(content)}
@@ -587,7 +609,7 @@ function displayContentInPreview(content) {
       <div class="extracted-content">
         <div class="content-header">
           <h3>Generated Content</h3>
-          <button onclick="copyToCodeEditor()" class="copy-to-editor-btn">Copy to Code Editor</button>
+          ${copyButton}
         </div>
         <div class="plain-content">
           <pre>${escapeHtml(content)}</pre>
@@ -605,8 +627,8 @@ function displayContentInPreview(content) {
   // Re-attach event listeners to highlighted text after content update
   refreshHighlightEventListeners();
   
-  // Switch to preview mode if not already there
-  if (state.currentMode !== 'preview') {
+  // Switch to preview mode if not already there and user can switch modes
+  if (state.currentMode !== 'preview' && canUserSwitchModes()) {
     switchToPreview();
   }
 }
@@ -647,13 +669,20 @@ function renderSimpleMarkdown(content) {
 }
 
 // Global function to copy extracted content to code editor
-window.copyToCodeEditor = function() {
-  if (window.lastExtractedContent && elements.codeEditor) {
-    elements.codeEditor.textContent = window.lastExtractedContent;
+window.copyTotemplateEditor = function() {
+  // Check if user can access code editor
+  const currentUser = getCurrentUser();
+  if (currentUser && currentUser.role === 'Report Consumer') {
+    addMessageToUI('system', 'Access denied: Consumers cannot edit code');
+    return;
+  }
+  
+  if (window.lastExtractedContent && elements.templateEditor) {
+    elements.templateEditor.textContent = window.lastExtractedContent;
     addMessageToUI('system', 'Content copied to code editor');
-    // Switch to code mode
-    if (state.currentMode !== 'code') {
-      switchToCode();
+    // Switch to code mode only if user can switch modes
+    if (state.currentMode !== 'template' && canUserSwitchModes()) {
+      switchToTemplate();
     }
   }
 };
@@ -665,14 +694,22 @@ function escapeHtml(text) {
 }
 
 export function initTemplateExecution() {
-  if (!elements.executeBtn) {
-    console.error(`[${windowId}] Execute button not found!`);
+  if (!elements.executeTemplateBtn) {
+    console.error(`[${windowId}] Execute template button not found!`);
     return;
+  }
+  
+  // Check if user can execute templates
+  const currentUser = getCurrentUser();
+  if (currentUser && currentUser.role === 'Report Consumer') {
+    console.log(`[${windowId}] Hiding execute template button for consumer: ${currentUser.name}`);
+    elements.executeTemplateBtn.style.display = 'none';
+    return; // Don't add event listeners for consumers
   }
   
   // Remove existing event listener from the previous button if it exists
   if (templateExecData.executeHandler && templateExecData.currentExecuteBtn) {
-    console.log(`[${windowId}] Removing event listener from previous execute button`);
+    console.log(`[${windowId}] Removing event listener from previous execute template button`);
     templateExecData.currentExecuteBtn.removeEventListener('click', templateExecData.executeHandler);
   }
   
@@ -683,12 +720,12 @@ export function initTemplateExecution() {
   };
   
   // Add the event listener to the current button
-  elements.executeBtn.addEventListener('click', templateExecData.executeHandler);
+  elements.executeTemplateBtn.addEventListener('click', templateExecData.executeHandler);
   
   // Track which button currently has the listener
-  templateExecData.currentExecuteBtn = elements.executeBtn;
+  templateExecData.currentExecuteBtn = elements.executeTemplateBtn;
   
-  console.log(`[${windowId}] Template execution initialized, button:`, elements.executeBtn);
+  console.log(`[${windowId}] Template execution initialized, button:`, elements.executeTemplateBtn);
   
   // Mark as initialized
   templateExecData.templateExecutionInitialized = true;

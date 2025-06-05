@@ -1,7 +1,7 @@
 // File Operations Module
 import { elements, state, updateState, windowId } from './state.js';
 import { addMessageToUI } from './chat.js';
-import { switchToPreview, switchToCode } from './modes.js';
+import { switchToPreview, switchToTemplate } from './modes.js';
 import { refreshHighlightEventListeners } from './comments.js';
 
 const { ipcRenderer } = require('electron');

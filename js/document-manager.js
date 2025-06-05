@@ -2,6 +2,7 @@
 import { state, elements, updateState, windowId } from './state.js';
 import { initModes, resetModesInitialization } from './modes.js';
 import { initTemplateExecution, resetTemplateExecutionInitialization } from './template-execution.js';
+import { initSourceExecution, resetSourceExecutionInitialization } from './source-execution.js';
 import { initChat, initAskLLMButton, resetChatInitialization } from './chat.js';
 import { initTextSelection, initCommentButtons, resetTextSelectionInitialization, resetCommentButtonsInitialization } from './comments.js';
 import { initFileOperations, resetFileOperationsInitialization } from './file-operations.js';
@@ -344,7 +345,7 @@ export class DocumentManager {
       elements.messageInput = container.querySelector('.message-input');
       elements.chatMessages = container.querySelector('.chat-messages');
       elements.previewContent = container.querySelector('.preview-content');
-      elements.codeEditor = container.querySelector('.code-editor');
+      elements.templateEditor = container.querySelector('.template-editor');
       elements.openFileBtn = container.querySelector('.open-file-btn');
       elements.clearContextBtn = container.querySelector('.clear-context-btn');
       elements.shareBtn = container.querySelector('.share-btn');
@@ -388,6 +389,7 @@ export class DocumentManager {
           // Reset initialization flags first to allow clean reinitialization
           resetModesInitialization();
           resetTemplateExecutionInitialization();
+          resetSourceExecutionInitialization();
           resetTextSelectionInitialization();
           resetCommentButtonsInitialization();
           resetChatInitialization();
@@ -397,6 +399,7 @@ export class DocumentManager {
           // Now initialize all modules
           initModes();
           initTemplateExecution();
+          initSourceExecution();
           initChat();
           initTextSelection();
           initCommentButtons();
@@ -409,11 +412,12 @@ export class DocumentManager {
         }
       }
       
-      // Ensure the document is visible and in code mode by default
-      if (elements.codePanel && elements.previewPanel) {
-        elements.codePanel.classList.add('active');
+      // Ensure the document is visible and in source mode by default
+      if (elements.sourcePanel && elements.templatePanel && elements.previewPanel) {
+        elements.sourcePanel.classList.add('active');
+        elements.templatePanel.classList.remove('active');
         elements.previewPanel.classList.remove('active');
-        state.currentMode = 'code';
+        state.currentMode = 'source';
       }
       
     }).catch(error => {
@@ -500,6 +504,7 @@ export class DocumentManager {
       // Reset all module initialization flags to ensure clean state
       resetModesInitialization();
       resetTemplateExecutionInitialization();
+      resetSourceExecutionInitialization();
       resetTextSelectionInitialization();
       resetCommentButtonsInitialization();
       resetChatInitialization();
@@ -1044,21 +1049,21 @@ export class DocumentManager {
           // Get the current container
           const container = document.getElementById(`document-${this.activeDocumentId}`);
           if (container) {
-            const codeEditor = container.querySelector('.code-editor');
+            const templateEditor = container.querySelector('.template-editor');
             const previewContent = container.querySelector('.preview-content');
             
             // SMART CONTENT UPDATE: Only replace content if it actually changed
             // and restore highlights afterward
             
             // Handle code content
-            if (codeEditor && freshDoc.code_content !== undefined) {
-              const currentCodeContent = codeEditor.textContent || '';
+            if (templateEditor && freshDoc.code_content !== undefined) {
+              const currentCodeContent = templateEditor.textContent || '';
               if (currentCodeContent !== freshDoc.code_content) {
                 console.log('Code content changed, updating...');
-                codeEditor.textContent = freshDoc.code_content;
+                templateEditor.textContent = freshDoc.code_content;
                 
                 // Restore highlights for code mode after content replacement
-                await this.restoreHighlightsForMode('code');
+                await this.restoreHighlightsForMode('template');
               }
             }
             
@@ -1250,10 +1255,10 @@ export class DocumentManager {
     }
 
     // Get content from both code editor and preview
-    const codeEditor = container.querySelector('.code-editor');
+    const templateEditor = container.querySelector('.template-editor');
     const previewContent = container.querySelector('.preview-content');
 
-    const currentCodeContent = codeEditor ? codeEditor.textContent : '';
+    const currentCodeContent = templateEditor ? templateEditor.textContent : '';
     const currentPreviewContent = previewContent ? previewContent.innerHTML : '';
 
     try {
@@ -1377,7 +1382,7 @@ export class DocumentManager {
       return;
     }
 
-    const codeEditor = container.querySelector('.code-editor');
+    const templateEditor = container.querySelector('.template-editor');
     const previewContent = container.querySelector('.preview-content');
 
     this.hasUnsavedChanges = false;
@@ -1386,11 +1391,11 @@ export class DocumentManager {
     this.removeContentChangeTracking();
 
     // Set up code editor tracking
-    if (codeEditor) {
-      this.codeEditorChangeHandler = () => {
+    if (templateEditor) {
+      this.templateEditorChangeHandler = () => {
         this.onContentChange();
       };
-      codeEditor.addEventListener('input', this.codeEditorChangeHandler);
+      templateEditor.addEventListener('input', this.templateEditorChangeHandler);
     }
 
     // Set up preview content tracking (using MutationObserver for DOM changes)
@@ -1413,16 +1418,16 @@ export class DocumentManager {
    * Remove content change tracking
    */
   removeContentChangeTracking() {
-    if (this.codeEditorChangeHandler && this.activeDocumentId) {
+    if (this.templateEditorChangeHandler && this.activeDocumentId) {
       const container = document.getElementById(`document-${this.activeDocumentId}`);
       if (container) {
-        const codeEditor = container.querySelector('.code-editor');
-        if (codeEditor) {
-          codeEditor.removeEventListener('input', this.codeEditorChangeHandler);
+        const templateEditor = container.querySelector('.template-editor');
+        if (templateEditor) {
+          templateEditor.removeEventListener('input', this.templateEditorChangeHandler);
         }
       }
     }
-    this.codeEditorChangeHandler = null;
+    this.templateEditorChangeHandler = null;
     
     if (this.previewObserver && this.activeDocumentId) {
       this.previewObserver.disconnect();
@@ -1610,10 +1615,10 @@ export class DocumentManager {
         continue;
       }
 
-      const codeEditor = container.querySelector('.code-editor');
+      const templateEditor = container.querySelector('.template-editor');
       const previewContent = container.querySelector('.preview-content');
       
-      if (!codeEditor) {
+      if (!templateEditor) {
         await this.delay(200);
         continue;
       }
@@ -1626,16 +1631,16 @@ export class DocumentManager {
       // Now handle code content and comments together
       if (freshDoc.code_content !== undefined) {
         // Clear any existing content first
-        codeEditor.innerHTML = '';
+        templateEditor.innerHTML = '';
         
         // Set the content
-        codeEditor.textContent = freshDoc.code_content;
+        templateEditor.textContent = freshDoc.code_content;
         
         // Wait for DOM to update
         await this.delay(100);
         
         // Verify content was actually loaded and is still there
-        const verification = this.verifyContentStillThere(codeEditor, freshDoc.code_content);
+        const verification = this.verifyContentStillThere(templateEditor, freshDoc.code_content);
         if (!verification.success) {
           if (attempt < maxRetries) {
             await this.delay(300 * attempt);
@@ -1664,9 +1669,9 @@ export class DocumentManager {
   /**
    * Verify content is still present and hasn't been cleared
    */
-  verifyContentStillThere(codeEditor, expectedContent) {
-    const childCount = codeEditor.childNodes.length;
-    const textContent = codeEditor.textContent || '';
+  verifyContentStillThere(templateEditor, expectedContent) {
+    const childCount = templateEditor.childNodes.length;
+    const textContent = templateEditor.textContent || '';
     const expectedLength = expectedContent ? expectedContent.length : 0;
     
     if (childCount === 0 && expectedLength > 0) {
@@ -1743,8 +1748,8 @@ export class DocumentManager {
         return;
       }
 
-      const codeEditor = container.querySelector('.code-editor');
-      if (!codeEditor) {
+      const templateEditor = container.querySelector('.template-editor');
+      if (!templateEditor) {
         return;
       }
 
@@ -1958,8 +1963,8 @@ export class DocumentManager {
       let targetElement;
       if (savedComment.mode === 'preview') {
         targetElement = container.querySelector('.preview-content');
-      } else if (savedComment.mode === 'code') {
-        targetElement = container.querySelector('.code-editor');
+      } else if (savedComment.mode === 'template') {
+        targetElement = container.querySelector('.template-editor');
       }
 
       if (!targetElement) {
@@ -2004,8 +2009,8 @@ export class DocumentManager {
         return false;
       }
 
-      const codeEditor = container.querySelector('.code-editor');
-      if (!codeEditor) {
+      const templateEditor = container.querySelector('.template-editor');
+      if (!templateEditor) {
         return false;
       }
 
@@ -2013,10 +2018,10 @@ export class DocumentManager {
       const lineDiffs = savedComment.lineDiffs;
       const commentId = savedComment.id;
       
-      const lines = codeEditor.textContent.split('\n');
+      const lines = templateEditor.textContent.split('\n');
       
       // Clear the editor first
-      codeEditor.innerHTML = '';
+      templateEditor.innerHTML = '';
       
       // Create a map for faster lookup of diffs by line index
       const diffMap = new Map();
@@ -2040,7 +2045,7 @@ export class DocumentManager {
             removedSpan.setAttribute('data-line-index', String(i));
             removedSpan.setAttribute('data-diff-type', 'removed');
             removedSpan.textContent = lines[i] || diff.originalLine || '';
-            codeEditor.appendChild(removedSpan);
+            templateEditor.appendChild(removedSpan);
             
           } else if (diff.changeType === 'added') {
             // Show green background for added lines
@@ -2050,7 +2055,7 @@ export class DocumentManager {
             addedSpan.setAttribute('data-line-index', String(i));
             addedSpan.setAttribute('data-diff-type', 'added');
             addedSpan.textContent = diff.suggestedLine || '';
-            codeEditor.appendChild(addedSpan);
+            templateEditor.appendChild(addedSpan);
             
           } else if (diff.changeType === 'modified') {
             // Show both old (strikethrough) and new (green) for modified lines
@@ -2060,9 +2065,9 @@ export class DocumentManager {
             removedSpan.setAttribute('data-line-index', String(i));
             removedSpan.setAttribute('data-diff-type', 'removed');
             removedSpan.textContent = lines[i] || diff.originalLine || '';
-            codeEditor.appendChild(removedSpan);
+            templateEditor.appendChild(removedSpan);
             
-            codeEditor.appendChild(document.createTextNode('\n'));
+            templateEditor.appendChild(document.createTextNode('\n'));
             
             const addedSpan = document.createElement('span');
             addedSpan.className = 'ai-diff-added';
@@ -2070,17 +2075,17 @@ export class DocumentManager {
             addedSpan.setAttribute('data-line-index', String(i));
             addedSpan.setAttribute('data-diff-type', 'added');
             addedSpan.textContent = diff.suggestedLine || '';
-            codeEditor.appendChild(addedSpan);
+            templateEditor.appendChild(addedSpan);
           }
           
         } else if (i < lines.length) {
           // Normal line without changes
-          codeEditor.appendChild(document.createTextNode(lines[i]));
+          templateEditor.appendChild(document.createTextNode(lines[i]));
         }
         
         // Add newline after each line except the last one
         if (i < maxLines - 1) {
-          codeEditor.appendChild(document.createTextNode('\n'));
+          templateEditor.appendChild(document.createTextNode('\n'));
         }
       }
 
