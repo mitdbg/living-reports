@@ -14,9 +14,9 @@ A real-time collaborative document workspace built with Electron, featuring mult
 - **Demo Mode**: Quick launch with 2 windows for instant collaboration testing
 
 ### 🎯 Demo Users
-- **Alice** 👩‍💻 - Frontend Developer (Blue theme)
-- **Bob** 👨‍💼 - Product Manager (Green theme)  
-- **Charlie** 🧑‍🎨 - UX Designer (Yellow theme)
+- **Alice** 👩‍💻 - Report Consumer (Blue theme)
+- **Bob** 👨‍💼 - Report Writer (Green theme)  
+- **Charlie** 🧑‍🎨 - Data Engineer (Yellow theme)
 
 ## 🛠️ Quick Start
 

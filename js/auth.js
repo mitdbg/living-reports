@@ -8,21 +8,21 @@ export const DEMO_USERS = {
     name: 'Alice', 
     emoji: '👩‍💻', 
     color: '#4285f4', 
-    role: 'Frontend Developer' 
+    role: 'Report Consumer' 
   },
   bob: { 
     id: 'bob', 
     name: 'Bob', 
     emoji: '👨‍💼', 
     color: '#34a853', 
-    role: 'Product Manager' 
+    role: 'Report Writer' 
   },
   charlie: { 
     id: 'charlie', 
     name: 'Charlie', 
     emoji: '🧑‍🎨', 
     color: '#fbbc04', 
-    role: 'UX Designer' 
+    role: 'Data Engineer' 
   }
 };
 

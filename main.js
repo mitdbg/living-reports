@@ -8,9 +8,9 @@ let loginWindow = null;
 
 // Demo users configuration
 const DEMO_USERS = {
-  alice: { id: 'alice', name: 'Alice', emoji: '👩‍💻', color: '#4285f4', role: 'Frontend Developer' },
-  bob: { id: 'bob', name: 'Bob', emoji: '👨‍💼', color: '#34a853', role: 'Product Manager' },
-  charlie: { id: 'charlie', name: 'Charlie', emoji: '🧑‍🎨', color: '#fbbc04', role: 'UX Designer' }
+  alice: { id: 'alice', name: 'Alice', emoji: '👩‍💻', color: '#4285f4', role: 'Report Consumer' },
+  bob: { id: 'bob', name: 'Bob', emoji: '👨‍💼', color: '#34a853', role: 'Report Writer' },
+  charlie: { id: 'charlie', name: 'Charlie', emoji: '🧑‍🎨', color: '#fbbc04', role: 'Data Engineer' }
 };
 
 function createLoginWindow() {
