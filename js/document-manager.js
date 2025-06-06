@@ -1998,9 +1998,12 @@ export class DocumentManager {
         targetElement = container.querySelector('.preview-content');
       } else if (savedComment.mode === 'template') {
         targetElement = container.querySelector('.template-editor');
+      } else if (savedComment.mode === 'source') {
+        targetElement = container.querySelector('.source-editor');
       }
 
       if (!targetElement) {
+        console.warn(`Target element not found for mode: ${savedComment.mode}`);
         return false;
       }
 
@@ -2013,13 +2016,21 @@ export class DocumentManager {
       // Use the unified highlighting function from comments.js
       const { createTextHighlight } = await import('./comments.js');
       
-      return createTextHighlight({
+      const result = createTextHighlight({
         selectedText: savedComment.selectedText,
         commentId: savedComment.id,
         detailedRangeInfo: savedComment.detailedRangeInfo,
         mode: savedComment.mode,
         targetElement: targetElement
       });
+
+      if (result) {
+        console.log(`Successfully restored highlight for comment: ${savedComment.id}`);
+      } else {
+        console.warn(`Failed to restore highlight for comment: ${savedComment.id} - Text: "${savedComment.selectedText.substring(0, 50)}${savedComment.selectedText.length > 50 ? '...' : ''}"`);
+      }
+
+      return result;
 
     } catch (error) {
       console.error('Error recreating highlight:', error);

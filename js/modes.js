@@ -1,7 +1,7 @@
 // Mode Management Module
 import { state, elements, updateState, windowId } from './state.js';
 import { updateAnnotationsVisibility } from './annotations.js';
-import { refreshHighlightEventListeners, updateCodeHighlights } from './comments.js';
+import { refreshHighlightEventListeners, updateCodeHighlights, updateSourceHighlights } from './comments.js';
 import { getCurrentUser } from './auth.js';
 
 // Create window-specific storage for initialization flags and handlers
@@ -149,8 +149,8 @@ export function switchToSource() {
   updateModeButtonStates('source');
   updateAnnotationsVisibility();
   
-  // Update code highlights when switching to source mode
-  setTimeout(() => updateCodeHighlights(), 100);
+  // Refresh all highlights when switching to source mode
+  setTimeout(() => refreshHighlightEventListeners(), 100);
 }
 
 export function switchToTemplate() {
@@ -201,7 +201,7 @@ export function switchToTemplate() {
   updateAnnotationsVisibility();
   
   // Update code highlights when switching to template mode
-  setTimeout(() => updateCodeHighlights(), 100);
+  setTimeout(() => refreshHighlightEventListeners(), 100);
 }
 
 export function switchToPreview() {
