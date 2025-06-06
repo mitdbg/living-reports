@@ -33,7 +33,7 @@ export async function translateCommentToTemplateEdit(commentText, selectedText, 
     console.log('Sending comment translation request:', requestData);
     
     // Call backend API
-    const response = await fetch('http://localhost:5000/api/translate-comment', {
+    const response = await fetch('http://127.0.0.1:5000/api/translate-comment', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -136,7 +136,7 @@ ${suggestion.suggested_change}
       id: commentId,
       selectedText: selectedText,
       commentMessage: suggestionCommentText,
-      mode: mode,
+      mode: 'template', // Always create template suggestions in template mode
       author: currentUser ? currentUser.id : 'anonymous',
       authorName: currentUser ? currentUser.name : 'Anonymous',
       authorEmoji: '🔄', // Special emoji for template suggestions
@@ -164,13 +164,8 @@ ${suggestion.suggested_change}
     // Store in comments state
     state.comments[commentId] = commentData;
     
-    // Apply highlighting to the selected text
-    const { createTextHighlight } = await import('./comments.js');
-    createTextHighlight({
-      selectedText: selectedText,
-      commentId: commentId,
-      mode: mode
-    });
+    // Template suggestions should NOT add highlighting to preview content
+    // They should only create annotations visible in template mode
     
     // Create floating annotation
     const { createTemplateSuggestionAnnotation } = await import('./annotations.js');
@@ -279,61 +274,19 @@ export async function applyTemplateSuggestion(commentId) {
     }
     
     const suggestion = comment.aiSuggestion;
-    const changeType = suggestion.change_type;
     
     // Get current template content
     const currentTemplate = elements.templateEditor.textContent;
     
-    // Apply the change based on type
-    let newTemplate = currentTemplate;
-    
-    if (changeType === 'replace') {
-      // For replace, find and replace the selected text with the suggestion
-      newTemplate = currentTemplate.replace(comment.selectedText, suggestion.suggested_change);
-    } else if (changeType === 'add') {
-      // For add, insert the suggestion near the selected text
-      const insertionPoint = currentTemplate.indexOf(comment.selectedText);
-      if (insertionPoint !== -1) {
-        const beforeText = currentTemplate.substring(0, insertionPoint + comment.selectedText.length);
-        const afterText = currentTemplate.substring(insertionPoint + comment.selectedText.length);
-        newTemplate = beforeText + '\n' + suggestion.suggested_change + afterText;
-      }
-    } else if (changeType === 'remove') {
-      // For remove, remove the selected text
-      newTemplate = currentTemplate.replace(comment.selectedText, '');
-    } else {
-      // For other change types, show the suggestion and let user manually apply
-      addMessageToUI('system', `💡 Manual change needed: ${suggestion.suggested_change}`);
-      return;
-    }
-    
-    // Apply the new template
-    elements.templateEditor.textContent = newTemplate;
-    
-    // Mark comment as resolved
-    comment.isResolved = true;
-    
-    // Remove the annotation
-    const annotation = document.getElementById(commentId);
-    if (annotation) {
-      annotation.remove();
-    }
-    
-    // Execute template to see results
-    const { executeTemplate } = await import('./template-execution.js');
-    executeTemplate(false, true);
+    // Show diff view instead of directly applying changes
+    await showTemplateEditorDiff(suggestion, currentTemplate);
     
     // Show success message
-    addMessageToUI('system', `✅ Template suggestion applied successfully! (${changeType})`);
-    
-    // Trigger auto-save
-    if (window.documentManager) {
-      window.documentManager.onCommentChange();
-    }
+    addMessageToUI('system', `📝 Template diff view showing suggested ${suggestion.change_type} changes. Review and choose to accept or reject.`);
     
   } catch (error) {
-    console.error('Error applying template suggestion:', error);
-    addMessageToUI('system', `❌ Failed to apply suggestion: ${error.message}`);
+    console.error('Error showing template suggestion:', error);
+    addMessageToUI('system', `❌ Failed to show suggestion: ${error.message}`);
   }
 }
 
@@ -374,6 +327,227 @@ export async function rejectTemplateSuggestion(commentId) {
   }
 }
 
+/**
+ * Show diff view in template editor for a suggestion
+ * @param {Object} suggestion - The AI-generated suggestion
+ * @param {string} currentTemplate - Current template content
+ */
+async function showTemplateEditorDiff(suggestion, currentTemplate) {
+  try {
+    // Calculate what the new template would look like
+    let newTemplate = currentTemplate;
+    const changeType = suggestion.change_type;
+    
+    if (changeType === 'replace') {
+      // For replace, find and replace the selected text with the suggestion
+      const comment = state.comments[Object.keys(state.comments).find(id => 
+        state.comments[id].aiSuggestion === suggestion
+      )];
+      if (comment) {
+        newTemplate = currentTemplate.replace(comment.selectedText, suggestion.suggested_change);
+      }
+    } else if (changeType === 'add') {
+      // For add, insert the suggestion
+      newTemplate = currentTemplate + '\n' + suggestion.suggested_change;
+    } else if (changeType === 'remove') {
+      // For remove, remove the suggested content
+      newTemplate = currentTemplate.replace(suggestion.suggested_change, '');
+    }
+    
+    // Call the diff API to get structured diff data
+    const response = await fetch('http://127.0.0.1:5000/api/compute-diff', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        current_text: currentTemplate,
+        suggested_text: newTemplate,
+        session_id: state.sessionId || 'default',
+        content_type: 'template'
+      })
+    });
+    
+    const diffResult = await response.json();
+    
+    if (diffResult.success) {
+      // Show diff view in template editor
+      showInlineTemplateDiff(diffResult);
+      addMessageToUI('system', '📝 Template diff view activated. Review changes and choose to accept or reject.');
+    } else {
+      throw new Error(diffResult.error || 'Failed to compute diff');
+    }
+    
+  } catch (error) {
+    console.error('Error showing template diff:', error);
+    addMessageToUI('system', `❌ Failed to show diff view: ${error.message}`);
+  }
+}
+
+/**
+ * Show inline diff in the template editor
+ * @param {Object} diffResult - Diff computation result from backend
+ */
+function showInlineTemplateDiff(diffResult) {
+  const templateEditor = elements.templateEditor;
+  if (!templateEditor) return;
+  
+  // Create inline diff content directly in the template editor
+  const diffHtml = generateInlineDiffContent(diffResult.template_diffs, diffResult.current_template, diffResult.suggested_template);
+  
+  // Add diff controls above the editor
+  const diffControls = document.createElement('div');
+  diffControls.className = 'inline-diff-controls';
+  diffControls.innerHTML = `
+    <div class="diff-header">
+      <span class="diff-title">📝 Template Changes Preview</span>
+      <div class="diff-actions">
+        <button class="diff-action-btn accept-all" onclick="acceptTemplateDiff()">✅ Accept</button>
+        <button class="diff-action-btn reject-all" onclick="rejectTemplateDiff()">❌ Reject</button>
+        <button class="diff-action-btn close-diff" onclick="closeTemplateDiff()">✖️ Close</button>
+      </div>
+    </div>
+  `;
+  
+  // Insert diff controls before template editor
+  templateEditor.parentNode.insertBefore(diffControls, templateEditor);
+  
+  // Replace template editor content with inline diff
+  templateEditor.innerHTML = diffHtml;
+  templateEditor.classList.add('template-diff-mode');
+  
+  // Make template editor read-only during diff view
+  templateEditor.contentEditable = false;
+  
+  // Store diff data for accept/reject actions
+  window.currentTemplateDiff = diffResult;
+}
+
+/**
+ * Generate inline diff content that shows changes within the template editor
+ * @param {Array} diffs - Array of diff objects
+ * @param {string} currentTemplate - Current template text
+ * @param {string} suggestedTemplate - Suggested template text
+ */
+function generateInlineDiffContent(diffs, currentTemplate, suggestedTemplate) {
+  const currentLines = currentTemplate.split('\n');
+  const suggestedLines = suggestedTemplate.split('\n');
+  const maxLines = Math.max(currentLines.length, suggestedLines.length);
+  
+  let html = '';
+  
+  for (let i = 0; i < maxLines; i++) {
+    const currentLine = currentLines[i] || '';
+    const suggestedLine = suggestedLines[i] || '';
+    
+    // Find if this line has changes
+    const diff = diffs.find(d => d.line_index === i);
+    
+    if (diff) {
+      if (diff.change_type === 'modified') {
+        html += `<div class="diff-line-container">`;
+        html += `<div class="diff-line diff-removed">- ${escapeHtml(diff.current_line)}</div>`;
+        html += `<div class="diff-line diff-added">+ ${escapeHtml(diff.suggested_line)}</div>`;
+        html += `</div>`;
+      } else if (diff.change_type === 'added') {
+        html += `<div class="diff-line diff-added">+ ${escapeHtml(diff.suggested_line)}</div>`;
+      } else if (diff.change_type === 'removed') {
+        html += `<div class="diff-line diff-removed">- ${escapeHtml(diff.current_line)}</div>`;
+      }
+    } else {
+      // Unchanged line
+      html += `<div class="diff-line diff-unchanged">${escapeHtml(currentLine)}</div>`;
+    }
+    
+    // Add line break except for last line
+    if (i < maxLines - 1) {
+      html += '\n';
+    }
+  }
+  
+  return html;
+}
+
+// Helper function for escaping HTML
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
 // Make functions globally accessible
 window.applyTemplateSuggestion = applyTemplateSuggestion;
-window.rejectTemplateSuggestion = rejectTemplateSuggestion; 
+window.rejectTemplateSuggestion = rejectTemplateSuggestion;
+
+// Global functions for template diff view actions
+window.acceptTemplateDiff = async function() {
+  try {
+    if (!window.currentTemplateDiff) {
+      throw new Error('No template diff data available');
+    }
+    
+    // Apply the suggested template
+    elements.templateEditor.textContent = window.currentTemplateDiff.suggested_template;
+    
+    // Close diff view
+    closeTemplateDiff();
+    
+    // Execute template to see results
+    const { executeTemplate } = await import('./template-execution.js');
+    executeTemplate(false, true);
+    
+    // Show success message
+    addMessageToUI('system', '✅ Template changes accepted and applied!');
+    
+    // Trigger auto-save
+    if (window.documentManager) {
+      window.documentManager.onCommentChange();
+    }
+    
+  } catch (error) {
+    console.error('Error accepting template diff:', error);
+    addMessageToUI('system', `❌ Failed to accept changes: ${error.message}`);
+  }
+};
+
+window.rejectTemplateDiff = function() {
+  try {
+    // Close diff view without applying changes
+    closeTemplateDiff();
+    
+    // Show feedback message
+    addMessageToUI('system', '🚫 Template changes rejected. Original template preserved.');
+    
+  } catch (error) {
+    console.error('Error rejecting template diff:', error);
+    addMessageToUI('system', `❌ Failed to reject changes: ${error.message}`);
+  }
+};
+
+window.closeTemplateDiff = function() {
+  try {
+    // Remove diff controls
+    const diffControls = document.querySelector('.inline-diff-controls');
+    if (diffControls) {
+      diffControls.remove();
+    }
+    
+    // Restore original template editor
+    if (elements.templateEditor && window.currentTemplateDiff) {
+      // Restore original content
+      elements.templateEditor.textContent = window.currentTemplateDiff.current_template;
+      
+      // Remove diff mode class
+      elements.templateEditor.classList.remove('template-diff-mode');
+      
+      // Make template editor editable again
+      elements.templateEditor.contentEditable = true;
+    }
+    
+    // Clear stored diff data
+    window.currentTemplateDiff = null;
+    
+  } catch (error) {
+    console.error('Error closing template diff:', error);
+  }
+}; 

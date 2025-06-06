@@ -8,8 +8,27 @@ import { clearAllComments, clearCurrentModeComments } from './comments.js';
  * Simple helper function to remove highlight wrapper while preserving content
  */
 export function removeHighlightWrapper(highlight) {
-  // Simply replace the wrapper with its content
-  highlight.outerHTML = highlight.innerHTML;
+  console.log(`[removeHighlightWrapper] Removing highlight:`, highlight);
+  
+  // Get the parent element before manipulation
+  const parent = highlight.parentElement;
+  if (!parent) {
+    console.error(`[removeHighlightWrapper] No parent element found for highlight`);
+    return;
+  }
+  
+  // For complex HTML content, we need to move child nodes properly
+  const childNodes = Array.from(highlight.childNodes);
+  
+  // Insert all child nodes before the highlight element
+  childNodes.forEach(child => {
+    parent.insertBefore(child, highlight);
+  });
+  
+  // Remove the empty highlight element
+  parent.removeChild(highlight);
+  
+  console.log(`[removeHighlightWrapper] Highlight removed successfully`);
 }
 
 export function createFloatingAnnotation(selectedText, commentContent, commentData = null) {
@@ -138,7 +157,7 @@ export function createFloatingAnnotation(selectedText, commentContent, commentDa
   }
   
   // Make annotation draggable
-  makeAnnotationDraggable(annotation, state.comments[annotationId]);
+  makeAnnotationDraggable(annotation, commentData);
   
   // Trigger auto-save for comment changes
   if (window.documentManager) {
@@ -302,12 +321,31 @@ export function deleteFloatingAnnotation(annotationId) {
   // Find the annotation data to get the selected text
   const comment = state.comments[annotationId];
   
+  console.log(`[deleteFloatingAnnotation] Deleting annotation: ${annotationId}`);
+  console.log(`[deleteFloatingAnnotation] Comment data:`, comment);
+  
   if (comment) {
     // Remove text highlighting for this comment
     const highlights = document.querySelectorAll(`.text-comment-highlight[data-comment-id="${annotationId}"]`);
-    highlights.forEach(highlight => {
+    console.log(`[deleteFloatingAnnotation] Found ${highlights.length} highlights for comment ${annotationId}`);
+    console.log(`[deleteFloatingAnnotation] Highlights:`, highlights);
+    
+    // If no highlights found, try to debug why
+    if (highlights.length === 0) {
+      console.log(`[deleteFloatingAnnotation] No highlights found! Debugging...`);
+      const allHighlights = document.querySelectorAll('.text-comment-highlight');
+      console.log(`[deleteFloatingAnnotation] Total highlights on page: ${allHighlights.length}`);
+      allHighlights.forEach((h, i) => {
+        console.log(`  Highlight ${i + 1}: data-comment-id="${h.getAttribute('data-comment-id')}", innerHTML="${h.innerHTML.substring(0, 50)}..."`);
+      });
+    }
+    
+    highlights.forEach((highlight, index) => {
+      console.log(`[deleteFloatingAnnotation] Removing highlight ${index + 1}:`, highlight);
       removeHighlightWrapper(highlight);
     });
+  } else {
+    console.warn(`[deleteFloatingAnnotation] No comment data found for ${annotationId}`);
   }
   
   // Remove the annotation itself
@@ -328,6 +366,11 @@ export function closeFloatingAnnotation(annotationId) {
 }
 
 function makeAnnotationDraggable(element, annotationData) {
+  if (!annotationData) {
+    console.warn('makeAnnotationDraggable: annotationData is undefined, skipping drag setup');
+    return;
+  }
+  
   let isDragging = false;
   let startX, startY, initialLeft, initialTop;
   
@@ -386,9 +429,11 @@ function makeAnnotationDraggable(element, annotationData) {
     element.style.left = `${clampedLeft}px`;
     element.style.top = `${clampedTop}px`;
     
-    // Update stored position
-    annotationData.ui.position.left = clampedLeft;
-    annotationData.ui.position.top = clampedTop;
+    // Update stored position - ensure ui.position exists
+    if (annotationData.ui && annotationData.ui.position) {
+      annotationData.ui.position.left = clampedLeft;
+      annotationData.ui.position.top = clampedTop;
+    }
   }
   
   function onMouseUp() {
@@ -896,18 +941,19 @@ export function createTemplateSuggestionAnnotation(commentData) {
   annotation.style.width = `${annotationWidth}px`;
   annotation.style.zIndex = '10001';
   
-  // Make it draggable
-  makeAnnotationDraggable(annotation);
+  // Make it draggable - pass commentData as the second parameter
+  makeAnnotationDraggable(annotation, commentData);
   
   // Add to DOM
   document.body.appendChild(annotation);
   
-  // Store UI state
-  if (commentData.ui) {
-    commentData.ui.element = annotation;
-    commentData.ui.position = { top, right };
-    commentData.ui.isVisible = true;
+  // Store UI state - ensure ui property exists
+  if (!commentData.ui) {
+    commentData.ui = {};
   }
+  commentData.ui.element = annotation;
+  commentData.ui.position = { top, right };
+  commentData.ui.isVisible = true;
   
   // Add fade-in animation
   setTimeout(() => {
