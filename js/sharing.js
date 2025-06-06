@@ -2,6 +2,7 @@
 import { state, elements, windowId } from './state.js';
 import { addMessageToUI } from './chat.js';
 import { getCurrentUser } from './auth.js';
+import { getTextContentWithLineBreaks } from './utils.js';
 
 // Create window-specific storage for initialization flags and handlers
 const SHARING_KEY = `sharing_${windowId}`;
@@ -47,7 +48,7 @@ function showShareDialog(doc) {
   const previewEl = dialog.querySelector('#share-document-preview');
   
   titleEl.textContent = doc.title;
-  previewEl.textContent = (doc.code_content || '').substring(0, 100) + ((doc.code_content || '').length > 100 ? '...' : '');
+  previewEl.textContent = (doc.template_content || '').substring(0, 100) + ((doc.template_content || '').length > 100 ? '...' : '');
   
   // Populate user list
   populateUserList(dialog);
@@ -262,7 +263,7 @@ async function shareWithSelectedUsers() {
   });
   
   // Update document with current content
-  doc.code_content = elements.templateEditor.textContent;
+  doc.template_content = getTextContentWithLineBreaks(elements.templateEditor);
   doc.preview_content = elements.previewContent.innerHTML;
   doc.lastModified = new Date().toISOString();
   
@@ -326,7 +327,7 @@ export async function shareCurrentDocument() {
   }
   
   // Check if we have content to share
-  if (!elements.templateEditor.textContent.trim() && !elements.previewContent.innerHTML.trim()) {
+  if (!getTextContentWithLineBreaks(elements.templateEditor).trim() && !elements.previewContent.innerHTML.trim()) {
     addMessageToUI('system', '**No content to share!** Please add some content to the document first.');
     return;
   }

@@ -34,22 +34,17 @@ export function createTextComment(selectedText, commentContent) {
   // Get current user information
   const currentUser = getCurrentUser();
   
-  // Get the stored selection range from the floating comment element
+  // Get the stored selection range from the floating comment element (for live highlighting)
   let selectionRange = null;
-  let detailedRangeInfo = null;
   
   if (elements.floatingComment && elements.floatingComment.storedSelectionRange) {
     selectionRange = elements.floatingComment.storedSelectionRange;
     console.log('Using stored selection range for highlighting');
-    
-    // Create detailed range information for reliable restoration
-    detailedRangeInfo = createDetailedRangeInfo(selectionRange);
-    console.log('Created detailed range info:', detailedRangeInfo);
   } else {
-    console.warn('No stored selection range found, highlighting may be inaccurate');
+    console.warn('No stored selection range found, using text matching');
   }
   
-  // Create unified comment data object
+  // Create simplified comment data object
   const commentData = {
     // Core comment data
     id: commentId,
@@ -61,10 +56,6 @@ export function createTextComment(selectedText, commentContent) {
     authorEmoji: currentUser ? currentUser.emoji : '👤',
     authorColor: currentUser ? currentUser.color : '#666666',
     createdAt: new Date().toISOString(),
-    selectionRange: selectionRange,
-    
-    // Enhanced range information for precise restoration
-    detailedRangeInfo: detailedRangeInfo,
     
     // State flags
     isResolved: false,
@@ -82,7 +73,7 @@ export function createTextComment(selectedText, commentContent) {
   // Store in unified comments structure
   state.comments[commentId] = commentData;
   
-  // Apply highlighting to the selected text using the stored range
+  // Apply highlighting to the selected text
   highlightSelectedText(selectedText, commentId, selectionRange);
   
   // Create floating annotation window for the comment
@@ -102,190 +93,15 @@ export function createTextComment(selectedText, commentContent) {
   }
 }
 
-/**
- * Create detailed range information for reliable comment restoration
- */
-function createDetailedRangeInfo(range) {
-  if (!range) return null;
-  
-  try {
-    // Get the target container (code editor or preview content)
-    const templateEditor = elements.templateEditor;
-    const previewContent = elements.previewContent;
-    
-    let containerType = null;
-    let containerElement = null;
-    
-    if (templateEditor && templateEditor.contains(range.commonAncestorContainer)) {
-      containerType = 'template';
-      containerElement = templateEditor;
-    } else if (previewContent && previewContent.contains(range.commonAncestorContainer)) {
-      containerType = 'preview';
-      containerElement = previewContent;
-    }
-    
-    if (!containerElement) {
-      console.warn('Could not determine container for range');
-      return null;
-    }
-    
-    // Create path to start and end containers
-    const startPath = getNodePath(range.startContainer, containerElement);
-    const endPath = getNodePath(range.endContainer, containerElement);
-    
-    // Get text content around the selection for validation
-    const beforeText = getTextBeforeRange(range, 50);
-    const afterText = getTextAfterRange(range, 50);
-    
-    return {
-      containerType: containerType,
-      startPath: startPath,
-      endPath: endPath,
-      startOffset: range.startOffset,
-      endOffset: range.endOffset,
-      selectedText: range.toString(),
-      beforeText: beforeText,
-      afterText: afterText,
-      // For additional validation
-      containerHTML: containerElement.innerHTML.substring(0, 200) + '...'
-    };
-    
-  } catch (error) {
-    console.error('Error creating detailed range info:', error);
-    return null;
-  }
-}
-
-/**
- * Get path to a node within a container for reliable restoration
- */
-function getNodePath(node, container) {
-  const path = [];
-  let currentNode = node;
-  
-  while (currentNode && currentNode !== container) {
-    const parent = currentNode.parentNode;
-    if (!parent) break;
-    
-    const index = Array.from(parent.childNodes).indexOf(currentNode);
-    path.unshift({
-      tagName: currentNode.nodeType === Node.TEXT_NODE ? '#text' : currentNode.tagName,
-      index: index,
-      nodeType: currentNode.nodeType
-    });
-    
-    currentNode = parent;
-  }
-  
-  return path;
-}
-
-/**
- * Get text content before the range for context validation
- */
-function getTextBeforeRange(range, maxLength = 50) {
-  try {
-    const beforeRange = document.createRange();
-    beforeRange.selectNodeContents(range.commonAncestorContainer);
-    beforeRange.setEnd(range.startContainer, range.startOffset);
-    
-    const beforeText = beforeRange.toString();
-    return beforeText.length > maxLength ? 
-      '...' + beforeText.substring(beforeText.length - maxLength) : 
-      beforeText;
-  } catch (error) {
-    return '';
-  }
-}
-
-/**
- * Get text content after the range for context validation
- */
-function getTextAfterRange(range, maxLength = 50) {
-  try {
-    const afterRange = document.createRange();
-    afterRange.selectNodeContents(range.commonAncestorContainer);
-    afterRange.setStart(range.endContainer, range.endOffset);
-    
-    const afterText = afterRange.toString();
-    return afterText.length > maxLength ? 
-      afterText.substring(0, maxLength) + '...' : 
-      afterText;
-  } catch (error) {
-    return '';
-  }
-}
-
 function highlightSelectedText(selectedText, commentId, selectionRange) {
   console.log('Highlighting text - Current mode from state:', state.currentMode);
   
-  // Use the unified highlighting function
+  // Use the simplified highlighting function
   return createTextHighlight({
     selectedText: selectedText,
     commentId: commentId,
     selectionRange: selectionRange
   });
-}
-
-function highlightInPreview(selectedText, commentId, selectionRange) {
-  const previewElement = elements.previewContent;
-  if (!previewElement) {
-    console.warn('Preview element not found for highlighting');
-    return;
-  }
-  
-  // Use the stored selection range if available
-  if (!selectionRange) {
-    console.warn('No selection range provided for highlighting');
-    highlightInPreviewFallback(selectedText, commentId, selectionRange);
-    return;
-  }
-  
-  console.log('Attempting range-based highlighting in preview:', {
-    selectedText,
-    rangeStartContainer: selectionRange.startContainer.nodeName,
-    rangeStartOffset: selectionRange.startOffset,
-    rangeEndContainer: selectionRange.endContainer.nodeName,
-    rangeEndOffset: selectionRange.endOffset,
-    rangeText: selectionRange.toString()
-  });
-  
-  // Check if the selection range is within the preview element
-  if (!previewElement.contains(selectionRange.commonAncestorContainer)) {
-    console.warn('Selection range is not within preview element, falling back');
-    highlightInPreviewFallback(selectedText, commentId, selectionRange);
-    return;
-  }
-  
-  try {
-    // Create a span element for highlighting
-    const highlightSpan = document.createElement('span');
-    highlightSpan.className = 'text-comment-highlight';
-    highlightSpan.setAttribute('data-comment-id', commentId);
-    highlightSpan.setAttribute('title', 'Click to view comment');
-    highlightSpan.setAttribute('data-listener-attached', 'true');
-    
-    // Add click event listener immediately
-    highlightSpan.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      showAnnotationForText(selectedText);
-    });
-    
-    // Surround the selected range with the highlight span
-    selectionRange.surroundContents(highlightSpan);
-    
-    console.log('Successfully highlighted text in preview using stored range selection:', selectedText);
-    
-    // No need to re-attach event listeners since we added it immediately
-    
-  } catch (error) {
-    console.error('❌ Error highlighting text in preview using range:', error);
-    console.log('Falling back to text replacement method');
-    
-    // Fallback to the old method if range highlighting fails
-    highlightInPreviewFallback(selectedText, commentId, selectionRange);
-  }
 }
 
 // Fallback method using text replacement (for cases where range highlighting fails)
@@ -381,64 +197,11 @@ export function refreshHighlightEventListeners(skipAnnotationRefresh = false) {
 }
 
 function highlightIntemplateEditor(selectedText, commentId, selectionRange) {
-  const editor = elements.templateEditor;
-  if (!editor) return;
-  
-  // Use the stored selection range if available
-  if (!selectionRange) {
-    console.warn('No selection range provided for code editor highlighting');
-    highlightIntemplateEditorFallback(selectedText, commentId, selectionRange);
-    return;
-  }
-  
-  console.log('Attempting range-based highlighting in code editor:', {
-    selectedText,
-    rangeStartContainer: selectionRange.startContainer.nodeName,
-    rangeStartOffset: selectionRange.startOffset,
-    rangeEndContainer: selectionRange.endContainer.nodeName,
-    rangeEndOffset: selectionRange.endOffset,
-    rangeText: selectionRange.toString()
-  });
-  
-  // Check if the selection range is within the code editor
-  if (!editor.contains(selectionRange.commonAncestorContainer)) {
-    console.warn('Selection range is not within code editor, falling back');
-    highlightIntemplateEditorFallback(selectedText, commentId, selectionRange);
-    return;
-  }
-  
-  try {
-    // Create a span element for highlighting
-    const highlightSpan = document.createElement('span');
-    highlightSpan.className = 'text-comment-highlight';
-    highlightSpan.setAttribute('data-comment-id', commentId);
-    highlightSpan.setAttribute('title', 'Click to view comment');
-    highlightSpan.setAttribute('data-listener-attached', 'true');
-    
-    // Add click event listener immediately
-    highlightSpan.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      showAnnotationForText(selectedText);
-    });
-    
-    // Surround the selected range with the highlight span
-    selectionRange.surroundContents(highlightSpan);
-    
-    console.log('Successfully highlighted text in code editor using stored range selection:', selectedText);
-    
-    // No need to re-attach event listeners since we added it immediately
-    
-  } catch (error) {
-    console.error('❌ Error highlighting text in code editor using range:', error);
-    console.log('Falling back to text replacement method');
-    
-    // Fallback to the old method if range highlighting fails
-    highlightIntemplateEditorFallback(selectedText, commentId, selectionRange);
-  }
+  // Simplified to use only text matching
+  highlightIntemplateEditorFallback(selectedText, commentId, selectionRange);
 }
 
-// Fallback method using text replacement (for cases where range highlighting fails)
+// Text replacement method for highlighting in template editor
 function highlightIntemplateEditorFallback(selectedText, commentId, selectionRange) {
   const editor = elements.templateEditor;
   let content = editor.innerHTML;
@@ -1055,20 +818,18 @@ export function resetCommentButtonsInitialization() {
 window.closeTextCommentPopup = closeTextCommentPopup;
 
 /**
- * Unified highlighting function that can handle both live selections and restored ranges
- * This replaces the need for separate highlighting logic in document-manager.js
+ * Simplified highlighting function that uses text matching for restoration
  * 
  * @param {Object} options - Configuration object
  * @param {string} options.selectedText - The text to highlight
  * @param {string} options.commentId - The comment ID to associate with the highlight
- * @param {Range} [options.selectionRange] - Live DOM Range (for new comments)
- * @param {Object} [options.detailedRangeInfo] - Saved range info (for restored comments)
+ * @param {Range} [options.selectionRange] - Live DOM Range (for new comments only)
  * @param {string} [options.mode] - Mode override ('template' or 'preview')
  * @param {Element} [options.targetElement] - Target element override
  * @returns {boolean} - Success status
  */
 export function createTextHighlight(options) {
-  const { selectedText, commentId, selectionRange, detailedRangeInfo, mode, targetElement } = options;
+  const { selectedText, commentId, selectionRange, mode, targetElement } = options;
   
   if (!selectedText || !commentId) {
     console.error('createTextHighlight: selectedText and commentId are required');
@@ -1079,7 +840,7 @@ export function createTextHighlight(options) {
   let actualMode = mode || state.currentMode;
   let target = targetElement;
   
-  // Auto-detect mode from selectionRange if available
+  // Auto-detect mode from selectionRange if available (for new comments)
   if (selectionRange && !mode && !targetElement) {
     const templateEditor = elements.templateEditor;
     const previewContent = elements.previewContent;
@@ -1107,276 +868,49 @@ export function createTextHighlight(options) {
     return false;
   }
 
-  // Strategy 1: Use live selection range (for new comments)
-  if (selectionRange) {
-    return createHighlightFromLiveRange(target, selectionRange, selectedText, commentId);
+  // Try live range first for new comments
+  if (selectionRange && target.contains(selectionRange.commonAncestorContainer)) {
+    try {
+      // Create highlight span
+      const highlightSpan = document.createElement('span');
+      highlightSpan.className = 'text-comment-highlight';
+      highlightSpan.setAttribute('data-comment-id', commentId);
+      highlightSpan.setAttribute('title', 'Click to view comment');
+      highlightSpan.setAttribute('data-listener-attached', 'true');
+      
+      // Add click event listener immediately
+      highlightSpan.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        showAnnotationForText(selectedText);
+      });
+      
+      // Surround the selected range with the highlight span
+      selectionRange.surroundContents(highlightSpan);
+      
+      console.log('Successfully highlighted text using live range:', selectedText);
+      return true;
+      
+    } catch (error) {
+      console.error('Error highlighting text using live range, falling back to text matching:', error);
+    }
   }
   
-  // Strategy 2: Restore from saved range info (for document loading)
-  if (detailedRangeInfo) {
-    return createHighlightFromSavedRange(target, detailedRangeInfo, selectedText, commentId);
-  }
-  
-  // Strategy 3: Fallback to text matching
+  // Use text matching for all other cases (including restoration)
   return createHighlightFromTextSearch(target, selectedText, commentId);
 }
 
 /**
- * Create highlight from a live DOM Range
- */
-function createHighlightFromLiveRange(targetElement, selectionRange, selectedText, commentId) {
-  if (!targetElement.contains(selectionRange.commonAncestorContainer)) {
-    console.warn('Selection range is not within target element, falling back to text search');
-    return createHighlightFromTextSearch(targetElement, selectedText, commentId);
-  }
-  
-  try {
-    // Create highlight span
-    const highlightSpan = document.createElement('span');
-    highlightSpan.className = 'text-comment-highlight';
-    highlightSpan.setAttribute('data-comment-id', commentId);
-    highlightSpan.setAttribute('title', 'Click to view comment');
-    highlightSpan.setAttribute('data-listener-attached', 'true');
-    
-    // Add click event listener immediately
-    highlightSpan.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      showAnnotationForText(selectedText);
-    });
-    
-    // Surround the selected range with the highlight span
-    selectionRange.surroundContents(highlightSpan);
-    
-    console.log('Successfully highlighted text using live range:', selectedText);
-    return true;
-    
-  } catch (error) {
-    console.error('Error highlighting text using live range:', error);
-    return createHighlightFromTextSearch(targetElement, selectedText, commentId);
-  }
-}
-
-/**
- * Create highlight from saved range information (for document restoration)
- */
-function createHighlightFromSavedRange(targetElement, rangeInfo, selectedText, commentId) {
-  if (!rangeInfo) {
-    return false;
-  }
-  
-  try {
-    // Validate container type matches
-    const expectedContainer = rangeInfo.containerType;
-    const actualContainer = targetElement.classList.contains('template-editor') ? 'template' : 'preview';
-    
-    if (expectedContainer !== actualContainer) {
-      return false;
-    }
-
-    // Try to reconstruct the range using saved paths
-    const range = reconstructRangeFromSavedInfo(targetElement, rangeInfo);
-    
-    if (!range) {
-      // Fallback to character position restoration
-      return createHighlightFromCharacterPositions(targetElement, rangeInfo, selectedText, commentId);
-    }
-
-    // Validate the range text matches
-    const rangeText = range.toString().trim();
-    const expectedText = rangeInfo.selectedText.trim();
-    
-    if (rangeText !== expectedText) {
-      // Try with some flexibility for whitespace changes
-      const normalizedRange = rangeText.replace(/\s+/g, ' ');
-      const normalizedExpected = expectedText.replace(/\s+/g, ' ');
-      
-      if (normalizedRange !== normalizedExpected) {
-        return createHighlightFromTextSearch(targetElement, selectedText, commentId);
-      }
-    }
-
-    // Create highlight from the reconstructed range
-    return createHighlightFromRange(range, commentId);
-
-  } catch (error) {
-    console.error('Error restoring highlight from saved range:', error);
-    return createHighlightFromTextSearch(targetElement, selectedText, commentId);
-  }
-}
-
-/**
- * Create highlight span from a DOM Range
- */
-function createHighlightFromRange(range, commentId) {
-  try {
-    // Create highlight span
-    const highlightSpan = document.createElement('span');
-    highlightSpan.className = 'text-comment-highlight';
-    highlightSpan.setAttribute('data-comment-id', commentId);
-    highlightSpan.setAttribute('title', 'Click to view comment');
-
-    // Extract and wrap the content
-    const rangeContent = range.extractContents();
-    highlightSpan.appendChild(rangeContent);
-    
-    // Insert the highlight span at the range position
-    range.insertNode(highlightSpan);
-    
-    return true;
-  } catch (error) {
-    console.error('Error creating highlight from range:', error);
-    return false;
-  }
-}
-
-/**
- * Reconstruct a DOM Range from saved path/offset information
- */
-function reconstructRangeFromSavedInfo(targetElement, rangeInfo) {
-  try {
-    const startNode = findNodeByPath(targetElement, rangeInfo.startPath);
-    const endNode = findNodeByPath(targetElement, rangeInfo.endPath);
-
-    if (!startNode || !endNode) {
-      return null;
-    }
-
-    // Validate range offsets are still valid
-    const startNodeLength = startNode.textContent?.length || 0;
-    const endNodeLength = endNode.textContent?.length || 0;
-    
-    if (rangeInfo.startOffset > startNodeLength || rangeInfo.endOffset > endNodeLength) {
-      return null;
-    }
-
-    // Create the range
-    const range = document.createRange();
-    range.setStart(startNode, rangeInfo.startOffset);
-    range.setEnd(endNode, rangeInfo.endOffset);
-
-    return range;
-  } catch (error) {
-    console.error('Error reconstructing range:', error);
-    return null;
-  }
-}
-
-/**
- * Find a node using saved path information
- */
-function findNodeByPath(container, path) {
-  try {
-    let currentNode = container;
-    
-    for (let i = 0; i < path.length; i++) {
-      const step = path[i];
-      
-      if (!currentNode.childNodes || step.index >= currentNode.childNodes.length) {
-        return null;
-      }
-      
-      currentNode = currentNode.childNodes[step.index];
-      
-      // Validate node type matches
-      if (currentNode.nodeType !== step.nodeType) {
-        // Try to find a nearby node with the correct type
-        const siblingIndex = findNearbyNodeWithType(currentNode.parentNode, step.index, step.nodeType);
-        if (siblingIndex !== -1) {
-          currentNode = currentNode.parentNode.childNodes[siblingIndex];
-        } else {
-          return null;
-        }
-      }
-    }
-    
-    return currentNode;
-  } catch (error) {
-    return null;
-  }
-}
-
-/**
- * Find a nearby node with the specified type
- */
-function findNearbyNodeWithType(parent, startIndex, nodeType) {
-  // Check a few nodes before and after the original index
-  for (let offset = 0; offset <= 2; offset++) {
-    // Check after
-    const afterIndex = startIndex + offset;
-    if (afterIndex < parent.childNodes.length && parent.childNodes[afterIndex].nodeType === nodeType) {
-      return afterIndex;
-    }
-    
-    // Check before (skip offset 0 since we already checked that)
-    if (offset > 0) {
-      const beforeIndex = startIndex - offset;
-      if (beforeIndex >= 0 && parent.childNodes[beforeIndex].nodeType === nodeType) {
-        return beforeIndex;
-      }
-    }
-  }
-  
-  return -1;
-}
-
-/**
- * Create highlight using character positions (fallback method)
- */
-function createHighlightFromCharacterPositions(targetElement, rangeInfo, selectedText, commentId) {
-  try {
-    const fullText = targetElement.textContent || '';
-    const startOffset = rangeInfo.startOffset;
-    const endOffset = rangeInfo.endOffset;
-    
-    // Validate positions are within bounds
-    if (startOffset >= fullText.length || endOffset > fullText.length || startOffset >= endOffset) {
-      return false;
-    }
-    
-    // Create a simple text range using the first text node
-    const firstTextNode = findFirstTextNode(targetElement);
-    if (!firstTextNode) {
-      return false;
-    }
-    
-    // For simple cases where there's only one text node, positions map directly
-    if (firstTextNode.textContent.length === fullText.length) {
-      const range = document.createRange();
-      range.setStart(firstTextNode, startOffset);
-      range.setEnd(firstTextNode, endOffset);
-      
-      return createHighlightFromRange(range, commentId);
-    }
-    
-    return false;
-  } catch (error) {
-    return false;
-  }
-}
-
-/**
- * Find the first text node in an element
- */
-function findFirstTextNode(element) {
-  const walker = document.createTreeWalker(
-    element,
-    NodeFilter.SHOW_TEXT,
-    null,
-    false
-  );
-  return walker.nextNode();
-}
-
-/**
- * Fallback: Create highlight using text search and replacement
+ * Create highlight using text search and replacement
  */
 function createHighlightFromTextSearch(targetElement, selectedText, commentId) {
   const istemplateEditor = targetElement.classList.contains('template-editor');
   
   if (istemplateEditor) {
-    return highlightIntemplateEditorFallback(selectedText, commentId, null);
+    highlightIntemplateEditorFallback(selectedText, commentId, null);
+    return true;
   } else {
-    return highlightInPreviewFallback(selectedText, commentId, null);
+    highlightInPreviewFallback(selectedText, commentId, null);
+    return true;
   }
 } 

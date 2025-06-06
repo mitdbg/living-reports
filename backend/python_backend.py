@@ -576,7 +576,8 @@ def save_document():
         # Extract document data
         document_id = data.get('documentId')
         title = data.get('title', 'Untitled Document')
-        code_content = data.get('code_content', '')
+        template_content = data.get('template_content', '')
+        source_content = data.get('source_content', '')
         preview_content = data.get('preview_content', '')
         session_id = data.get('sessionId')
         created_at = data.get('createdAt')
@@ -598,7 +599,8 @@ def save_document():
         document = {
             'id': document_id,
             'title': title,
-            'code_content': code_content,
+            'source_content': source_content,
+            'template_content': template_content,
             'preview_content': preview_content,
             'sessionId': session_id,
             'createdAt': created_at,

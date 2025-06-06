@@ -11,6 +11,7 @@ import { hideAllAnnotations, clearAnnotationsForDocument, updateAnnotationsVisib
 import { clearAllComments } from './comments.js';
 import { addMessageToUI } from './chat.js';
 import { getCurrentUser } from './auth.js';
+import { getTextContentWithLineBreaks } from './utils.js';
 
 // Export the class instead of singleton instance
 export class DocumentManager {
@@ -214,7 +215,8 @@ export class DocumentManager {
       id: documentId,
       sessionId: sessionId,
       title: documentTitle,
-      code_content: '',  // Content in code mode
+      source_content: '',  // Content in code mode
+      template_content: '',  // Content in template mode
       preview_content: '', // Content in preview mode
       createdAt: new Date().toISOString(),
       lastModified: new Date().toISOString(),
@@ -697,7 +699,7 @@ export class DocumentManager {
     if (sharedWithMe.length > 0) {
       documentsHTML += '<div class="document-list">';
       documentsHTML += sharedWithMe.map(doc => {
-        const preview = doc.code_content ? doc.code_content.substring(0, 100) : 'Empty document';
+        const preview = doc.template_content ? doc.template_content.substring(0, 100) : 'Empty document';
         const lastModified = new Date(doc.lastModified).toLocaleDateString();
         
         return `
@@ -708,7 +710,7 @@ export class DocumentManager {
               ${doc.editors.includes(currentUser?.id) ? ' • <span class="editor-badge">Can Edit</span>' : ''}
               ${doc.viewers.includes(currentUser?.id) && !doc.editors.includes(currentUser?.id) ? ' • <span class="viewer-badge">View Only</span>' : ''}
             </div>
-            <div class="document-preview">${preview}${(doc.code_content || '').length > 100 ? '...' : ''}</div>
+            <div class="document-preview">${preview}${(doc.template_content || '').length > 100 ? '...' : ''}</div>
             <div class="document-actions">
               <button class="document-action-btn open" data-action="open" data-document-id="${doc.id}">
                 Open
@@ -731,7 +733,7 @@ export class DocumentManager {
     if (myDocuments.length > 0) {
       documentsHTML += '<div class="document-list">';
       documentsHTML += myDocuments.map(doc => {
-        const preview = doc.code_content ? doc.code_content.substring(0, 100) : 'Empty document';
+        const preview = doc.template_content ? doc.template_content.substring(0, 100) : 'Empty document';
         const lastModified = new Date(doc.lastModified).toLocaleDateString();
         
         return `
@@ -743,7 +745,7 @@ export class DocumentManager {
               ${doc.editors.length > 0 ? ` • <span class="editors-count">${doc.editors.length} editor${doc.editors.length !== 1 ? 's' : ''}</span>` : ''}
               ${doc.viewers.length > 0 ? ` • <span class="viewers-count">${doc.viewers.length} viewer${doc.viewers.length !== 1 ? 's' : ''}</span>` : ''}
             </div>
-            <div class="document-preview">${preview}${(doc.code_content || '').length > 100 ? '...' : ''}</div>
+            <div class="document-preview">${preview}${(doc.template_content || '').length > 100 ? '...' : ''}</div>
             <div class="document-actions">
               <button class="document-action-btn open" data-action="open" data-document-id="${doc.id}">
                 Open
@@ -842,7 +844,8 @@ export class DocumentManager {
         body: JSON.stringify({
           documentId: doc.id,
           title: doc.title,
-          code_content: doc.code_content,
+          source_content: doc.source_content,
+          template_content: doc.template_content,
           preview_content: doc.preview_content,
           sessionId: doc.sessionId,
           createdAt: doc.createdAt,
@@ -1051,16 +1054,27 @@ export class DocumentManager {
           if (container) {
             const templateEditor = container.querySelector('.template-editor');
             const previewContent = container.querySelector('.preview-content');
+            const sourceContent = container.querySelector('.source-editor');
             
             // SMART CONTENT UPDATE: Only replace content if it actually changed
             // and restore highlights afterward
+
+            if (sourceContent && freshDoc.source_content !== undefined) {
+              const currentSourceContent = getTextContentWithLineBreaks(sourceContent);
+              if (currentSourceContent !== freshDoc.source_content) {
+                console.log('Source content changed, updating...');
+                sourceContent.textContent = freshDoc.source_content;
+              }
+
+              await this.restoreHighlightsForMode('source');
+            }
             
-            // Handle code content
-            if (templateEditor && freshDoc.code_content !== undefined) {
-              const currentCodeContent = templateEditor.textContent || '';
-              if (currentCodeContent !== freshDoc.code_content) {
-                console.log('Code content changed, updating...');
-                templateEditor.textContent = freshDoc.code_content;
+            // Handle template content
+            if (templateEditor && freshDoc.template_content !== undefined) {
+              const currentCodeContent = getTextContentWithLineBreaks(templateEditor);
+              if (currentCodeContent !== freshDoc.template_content) {
+                console.log('Template content changed, updating...');
+                templateEditor.textContent = freshDoc.template_content;
                 
                 // Restore highlights for code mode after content replacement
                 await this.restoreHighlightsForMode('template');
@@ -1069,7 +1083,7 @@ export class DocumentManager {
             
             // Handle preview content
             if (previewContent && freshDoc.preview_content !== undefined) {
-              const currentPreviewContent = previewContent.innerHTML || '';
+              const currentPreviewContent = previewContent.innerHTML;
               if (currentPreviewContent !== freshDoc.preview_content) {
                 console.log('Preview content changed, updating...');
                 previewContent.innerHTML = freshDoc.preview_content;
@@ -1257,10 +1271,12 @@ export class DocumentManager {
     // Get content from both code editor and preview
     const templateEditor = container.querySelector('.template-editor');
     const previewContent = container.querySelector('.preview-content');
+    const sourceContent = container.querySelector('.source-editor');
 
-    const currentCodeContent = templateEditor ? templateEditor.textContent : '';
+    const currentTemplateContent = templateEditor ? getTextContentWithLineBreaks(templateEditor) : '';
     const currentPreviewContent = previewContent ? previewContent.innerHTML : '';
-
+    const currentSourceContent = sourceContent ? getTextContentWithLineBreaks(sourceContent) : '';
+    
     try {
       // Get current comment state from the global state (use static import)
       const { state } = await import('./state.js');
@@ -1269,13 +1285,15 @@ export class DocumentManager {
       const currentComments = this.captureCommentsWithUIState(state.comments || {});
 
       // Check if either content or comments have changed
-      const codeChanged = currentCodeContent !== (doc.code_content || '');
+      const templateChanged = currentTemplateContent !== (doc.template_content || '');
+      const sourceChanged = currentSourceContent !== (doc.source_content || '');
       const previewChanged = currentPreviewContent !== (doc.preview_content || '');
       const commentsChanged = JSON.stringify(currentComments) !== JSON.stringify(doc.comments || {});
 
-      if (codeChanged || previewChanged || commentsChanged) {
+      if (templateChanged || sourceChanged || previewChanged || commentsChanged) {
         // Update content fields
-        doc.code_content = currentCodeContent;
+        doc.template_content = currentTemplateContent;
+        doc.source_content = currentSourceContent;
         doc.preview_content = currentPreviewContent;
 
         // Update comment fields with UI state preservation
@@ -1384,11 +1402,19 @@ export class DocumentManager {
 
     const templateEditor = container.querySelector('.template-editor');
     const previewContent = container.querySelector('.preview-content');
+    const sourceContent = container.querySelector('.source-editor');
 
     this.hasUnsavedChanges = false;
 
     // Remove existing listeners if any
     this.removeContentChangeTracking();
+
+    if (sourceContent) {
+      this.sourceContentChangeHandler = () => {
+        this.onContentChange();
+      };
+      sourceContent.addEventListener('input', this.sourceContentChangeHandler);
+    }
 
     // Set up code editor tracking
     if (templateEditor) {
@@ -1617,10 +1643,16 @@ export class DocumentManager {
 
       const templateEditor = container.querySelector('.template-editor');
       const previewContent = container.querySelector('.preview-content');
+      const sourceEditor = container.querySelector('.source-editor');
       
       if (!templateEditor) {
         await this.delay(200);
         continue;
+      }
+
+      if (sourceEditor && freshDoc.source_content !== undefined) {
+        sourceEditor.innerHTML = '';
+        sourceEditor.textContent = freshDoc.source_content;
       }
 
       // Load preview content first (less critical)
@@ -1629,18 +1661,18 @@ export class DocumentManager {
       }
 
       // Now handle code content and comments together
-      if (freshDoc.code_content !== undefined) {
+      if (freshDoc.template_content !== undefined) {
         // Clear any existing content first
         templateEditor.innerHTML = '';
         
         // Set the content
-        templateEditor.textContent = freshDoc.code_content;
+        templateEditor.textContent = freshDoc.template_content;
         
         // Wait for DOM to update
         await this.delay(100);
         
         // Verify content was actually loaded and is still there
-        const verification = this.verifyContentStillThere(templateEditor, freshDoc.code_content);
+        const verification = this.verifyContentStillThere(templateEditor, freshDoc.template_content);
         if (!verification.success) {
           if (attempt < maxRetries) {
             await this.delay(300 * attempt);

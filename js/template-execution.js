@@ -4,6 +4,7 @@ import { switchToPreview, switchToTemplate, switchToDiff, canUserSwitchModes } f
 import { addMessageToUI } from './chat.js';
 import { refreshHighlightEventListeners } from './comments.js';
 import { getCurrentUser } from './auth.js';
+import { getTextContentWithLineBreaks } from './utils.js';
 
 // Store current diff data for immediate application
 let currentDiffData = null;
@@ -22,15 +23,12 @@ const templateExecData = window[TEMPLATE_EXEC_KEY];
 
 // Basic template execution
 export function executeTemplate(clearCache = false, isLiveUpdate = false) {
-  // Check if user can execute templates
-  const currentUser = getCurrentUser();
-  if (currentUser && currentUser.role === 'Report Consumer') {
-    console.log(`[${windowId}] User ${currentUser.name} (${currentUser.role}) cannot execute templates`);
-    setExecutionStatus('Access denied: Consumers cannot execute templates', 'error');
+  if (!elements.templateEditor) {
+    setExecutionStatus('Template editor not found', 'error');
     return;
   }
   
-  const templateText = elements.templateEditor.textContent;
+  const templateText = getTextContentWithLineBreaks(elements.templateEditor);
   if (!templateText.trim()) {
     setExecutionStatus('Please enter a template first', 'error');
     return;
@@ -128,7 +126,7 @@ export async function sendToBackend(message, suggestTemplate = false) {
       body: JSON.stringify({ 
         message,
         session_id: state.sessionId,
-        current_template: elements.templateEditor.textContent,
+        current_template: getTextContentWithLineBreaks(elements.templateEditor),
         current_output: state.currentOutput,
         suggest_template: suggestTemplate
       })
