@@ -1093,7 +1093,7 @@ export class DocumentManager {
                 // Debug: Check what's actually in the DOM after setting innerHTML
                 setTimeout(() => {
                   console.log('DOM content after innerHTML set:', previewContent.innerHTML);
-                  console.log('Found highlight spans:', previewContent.querySelectorAll('.text-comment-highlight').length);
+                  console.log('Found highlight divs:', previewContent.querySelectorAll('.text-comment-highlight').length);
                 }, 100);
                 
                 // Restore highlights for preview mode after content replacement

@@ -298,7 +298,8 @@ export function deleteFloatingAnnotation(annotationId) {
     // Remove text highlighting for this comment
     const highlights = document.querySelectorAll(`.text-comment-highlight[data-comment-id="${annotationId}"]`);
     highlights.forEach(highlight => {
-      highlight.replaceWith(document.createTextNode(highlight.textContent));
+      // Use the simple algorithm that preserves HTML structure
+      highlight.outerHTML = highlight.innerHTML;
     });
   }
   

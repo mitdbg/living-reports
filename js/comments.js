@@ -31,6 +31,14 @@ if (!window[COMMENTS_KEY]) {
 
 const commentsData = window[COMMENTS_KEY];
 
+/**
+ * Simple helper function to remove highlight wrapper while preserving content
+ */
+function removeHighlightWrapper(highlight) {
+  // Simply replace the wrapper with its content
+  highlight.outerHTML = highlight.innerHTML;
+}
+
 // Text comment management functions
 export function createTextComment(selectedText, commentContent) {
   const commentId = `text-comment-${incrementCommentCounter()}`;
@@ -118,7 +126,7 @@ function highlightInPreviewFallback(selectedText, commentId, selectionRange) {
     console.log('Preview mode: Using direct HTML replacement for:', selectedText.substring(0, 100));
     
     if (content.includes(selectedText)) {
-      const replacement = `<span data-comment-id="${commentId}" title="Click to view comment" class="text-comment-highlight">${selectedText}</span>`;
+      const replacement = `<div data-comment-id="${commentId}" title="Click to view comment" class="text-comment-highlight">${selectedText}</div>`;
       content = content.replace(selectedText, replacement);
       console.log('Direct HTML replacement successful');
     } else {
@@ -131,7 +139,7 @@ function highlightInPreviewFallback(selectedText, commentId, selectionRange) {
     const escapedText = escapeHtml(selectedText);
     
     if (content.includes(escapedText)) {
-      const replacement = `<span data-comment-id="${commentId}" title="Click to view comment" class="text-comment-highlight">${escapedText}</span>`;
+      const replacement = `<div data-comment-id="${commentId}" title="Click to view comment" class="text-comment-highlight">${escapedText}</div>`;
       content = content.replace(escapedText, replacement);
       console.log('Escaped text replacement successful');
     } else {
@@ -306,7 +314,9 @@ export function clearAllComments() {
     console.log(`Removing highlight ${index + 1}:`, highlight.textContent.substring(0, 30));
     const commentId = highlight.getAttribute('data-comment-id');
     console.log(`Highlight has comment-id: ${commentId}`);
-    highlight.replaceWith(document.createTextNode(highlight.textContent));
+    
+    // Remove highlight wrapper while preserving content
+    removeHighlightWrapper(highlight);
   });
   
   // Double-check: remove any elements with the highlight class that might remain
@@ -314,7 +324,8 @@ export function clearAllComments() {
   if (remainingHighlights.length > 0) {
     console.log(`Found ${remainingHighlights.length} remaining highlights after first pass, removing them`);
     remainingHighlights.forEach(highlight => {
-      highlight.replaceWith(document.createTextNode(highlight.textContent));
+      // Remove highlight wrapper while preserving content
+      removeHighlightWrapper(highlight);
     });
   }
   
@@ -363,27 +374,10 @@ export function clearCurrentModeComments() {
     
     highlights.forEach((highlight, index) => {
       console.log(`Removing highlight ${index + 1}:`, highlight.textContent.substring(0, 30));
-      highlight.replaceWith(document.createTextNode(highlight.textContent));
+      
+      // Remove highlight wrapper while preserving content
+      removeHighlightWrapper(highlight);
     });
-    
-    // If no highlights found by ID, try to find by text content as fallback
-    if (highlights.length === 0) {
-      console.log(`No highlights found by ID, trying text content fallback for: ${comment.selectedText.substring(0, 30)}`);
-      const allHighlights = document.querySelectorAll('.text-comment-highlight');
-      let found = false;
-      
-      allHighlights.forEach(highlight => {
-        if (highlight.textContent === comment.selectedText) {
-          console.log(`Found highlight by text content, removing:`, highlight.textContent.substring(0, 30));
-          highlight.replaceWith(document.createTextNode(highlight.textContent));
-          found = true;
-        }
-      });
-      
-      if (!found) {
-        console.warn(`Could not find any highlights for comment: ${comment.selectedText.substring(0, 30)}`);
-      }
-    }
     
     // Remove floating annotation if it exists
     if (comment.ui && comment.ui.element) {
@@ -979,22 +973,22 @@ export function createTextHighlight(options) {
   // Try live range first for new comments
   if (selectionRange && target.contains(selectionRange.commonAncestorContainer)) {
     try {
-      // Create highlight span
-      const highlightSpan = document.createElement('span');
-      highlightSpan.className = 'text-comment-highlight';
-      highlightSpan.setAttribute('data-comment-id', commentId);
-      highlightSpan.setAttribute('title', 'Click to view comment');
-      highlightSpan.setAttribute('data-listener-attached', 'true');
+      // Create highlight div
+      const highlightDiv = document.createElement('div');
+      highlightDiv.className = 'text-comment-highlight';
+      highlightDiv.setAttribute('data-comment-id', commentId);
+      highlightDiv.setAttribute('title', 'Click to view comment');
+      highlightDiv.setAttribute('data-listener-attached', 'true');
       
       // Add click event listener immediately
-      highlightSpan.addEventListener('click', (e) => {
+      highlightDiv.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
         showAnnotationForText(selectedText);
       });
       
-      // Surround the selected range with the highlight span
-      selectionRange.surroundContents(highlightSpan);
+      // Surround the selected range with the highlight div
+      selectionRange.surroundContents(highlightDiv);
       
       console.log('Successfully highlighted text using live range:', selectedText);
       return true;
@@ -1031,8 +1025,8 @@ function createHighlightFromTextSearch(targetElement, selectedText, commentId) {
 function highlightInEditorFallback(editor, selectedText, commentId, selectionRange) {
   let content = editor.innerHTML;
   
-  // Create a span with yellow background for the selected text
-  const replacement = `<span class="text-comment-highlight" data-comment-id="${commentId}" title="Click to view comment">${selectedText}</span>`;
+  // Create a div with yellow background for the selected text
+  const replacement = `<div class="text-comment-highlight" data-comment-id="${commentId}" title="Click to view comment">${selectedText}</div>`;
   
   // For multi-line text, we need to handle HTML representation of line breaks
   // Convert the selected text to match how it might appear in HTML
@@ -1059,8 +1053,8 @@ function highlightInEditorFallback(editor, selectedText, commentId, selectionRan
       console.log('- match result:', match ? match[0].substring(0, 100) + '...' : 'null');
       
       if (match) {
-        // Simple approach: wrap entire match in a highlight span
-        const replacement = `<span class="text-comment-highlight" data-comment-id="${commentId}" title="Click to view comment">${match[0]}</span>`;
+        // Simple approach: wrap entire match in a highlight div
+        const replacement = `<div class="text-comment-highlight" data-comment-id="${commentId}" title="Click to view comment">${match[0]}</div>`;
         content = content.replace(regex, replacement);
         console.log('Simple multi-line replacement successful');
       } else {
@@ -1093,7 +1087,7 @@ function highlightInEditorFallback(editor, selectedText, commentId, selectionRan
         console.log('- match result:', match ? match[0].substring(0, 100) + '...' : 'null');
         
         if (match) {
-          content = content.replace(regex, `<span class="text-comment-highlight" data-comment-id="${commentId}" title="Click to view comment">${match[0]}</span>`);
+          content = content.replace(regex, `<div class="text-comment-highlight" data-comment-id="${commentId}" title="Click to view comment">${match[0]}</div>`);
           console.log('Multi-line replacement successful');
         } else {
           console.warn('Multi-line pattern not found');
@@ -1103,7 +1097,7 @@ function highlightInEditorFallback(editor, selectedText, commentId, selectionRan
         // Single line
         const escaped = escapeHtml(selectedText.trim());
         if (content.includes(escaped)) {
-          content = content.replace(escaped, `<span class="text-comment-highlight" data-comment-id="${commentId}" title="Click to view comment">${escaped}</span>`);
+          content = content.replace(escaped, `<div class="text-comment-highlight" data-comment-id="${commentId}" title="Click to view comment">${escaped}</div>`);
           console.log('Single line replacement successful');
         } else {
           console.warn('Single line text not found');
