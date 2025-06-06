@@ -339,9 +339,14 @@ export class DocumentManager {
     // Import elements state synchronously and update it
     import('./state.js').then(({ elements }) => {
       // Update global elements to point to this document's elements
-      elements.toggleModeBtn = container.querySelector('.toggle-mode');
-      elements.executeBtn = container.querySelector('.execute-btn');
+      elements.sourceModeBtn = container.querySelector('.source-mode-btn');
+      elements.templateModeBtn = container.querySelector('.template-mode-btn');
+      elements.previewModeBtn = container.querySelector('.preview-mode-btn');
+      elements.executeSourceBtn = container.querySelector('.execute-source-btn');
+      elements.executeTemplateBtn = container.querySelector('.execute-template-btn');
       elements.executionStatus = container.querySelector('.execution-status');
+      elements.sourceExecutionStatus = container.querySelector('.source-execution-status');
+      elements.templateExecutionStatus = container.querySelector('.template-execution-status');
       elements.sendButton = container.querySelector('.send-button');
       elements.clearChatBtn = container.querySelector('.clear-chat-btn');
       elements.messageInput = container.querySelector('.message-input');
@@ -358,7 +363,8 @@ export class DocumentManager {
       elements.addCommentBtn = container.querySelector('.add-comment');
       elements.cancelCommentBtn = container.querySelector('.cancel-comment');
       elements.previewPanel = container.querySelector('.preview-panel');
-      elements.codePanel = container.querySelector('.code-panel');
+      elements.sourcePanel = container.querySelector('.source-panel');
+      elements.templatePanel = container.querySelector('.template-panel');
       elements.diffView = container.querySelector('.diff-view');
       elements.variablesDisplay = container.querySelector('.variables-display');
       elements.variablesList = container.querySelector('.variables-list');
@@ -372,47 +378,41 @@ export class DocumentManager {
       elements.contentTitle = container.querySelector('#content-title') || container.querySelector('.content-title');
       
       // Determine if we need to initialize modules
-      // We should initialize if:
-      // 1. This is a document switch (there was a previous active document)
-      // 2. OR this is reopening a document (after it was closed)
+      // We should always initialize modules when switching to a document
+      // to ensure elements are properly connected to the current document's DOM
       const wasPreviouslyActive = this.activeDocumentId !== null;
       const isReopeningDocument = this.activeDocumentId === null && this.documentCounter > 0;
       
       // Track the active document
       this.activeDocumentId = documentId;
       
-      // Initialize modules if switching between documents OR reopening a closed document
-      // Skip initialization only for the very first document (when app.js already initialized)
-      const shouldInitialize = wasPreviouslyActive || isReopeningDocument;
+      // Always initialize modules to ensure proper element binding
+      console.log(`🔄 Initializing modules for document: ${doc.title} (switch: ${wasPreviouslyActive}, reopen: ${isReopeningDocument})`);
       
-      if (shouldInitialize) {
-        console.log(`🔄 Initializing modules for document: ${doc.title} (switch: ${wasPreviouslyActive}, reopen: ${isReopeningDocument})`);
+      try {
+        // Reset initialization flags first to allow clean reinitialization
+        resetModesInitialization();
+        resetTemplateExecutionInitialization();
+        resetSourceExecutionInitialization();
+        resetTextSelectionInitialization();
+        resetCommentButtonsInitialization();
+        resetChatInitialization();
+        resetFileOperationsInitialization();
+        resetSharingInitialization();
         
-        try {
-          // Reset initialization flags first to allow clean reinitialization
-          resetModesInitialization();
-          resetTemplateExecutionInitialization();
-          resetSourceExecutionInitialization();
-          resetTextSelectionInitialization();
-          resetCommentButtonsInitialization();
-          resetChatInitialization();
-          resetFileOperationsInitialization();
-          resetSharingInitialization();
-          
-          // Now initialize all modules
-          initModes();
-          initTemplateExecution();
-          initSourceExecution();
-          initChat();
-          initTextSelection();
-          initCommentButtons();
-          initAskLLMButton();
-          initFileOperations();
-          initSharing();
-          
-        } catch (error) {
-          console.error(`Error initializing document functionality:`, error);
-        }
+        // Now initialize all modules
+        initModes();
+        initTemplateExecution();
+        initSourceExecution();
+        initChat();
+        initTextSelection();
+        initCommentButtons();
+        initAskLLMButton();
+        initFileOperations();
+        initSharing();
+        
+      } catch (error) {
+        console.error(`Error initializing document functionality:`, error);
       }
       
       // Ensure the document is visible and in source mode by default
