@@ -587,7 +587,7 @@ export class DocumentManager {
       });
       
       // Remove all comment highlights from DOM
-      const highlights = document.querySelectorAll('.text-comment-highlight');
+      const highlights = document.querySelectorAll('span[data-comment-id]');
       console.log(`Removing ${highlights.length} text highlights`);
       highlights.forEach(highlight => {
         highlight.replaceWith(document.createTextNode(highlight.textContent));
@@ -1087,7 +1087,14 @@ export class DocumentManager {
               const currentPreviewContent = previewContent.innerHTML;
               if (currentPreviewContent !== freshDoc.preview_content) {
                 console.log('Preview content changed, updating...');
+                console.log('NEW preview content from backend:', freshDoc.preview_content);
                 previewContent.innerHTML = freshDoc.preview_content;
+                
+                // Debug: Check what's actually in the DOM after setting innerHTML
+                setTimeout(() => {
+                  console.log('DOM content after innerHTML set:', previewContent.innerHTML);
+                  console.log('Found highlight spans:', previewContent.querySelectorAll('span[data-comment-id]').length);
+                }, 100);
                 
                 // Restore highlights for preview mode after content replacement
                 await this.restoreHighlightsForMode('preview');
@@ -1684,6 +1691,10 @@ export class DocumentManager {
         }
 
         // NOW immediately restore comments while content is confirmed to be there
+        console.log('=== RESTORING COMMENTS ===');
+        console.log('Template editor content length:', templateEditor.textContent?.length || 0);
+        console.log('Preview content length:', previewContent?.innerHTML?.length || 0);
+        console.log('Preview content contains highlights:', previewContent?.innerHTML?.includes('data-comment-id') || false);
         await this.restoreDocumentComments(documentId, freshDoc);
         
         return; // Success, exit retry loop
@@ -1802,11 +1813,26 @@ export class DocumentManager {
         annotation.remove();
       });
       
-      // Remove all existing highlights
-      const existingHighlights = document.querySelectorAll('.text-comment-highlight');
-      existingHighlights.forEach(highlight => {
-        highlight.replaceWith(document.createTextNode(highlight.textContent));
-      });
+      // For preview mode, don't remove highlights that are already correctly loaded from backend
+      // Only remove highlights from template/source editors since those need to be recreated
+      const tempEditor = container.querySelector('.template-editor');
+      const srcEditor = container.querySelector('.source-editor');
+      
+      if (tempEditor) {
+        const templateHighlights = tempEditor.querySelectorAll('span[data-comment-id]');
+        templateHighlights.forEach(highlight => {
+          highlight.replaceWith(document.createTextNode(highlight.textContent));
+        });
+      }
+      
+      if (srcEditor) {
+        const sourceHighlights = srcEditor.querySelectorAll('span[data-comment-id]');
+        sourceHighlights.forEach(highlight => {
+          highlight.replaceWith(document.createTextNode(highlight.textContent));
+        });
+      }
+      
+      // DON'T remove preview highlights - they're already correct from backend HTML!
 
       // NOW restore comments to global state
       if (documentData.comments) {
@@ -1925,8 +1951,44 @@ export class DocumentManager {
         } else {
           // Handle regular comments
           
-          // ALWAYS recreate text highlighting
-          const highlightCreated = await this.recreateTextHighlight(savedComment);
+          let highlightCreated = true; // Assume success by default
+          
+          // For preview mode, check if highlights already exist, otherwise recreate them
+          if (savedComment.mode === 'preview') {
+            const container = document.getElementById(`document-${this.activeDocumentId}`);
+            const targetElement = container?.querySelector('.preview-content');
+            const existingHighlight = targetElement?.querySelector(`[data-comment-id="${savedComment.id}"]`);
+            
+            // Debug logging
+            console.log(`Preview mode debug for comment ${savedComment.id}:`);
+            console.log('- targetElement exists:', !!targetElement);
+            console.log('- targetElement innerHTML length:', targetElement?.innerHTML?.length || 0);
+            console.log('- targetElement innerHTML preview:', targetElement?.innerHTML?.substring(0, 200) || 'none');
+            console.log('- looking for data-comment-id:', savedComment.id);
+            console.log('- existingHighlight found:', !!existingHighlight);
+            
+            if (existingHighlight) {
+              console.log(`Preview mode: highlight already exists for comment ${savedComment.id}, just adding event listeners`);
+              
+              // Just ensure event listeners are attached to existing highlights
+              if (!existingHighlight.hasAttribute('data-listener-attached')) {
+                const { showAnnotationForText } = await import('./annotations.js');
+                existingHighlight.addEventListener('click', (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  showAnnotationForText(savedComment.selectedText);
+                });
+                existingHighlight.setAttribute('data-listener-attached', 'true');
+              }
+            } else {
+              console.log(`Preview mode: highlight missing for comment ${savedComment.id}, recreating it`);
+              // Highlight doesn't exist, recreate it
+              highlightCreated = await this.recreateTextHighlight(savedComment);
+            }
+          } else {
+            // For template/source mode, recreate text highlighting
+            highlightCreated = await this.recreateTextHighlight(savedComment);
+          }
           
           // Check if annotation already exists
           const existingAnnotation = document.getElementById(commentId);
@@ -1996,6 +2058,26 @@ export class DocumentManager {
       let targetElement;
       if (savedComment.mode === 'preview') {
         targetElement = container.querySelector('.preview-content');
+        
+        // For preview mode, check if highlights already exist in HTML
+        if (targetElement && targetElement.innerHTML.includes(`data-comment-id="${savedComment.id}"`)) {
+          console.log(`Preview mode: highlight already exists for comment ${savedComment.id}, just adding event listeners`);
+          
+          // Just ensure event listeners are attached
+          const existingHighlight = targetElement.querySelector(`[data-comment-id="${savedComment.id}"]`);
+          if (existingHighlight && !existingHighlight.hasAttribute('data-listener-attached')) {
+            const { showAnnotationForText } = await import('./annotations.js');
+            existingHighlight.addEventListener('click', (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              showAnnotationForText(savedComment.selectedText);
+            });
+            existingHighlight.setAttribute('data-listener-attached', 'true');
+          }
+          
+          return true; // Highlight exists, no need to recreate
+        }
+        
       } else if (savedComment.mode === 'template') {
         targetElement = container.querySelector('.template-editor');
       } else if (savedComment.mode === 'source') {
@@ -2162,7 +2244,7 @@ export class DocumentManager {
           console.log(`Comment ${commentId} was deleted by another user, removing locally`);
           
           // Remove highlight for this comment
-          const highlights = document.querySelectorAll(`.text-comment-highlight[data-comment-id="${commentId}"]`);
+          const highlights = document.querySelectorAll(`span[data-comment-id="${commentId}"]`);
           highlights.forEach(highlight => {
             highlight.replaceWith(document.createTextNode(highlight.textContent));
           });

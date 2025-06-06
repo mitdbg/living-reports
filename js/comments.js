@@ -112,49 +112,37 @@ function highlightSelectedText(selectedText, commentId, selectionRange) {
 function highlightInPreviewFallback(selectedText, commentId, selectionRange) {
   const previewElement = elements.previewContent;
   let content = previewElement.innerHTML;
-  
-  // Create a span with yellow background for the selected text
-  const highlightSpan = `<span class="text-comment-highlight" data-comment-id="${commentId}" title="Click to view comment">${escapeHtml(selectedText)}</span>`;
-  
-  // For multi-line text, we need to handle HTML representation of line breaks
-  // Convert the selected text to match how it might appear in HTML
-  const normalizedSelectedText = selectedText.replace(/\n/g, '<br>');
-  const escapedNormalizedText = escapeHtml(selectedText).replace(/\n/g, '<br>');
-  
-  // Try multiple approaches to find and replace the text
-  const escapedText = escapeHtml(selectedText);
-  
-  // First try: exact match with escaped HTML and normalized line breaks
-  if (content.includes(escapedNormalizedText)) {
-    content = content.replace(escapedNormalizedText, highlightSpan);
-    console.log('Highlighted text in preview using normalized HTML match:', selectedText.substring(0, 30));
-  } else if (content.includes(escapedText)) {
-    // Second try: exact match with escaped HTML
-    content = content.replace(escapedText, highlightSpan);
-    console.log('Highlighted text using exact match fallback:', selectedText.substring(0, 30));
-  } else {
-    // Third try: use regex with multiline flag for multi-line selections
-    const regexPattern = escapeRegExp(escapedText).replace(/\n/g, '\\s*(?:<br>|</div><div>|</p><p>)\\s*');
-    const regex = new RegExp(regexPattern, 'im');
-    if (regex.test(content)) {
-      content = content.replace(regex, highlightSpan);
-      console.log('Highlighted text using multiline regex match fallback:', selectedText.substring(0, 30));
+
+  // For HTML selectedText (preview mode), do direct replacement
+  if (/<[^>]*>/.test(selectedText)) {
+    console.log('Preview mode: Using direct HTML replacement for:', selectedText.substring(0, 100));
+    
+    if (content.includes(selectedText)) {
+      const replacement = `<span data-comment-id="${commentId}" title="Click to view comment" style="background-color: #ffff99; display: inline-block;">${selectedText}</span>`;
+      content = content.replace(selectedText, replacement);
+      console.log('Direct HTML replacement successful');
     } else {
-      // Fourth try: look for the text without HTML escaping (in case it's plain text)
-      const plainTextRegex = new RegExp(escapeRegExp(selectedText).replace(/\n/g, '\\s*(?:<br>|</div><div>|</p><p>)\\s*'), 'im');
-      if (plainTextRegex.test(content)) {
-        content = content.replace(plainTextRegex, highlightSpan);
-        console.log('Highlighted text using plain text multiline match fallback:', selectedText.substring(0, 30));
-      } else {
-        console.warn('Could not find text to highlight in preview:', selectedText.substring(0, 30));
-        return;
-      }
+      console.warn('HTML selectedText not found in content');
+      return;
+    }
+  } else {
+    // For plain text selectedText, use simple escaping
+    console.log('Preview mode: Using escaped text replacement');
+    const escapedText = escapeHtml(selectedText);
+    
+    if (content.includes(escapedText)) {
+      const replacement = `<span data-comment-id="${commentId}" title="Click to view comment" style="background-color: #ffff99; display: inline-block;">${escapedText}</span>`;
+      content = content.replace(escapedText, replacement);
+      console.log('Escaped text replacement successful');
+    } else {
+      console.warn('Escaped text not found in content');
+      return;
     }
   }
   
   previewElement.innerHTML = content;
   
-  // Add event listener to the newly created highlight immediately
+  // Add event listener to the newly created highlight
   const newHighlight = previewElement.querySelector(`[data-comment-id="${commentId}"]`);
   if (newHighlight && !newHighlight.hasAttribute('data-listener-attached')) {
     newHighlight.addEventListener('click', (e) => {
@@ -168,7 +156,7 @@ function highlightInPreviewFallback(selectedText, commentId, selectionRange) {
 
 // Function to re-attach event listeners to all highlighted text elements
 function reattachHighlightEventListeners() {
-  const highlights = document.querySelectorAll('.text-comment-highlight');
+  const highlights = document.querySelectorAll('span[data-comment-id]');
   highlights.forEach(element => {
     // Remove existing listeners to avoid duplicates
     const existingListener = element.getAttribute('data-listener-attached');
@@ -217,7 +205,7 @@ function reattachtemplateEditorHighlightEventListeners() {
   if (!templateEditor) return;
   
   // Find all highlighted text elements in code editor
-  const highlightElements = templateEditor.querySelectorAll('.text-comment-highlight');
+  const highlightElements = templateEditor.querySelectorAll('span[data-comment-id]');
   
   highlightElements.forEach(element => {
     // Check if this highlight should be visible in current mode
@@ -252,7 +240,7 @@ function reattachSourceEditorHighlightEventListeners() {
   if (!sourceEditor) return;
   
   // Find all highlighted text elements in source editor
-  const highlightElements = sourceEditor.querySelectorAll('.text-comment-highlight');
+  const highlightElements = sourceEditor.querySelectorAll('span[data-comment-id]');
   
   highlightElements.forEach(element => {
     // Check if this highlight should be visible in current mode
@@ -311,7 +299,7 @@ export function clearAllComments() {
   console.log('Clearing all comments (unified function)');
   
   // Remove all highlights from preview and code editor - use brute force approach
-  const highlights = document.querySelectorAll('.text-comment-highlight');
+  const highlights = document.querySelectorAll('span[data-comment-id]');
   console.log(`Found ${highlights.length} highlights to remove`);
   
   highlights.forEach((highlight, index) => {
@@ -322,7 +310,7 @@ export function clearAllComments() {
   });
   
   // Double-check: remove any elements with the highlight class that might remain
-  const remainingHighlights = document.querySelectorAll('.text-comment-highlight');
+  const remainingHighlights = document.querySelectorAll('span[data-comment-id]');
   if (remainingHighlights.length > 0) {
     console.log(`Found ${remainingHighlights.length} remaining highlights after first pass, removing them`);
     remainingHighlights.forEach(highlight => {
@@ -370,7 +358,7 @@ export function clearCurrentModeComments() {
     console.log(`Removing highlights for comment ID: ${id}`);
     
     // Try to find highlights with this specific comment ID
-    const highlights = document.querySelectorAll(`.text-comment-highlight[data-comment-id="${id}"]`);
+    const highlights = document.querySelectorAll(`span[data-comment-id="${id}"]`);
     console.log(`Found ${highlights.length} highlights with ID ${id}`);
     
     highlights.forEach((highlight, index) => {
@@ -381,7 +369,7 @@ export function clearCurrentModeComments() {
     // If no highlights found by ID, try to find by text content as fallback
     if (highlights.length === 0) {
       console.log(`No highlights found by ID, trying text content fallback for: ${comment.selectedText.substring(0, 30)}`);
-      const allHighlights = document.querySelectorAll('.text-comment-highlight');
+      const allHighlights = document.querySelectorAll('span[data-comment-id]');
       let found = false;
       
       allHighlights.forEach(highlight => {
@@ -559,14 +547,14 @@ export function initTextSelection() {
   document.addEventListener('click', function(e) {
     // Only hide comment window if clicking completely outside the comment system
     if (!e.target.closest('.floating-comment') && 
-        !e.target.closest('.text-comment-highlight') &&
+        !e.target.closest('span[data-comment-id]') &&
         !window.getSelection().toString().trim()) {
       elements.floatingComment.style.display = 'none';
     }
     
     // Clear active annotation highlighting when clicking elsewhere (but not on annotation windows or highlighted text)
     if (!e.target.closest('.floating-annotation') && 
-        !e.target.closest('.text-comment-highlight')) {
+        !e.target.closest('span[data-comment-id]')) {
       clearActiveAnnotationHighlight();
     }
   });
@@ -611,17 +599,48 @@ function handleTextSelection(event) {
       // Create a temporary container with the selected content
       const tempDiv = document.createElement('div');
       tempDiv.appendChild(range.cloneContents());
-      selectedText = getTextContentWithLineBreaks(tempDiv).trim();
+      selectedText = getTextContentWithLineBreaks(tempDiv);
     } catch (error) {
       console.warn('Error extracting text with line breaks, falling back to toString:', error);
-      selectedText = selection.toString().trim();
+      selectedText = selection.toString();
     }
   } else {
-    // For preview content and other areas, use the standard method
-    selectedText = selection.toString().trim();
+    // For preview content, save HTML directly to match preview_content format
+    if (previewContent && previewContent.contains(range.commonAncestorContainer)) {
+      try {
+        const tempDiv = document.createElement('div');
+        tempDiv.appendChild(range.cloneContents());
+        selectedText = tempDiv.innerHTML; // Save as HTML
+        console.log('Preview mode: saving HTML content as selectedText:', selectedText);
+      } catch (error) {
+        console.warn('Error extracting HTML content, falling back to toString:', error);
+        selectedText = selection.toString();
+      }
+    } else {
+      // For other areas, use the standard method
+      selectedText = selection.toString();
+    }
   }
   
   if (selectedText.length > 0) {
+    // Check if the selected text is already highlighted
+    if (selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0);
+      const ancestor = range.commonAncestorContainer;
+      
+      // Check if the selection is within an existing highlight
+      let element = ancestor.nodeType === Node.TEXT_NODE ? ancestor.parentElement : ancestor;
+      while (element && element !== document.body) {
+        if (element.classList && element.classList.contains('text-comment-highlight')) {
+          console.log('Text is already highlighted, ignoring selection');
+          elements.floatingComment.style.display = 'none';
+          elements.floatingComment.storedSelectionRange = null;
+          return;
+        }
+        element = element.parentElement;
+      }
+    }
+    
     // Validate and clean the selected text before processing
     const cleanedText = validateAndCleanSelectedText(selectedText);
     
@@ -669,36 +688,53 @@ function validateAndCleanSelectedText(selectedText) {
     return null;
   }
 
-  // First trim the entire text
-  let cleaned = selectedText.trim();
-
-  // Preserve line breaks but normalize other whitespace within each line
-  // Split by actual line breaks, clean each line individually, then rejoin
-  cleaned = cleaned
-    .split(/\r?\n/)  // Split on any type of line break
-    .map(line => line.trim().replace(/[ \t]+/g, ' '))  // Clean whitespace within each line (but not newlines)
-    .join('\n');  // Rejoin with consistent \n line breaks
-
-  // Remove any remaining carriage returns that might have been left
-  cleaned = cleaned.replace(/\r/g, '');
-
-  // Check for minimum and maximum length
-  if (cleaned.length < 1) {
-    return null;
-  }
+  // Check if this is HTML content (contains tags)
+  const isHTML = /<[^>]*>/.test(selectedText);
   
-  // Remove any HTML tags if they somehow got included
-  cleaned = cleaned.replace(/<[^>]*>/g, '');
+  if (isHTML) {
+    // For HTML content (preview mode), don't strip tags - just basic validation
+    let cleaned = selectedText.trim();
+    
+    // Check for minimum and maximum length
+    if (cleaned.length < 1 || cleaned.length > 2000) {
+      return null;
+    }
+    
+    return cleaned;
+  } else {
+    // For plain text content (template/source mode), do normal cleaning
+    let cleaned = selectedText;
 
-  // Remove excessive punctuation repetition (but preserve line structure)
-  cleaned = cleaned.replace(/([.!?]){3,}/g, '$1$1$1');
+    // Only trim leading and trailing whitespace from the entire selection
+    cleaned = cleaned.replace(/^\s+/, '').replace(/\s+$/, '');
 
-  // Final validation
-  if (cleaned.length < 1 || cleaned.length > 1000) {
-    return null;
+    // Preserve line breaks and normalize only excessive whitespace within lines
+    cleaned = cleaned
+      .split(/\r?\n/)
+      .map(line => line.replace(/[ \t]{2,}/g, ' '))
+      .join('\n');
+
+    // Remove any remaining carriage returns
+    cleaned = cleaned.replace(/\r/g, '');
+
+    // Check for minimum and maximum length
+    if (cleaned.length < 1) {
+      return null;
+    }
+    
+    // Remove any HTML tags if they somehow got included
+    cleaned = cleaned.replace(/<[^>]*>/g, '');
+
+    // Remove excessive punctuation repetition
+    cleaned = cleaned.replace(/([.!?]){3,}/g, '$1$1$1');
+
+    // Final validation
+    if (cleaned.length < 1 || cleaned.length > 1000) {
+      return null;
+    }
+
+    return cleaned;
   }
-
-  return cleaned;
 }
 
 // Update code editor highlights when content changes
@@ -996,7 +1032,7 @@ function highlightInEditorFallback(editor, selectedText, commentId, selectionRan
   let content = editor.innerHTML;
   
   // Create a span with yellow background for the selected text
-  const highlightSpan = `<span class="text-comment-highlight" data-comment-id="${commentId}" title="Click to view comment">${escapeHtml(selectedText)}</span>`;
+  const replacement = `<span data-comment-id="${commentId}" title="Click to view comment" style="background-color: #ffff99; display: inline-block;">${selectedText}</span>`;
   
   // For multi-line text, we need to handle HTML representation of line breaks
   // Convert the selected text to match how it might appear in HTML
@@ -1008,54 +1044,71 @@ function highlightInEditorFallback(editor, selectedText, commentId, selectionRan
   
   // First try: exact match with escaped HTML and normalized line breaks
   if (content.includes(escapedNormalizedText)) {
-    content = content.replace(escapedNormalizedText, highlightSpan);
+    content = content.replace(escapedNormalizedText, replacement);
     console.log('Highlighted text in source editor using normalized HTML match:', selectedText.substring(0, 30));
   } else if (content.includes(escapedText)) {
     // Second try: exact match with escaped HTML
-    content = content.replace(escapedText, highlightSpan);
+    content = content.replace(escapedText, replacement);
     console.log('Highlighted text in source editor using exact match fallback:', selectedText.substring(0, 30));
   } else {
     // Third try: use regex with multiline flag for multi-line selections
     const regexPattern = escapeRegExp(escapedText).replace(/\n/g, '\\s*(?:<br>|</div><div>|</p><p>)\\s*');
     const regex = new RegExp(regexPattern, 'im');
     if (regex.test(content)) {
-      content = content.replace(regex, highlightSpan);
-      console.log('Highlighted text in source editor using multiline regex match:', selectedText.substring(0, 30));
+      const match = content.match(regex);
+      console.log('- match result:', match ? match[0].substring(0, 100) + '...' : 'null');
+      
+      if (match) {
+        // Simple approach: wrap entire match in a highlight div
+        const replacement = `<div class="text-comment-highlight" data-comment-id="${commentId}" title="Click to view comment" style="display: inline-block;">${match[0]}</div>`;
+        content = content.replace(regex, replacement);
+        console.log('Simple multi-line replacement successful');
+      } else {
+        console.warn('Multi-line pattern not found');
+        return;
+      }
     } else {
-      // Fourth try: extract plain text and do text-based matching for restoration
-      const editorPlainText = getTextContentWithLineBreaks(editor);
-      if (editorPlainText.includes(selectedText)) {
-        console.log('Found text in plain text content, attempting flexible HTML replacement');
+      // Fourth try: Simple string replacement
+      const lines = selectedText.split('\n');
+      if (lines.length > 1) {
+        // Multi-line: match from first to last line
+        const firstLine = escapeHtml(lines[0]);
+        const lastLine = escapeHtml(lines[lines.length - 1]);
         
-        // Split the selected text into lines and create a flexible pattern
-        const lines = selectedText.split('\n');
-        if (lines.length > 1) {
-          // For multi-line text, create a pattern that handles various HTML representations
-          const linePatterns = lines.map(line => escapeRegExp(escapeHtml(line.trim()))).filter(line => line.length > 0);
-          const flexiblePattern = linePatterns.join('\\s*(?:<br>|</div><div>|</p><p>|\\n)\\s*');
-          const flexibleRegex = new RegExp(flexiblePattern, 'im');
-          
-          if (flexibleRegex.test(content)) {
-            content = content.replace(flexibleRegex, highlightSpan);
-            console.log('Highlighted text in source editor using flexible multi-line match:', selectedText.substring(0, 30));
-          } else {
-            console.warn('Could not find multi-line text to highlight in source editor:', selectedText.substring(0, 30));
-            return;
-          }
+        console.log('Multi-line debug:');
+        console.log('- selectedText lines:', lines);
+        console.log('- firstLine escaped:', firstLine);
+        console.log('- lastLine escaped:', lastLine);
+        
+        // Escape regex special characters in the lines
+        const firstLineRegex = escapeRegExp(firstLine);
+        const lastLineRegex = escapeRegExp(lastLine);
+        
+        const pattern = firstLineRegex + '[\\s\\S]*?' + lastLineRegex;
+        console.log('- pattern:', pattern);
+        
+        const regex = new RegExp(pattern, 'i');
+        
+        const match = content.match(regex);
+        console.log('- match result:', match ? match[0].substring(0, 100) + '...' : 'null');
+        
+        if (match) {
+          content = content.replace(regex, `<span class="text-comment-highlight" data-comment-id="${commentId}" title="Click to view comment">${match[0]}</span>`);
+          console.log('Multi-line replacement successful');
         } else {
-          // Single line text - try a simpler approach
-          const plainTextRegex = new RegExp(escapeRegExp(selectedText), 'im');
-          if (plainTextRegex.test(content)) {
-            content = content.replace(plainTextRegex, highlightSpan);
-            console.log('Highlighted text in source editor using plain text match:', selectedText.substring(0, 30));
-          } else {
-            console.warn('Could not find single-line text to highlight in source editor:', selectedText.substring(0, 30));
-            return;
-          }
+          console.warn('Multi-line pattern not found');
+          return;
         }
       } else {
-        console.warn('Could not find text to highlight in source editor (plain text check failed):', selectedText.substring(0, 30));
-        return;
+        // Single line
+        const escaped = escapeHtml(selectedText.trim());
+        if (content.includes(escaped)) {
+          content = content.replace(escaped, `<span class="text-comment-highlight" data-comment-id="${commentId}" title="Click to view comment">${escaped}</span>`);
+          console.log('Single line replacement successful');
+        } else {
+          console.warn('Single line text not found');
+          return;
+        }
       }
     }
   }
