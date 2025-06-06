@@ -347,6 +347,7 @@ export class DocumentManager {
       elements.messageInput = container.querySelector('.message-input');
       elements.chatMessages = container.querySelector('.chat-messages');
       elements.previewContent = container.querySelector('.preview-content');
+      elements.sourceEditor = container.querySelector('.source-editor');
       elements.templateEditor = container.querySelector('.template-editor');
       elements.openFileBtn = container.querySelector('.open-file-btn');
       elements.clearContextBtn = container.querySelector('.clear-context-btn');
@@ -1054,16 +1055,16 @@ export class DocumentManager {
           if (container) {
             const templateEditor = container.querySelector('.template-editor');
             const previewContent = container.querySelector('.preview-content');
-            const sourceContent = container.querySelector('.source-editor');
+            const sourceEditor = container.querySelector('.source-editor');
             
             // SMART CONTENT UPDATE: Only replace content if it actually changed
             // and restore highlights afterward
 
-            if (sourceContent && freshDoc.source_content !== undefined) {
-              const currentSourceContent = getTextContentWithLineBreaks(sourceContent);
+            if (sourceEditor && freshDoc.source_content !== undefined) {
+              const currentSourceContent = getTextContentWithLineBreaks(sourceEditor);
               if (currentSourceContent !== freshDoc.source_content) {
                 console.log('Source content changed, updating...');
-                sourceContent.textContent = freshDoc.source_content;
+                sourceEditor.textContent = freshDoc.source_content;
               }
 
               await this.restoreHighlightsForMode('source');
@@ -1271,11 +1272,11 @@ export class DocumentManager {
     // Get content from both code editor and preview
     const templateEditor = container.querySelector('.template-editor');
     const previewContent = container.querySelector('.preview-content');
-    const sourceContent = container.querySelector('.source-editor');
+    const sourceEditor = container.querySelector('.source-editor');
 
     const currentTemplateContent = templateEditor ? getTextContentWithLineBreaks(templateEditor) : '';
     const currentPreviewContent = previewContent ? previewContent.innerHTML : '';
-    const currentSourceContent = sourceContent ? getTextContentWithLineBreaks(sourceContent) : '';
+    const currentSourceContent = sourceEditor ? getTextContentWithLineBreaks(sourceEditor) : '';
     
     try {
       // Get current comment state from the global state (use static import)
@@ -1402,18 +1403,18 @@ export class DocumentManager {
 
     const templateEditor = container.querySelector('.template-editor');
     const previewContent = container.querySelector('.preview-content');
-    const sourceContent = container.querySelector('.source-editor');
+    const sourceEditor = container.querySelector('.source-editor');
 
     this.hasUnsavedChanges = false;
 
     // Remove existing listeners if any
     this.removeContentChangeTracking();
 
-    if (sourceContent) {
+    if (sourceEditor) {
       this.sourceContentChangeHandler = () => {
         this.onContentChange();
       };
-      sourceContent.addEventListener('input', this.sourceContentChangeHandler);
+      sourceEditor.addEventListener('input', this.sourceContentChangeHandler);
     }
 
     // Set up code editor tracking

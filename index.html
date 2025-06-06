@@ -91,29 +91,10 @@
             <div class="source-editor" contenteditable="true" data-placeholder="# Source code to generate data for templates
 # Example: Data analysis, API calls, calculations
 
-import pandas as pd
-import numpy as np
-
-# Sample data generation
-data = {
-    'revenue': [1000, 1500, 1200, 1800],
-    'expenses': [800, 900, 950, 1100],
-    'months': ['Jan', 'Feb', 'Mar', 'Apr']
-}
-
-df = pd.DataFrame(data)
-profit = df['revenue'] - df['expenses']
-
-# Variables available to template:
-total_revenue = df['revenue'].sum()
-total_expenses = df['expenses'].sum()
-total_profit = profit.sum()
-avg_monthly_profit = profit.mean()
-
-print(f'Total Revenue: ${total_revenue}')
-print(f'Total Expenses: ${total_expenses}')
-print(f'Total Profit: ${total_profit}')
-print(f'Average Monthly Profit: ${avg_monthly_profit}')"></div>
+import math
+a = 16
+b = math.sqrt(16)
+c = [1,2,3,4]"></div>
             <div class="source-controls">
               <button class="execute-source-btn">Execute Source Code</button>
               <span class="source-execution-status"></span>
