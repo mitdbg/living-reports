@@ -4,6 +4,14 @@ import { escapeHtml } from './utils.js';
 import { getCurrentUser } from './auth.js';
 import { clearAllComments, clearCurrentModeComments } from './comments.js';
 
+/**
+ * Simple helper function to remove highlight wrapper while preserving content
+ */
+export function removeHighlightWrapper(highlight) {
+  // Simply replace the wrapper with its content
+  highlight.outerHTML = highlight.innerHTML;
+}
+
 export function createFloatingAnnotation(selectedText, commentContent, commentData = null) {
   const annotationId = commentData ? commentData.id : `annotation-${incrementCommentCounter()}`;
   
@@ -298,8 +306,7 @@ export function deleteFloatingAnnotation(annotationId) {
     // Remove text highlighting for this comment
     const highlights = document.querySelectorAll(`.text-comment-highlight[data-comment-id="${annotationId}"]`);
     highlights.forEach(highlight => {
-      // Use the simple algorithm that preserves HTML structure
-      highlight.outerHTML = highlight.innerHTML;
+      removeHighlightWrapper(highlight);
     });
   }
   

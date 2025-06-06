@@ -1,7 +1,7 @@
 // Comments and Text Selection Module
 import { state, elements, windowId, incrementCommentCounter } from './state.js';
 import { escapeHtml, escapeRegExp, calculateSafePosition, getTextContentWithLineBreaks } from './utils.js';
-import { createFloatingAnnotation, showAnnotationForText, refreshAnnotationElements, clearActiveAnnotationHighlight } from './annotations.js';
+import { createFloatingAnnotation, showAnnotationForText, refreshAnnotationElements, clearActiveAnnotationHighlight, removeHighlightWrapper } from './annotations.js';
 import { addMessageToUI, addWaitingIndicator, removeWaitingIndicator } from './chat.js';
 import { getCurrentUser } from './auth.js';
 
@@ -31,12 +31,29 @@ if (!window[COMMENTS_KEY]) {
 
 const commentsData = window[COMMENTS_KEY];
 
+
+
 /**
- * Simple helper function to remove highlight wrapper while preserving content
+ * Shared function to delete a single comment (removes highlighting and annotation)
+ * This consolidates the deletion logic in one place
  */
-function removeHighlightWrapper(highlight) {
-  // Simply replace the wrapper with its content
-  highlight.outerHTML = highlight.innerHTML;
+function deleteSingleComment(commentId, comment) {
+  console.log(`Deleting comment: ${commentId}`);
+  
+  // Remove text highlighting for this comment
+  const highlights = document.querySelectorAll(`.text-comment-highlight[data-comment-id="${commentId}"]`);
+  highlights.forEach(highlight => {
+    removeHighlightWrapper(highlight);
+  });
+  
+  // Remove floating annotation if it exists
+  if (comment.ui && comment.ui.element) {
+    console.log(`Removing floating annotation for comment: ${commentId}`);
+    comment.ui.element.remove();
+  }
+  
+  // Remove from state
+  delete state.comments[commentId];
 }
 
 // Text comment management functions
@@ -306,42 +323,17 @@ export function getTextCommentsMap() {
 export function clearAllComments() {
   console.log('Clearing all comments (unified function)');
   
-  // Remove all highlights from preview and code editor - use brute force approach
-  const highlights = document.querySelectorAll('.text-comment-highlight');
-  console.log(`Found ${highlights.length} highlights to remove`);
+  // Get all comments to delete
+  const commentsToRemove = Object.entries(state.comments);
+  console.log(`Found ${commentsToRemove.length} comments to delete`);
   
-  highlights.forEach((highlight, index) => {
-    console.log(`Removing highlight ${index + 1}:`, highlight.textContent.substring(0, 30));
-    const commentId = highlight.getAttribute('data-comment-id');
-    console.log(`Highlight has comment-id: ${commentId}`);
-    
-    // Remove highlight wrapper while preserving content
-    removeHighlightWrapper(highlight);
+  // Delete each comment using shared logic
+  commentsToRemove.forEach(([commentId, comment], index) => {
+    console.log(`Deleting comment ${index + 1}/${commentsToRemove.length}`);
+    deleteSingleComment(commentId, comment);
   });
   
-  // Double-check: remove any elements with the highlight class that might remain
-  const remainingHighlights = document.querySelectorAll('.text-comment-highlight');
-  if (remainingHighlights.length > 0) {
-    console.log(`Found ${remainingHighlights.length} remaining highlights after first pass, removing them`);
-    remainingHighlights.forEach(highlight => {
-      // Remove highlight wrapper while preserving content
-      removeHighlightWrapper(highlight);
-    });
-  }
-  
-  // Clear floating annotations for all comments
-  const commentsToRemove = Object.values(state.comments);
-  console.log(`Removing ${commentsToRemove.length} floating annotations`);
-  
-  commentsToRemove.forEach((comment, index) => {
-    if (comment.ui && comment.ui.element) {
-      console.log(`Removing floating annotation ${index + 1} for comment: ${comment.id}`);
-      comment.ui.element.remove();
-    }
-  });
-  
-  // Clear the comments object
-  state.comments = {};
+  // Reset comment counter
   state.commentIdCounter = 0;
   
   // Trigger auto-save for comment changes
@@ -364,31 +356,10 @@ export function clearCurrentModeComments() {
   
   console.log('Comments to remove:', commentsToRemove.map(([id, comment]) => ({ id, mode: comment.mode })));
   
-  // Remove highlights and annotations for these comments
-  commentsToRemove.forEach(([id, comment]) => {
-    console.log(`Removing highlights for comment ID: ${id}`);
-    
-    // Try to find highlights with this specific comment ID
-    const highlights = document.querySelectorAll(`.text-comment-highlight[data-comment-id="${id}"]`);
-    console.log(`Found ${highlights.length} highlights with ID ${id}`);
-    
-    highlights.forEach((highlight, index) => {
-      console.log(`Removing highlight ${index + 1}:`, highlight.textContent.substring(0, 30));
-      
-      // Remove highlight wrapper while preserving content
-      removeHighlightWrapper(highlight);
-    });
-    
-    // Remove floating annotation if it exists
-    if (comment.ui && comment.ui.element) {
-      console.log(`Removing floating annotation for comment: ${id}`);
-      comment.ui.element.remove();
-    }
-  });
-  
-  // Remove from state object
-  commentsToRemove.forEach(([id, comment]) => {
-    delete state.comments[id];
+  // Delete each comment using shared logic
+  commentsToRemove.forEach(([commentId, comment], index) => {
+    console.log(`Deleting comment ${index + 1}/${commentsToRemove.length}`);
+    deleteSingleComment(commentId, comment);
   });
   
   // Trigger auto-save for comment changes
