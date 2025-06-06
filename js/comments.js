@@ -118,7 +118,7 @@ function highlightInPreviewFallback(selectedText, commentId, selectionRange) {
     console.log('Preview mode: Using direct HTML replacement for:', selectedText.substring(0, 100));
     
     if (content.includes(selectedText)) {
-      const replacement = `<span data-comment-id="${commentId}" title="Click to view comment" style="background-color: #ffff99; display: inline-block;">${selectedText}</span>`;
+      const replacement = `<span data-comment-id="${commentId}" title="Click to view comment" class="text-comment-highlight">${selectedText}</span>`;
       content = content.replace(selectedText, replacement);
       console.log('Direct HTML replacement successful');
     } else {
@@ -131,7 +131,7 @@ function highlightInPreviewFallback(selectedText, commentId, selectionRange) {
     const escapedText = escapeHtml(selectedText);
     
     if (content.includes(escapedText)) {
-      const replacement = `<span data-comment-id="${commentId}" title="Click to view comment" style="background-color: #ffff99; display: inline-block;">${escapedText}</span>`;
+      const replacement = `<span data-comment-id="${commentId}" title="Click to view comment" class="text-comment-highlight">${escapedText}</span>`;
       content = content.replace(escapedText, replacement);
       console.log('Escaped text replacement successful');
     } else {
@@ -143,7 +143,7 @@ function highlightInPreviewFallback(selectedText, commentId, selectionRange) {
   previewElement.innerHTML = content;
   
   // Add event listener to the newly created highlight
-  const newHighlight = previewElement.querySelector(`[data-comment-id="${commentId}"]`);
+  const newHighlight = previewElement.querySelector(`.text-comment-highlight[data-comment-id="${commentId}"]`);
   if (newHighlight && !newHighlight.hasAttribute('data-listener-attached')) {
     newHighlight.addEventListener('click', (e) => {
       e.preventDefault();
@@ -156,7 +156,7 @@ function highlightInPreviewFallback(selectedText, commentId, selectionRange) {
 
 // Function to re-attach event listeners to all highlighted text elements
 function reattachHighlightEventListeners() {
-  const highlights = document.querySelectorAll('span[data-comment-id]');
+  const highlights = document.querySelectorAll('.text-comment-highlight');
   highlights.forEach(element => {
     // Remove existing listeners to avoid duplicates
     const existingListener = element.getAttribute('data-listener-attached');
@@ -205,7 +205,7 @@ function reattachtemplateEditorHighlightEventListeners() {
   if (!templateEditor) return;
   
   // Find all highlighted text elements in code editor
-  const highlightElements = templateEditor.querySelectorAll('span[data-comment-id]');
+  const highlightElements = templateEditor.querySelectorAll('.text-comment-highlight');
   
   highlightElements.forEach(element => {
     // Check if this highlight should be visible in current mode
@@ -240,7 +240,7 @@ function reattachSourceEditorHighlightEventListeners() {
   if (!sourceEditor) return;
   
   // Find all highlighted text elements in source editor
-  const highlightElements = sourceEditor.querySelectorAll('span[data-comment-id]');
+  const highlightElements = sourceEditor.querySelectorAll('.text-comment-highlight');
   
   highlightElements.forEach(element => {
     // Check if this highlight should be visible in current mode
@@ -299,7 +299,7 @@ export function clearAllComments() {
   console.log('Clearing all comments (unified function)');
   
   // Remove all highlights from preview and code editor - use brute force approach
-  const highlights = document.querySelectorAll('span[data-comment-id]');
+  const highlights = document.querySelectorAll('.text-comment-highlight');
   console.log(`Found ${highlights.length} highlights to remove`);
   
   highlights.forEach((highlight, index) => {
@@ -310,7 +310,7 @@ export function clearAllComments() {
   });
   
   // Double-check: remove any elements with the highlight class that might remain
-  const remainingHighlights = document.querySelectorAll('span[data-comment-id]');
+  const remainingHighlights = document.querySelectorAll('.text-comment-highlight');
   if (remainingHighlights.length > 0) {
     console.log(`Found ${remainingHighlights.length} remaining highlights after first pass, removing them`);
     remainingHighlights.forEach(highlight => {
@@ -358,7 +358,7 @@ export function clearCurrentModeComments() {
     console.log(`Removing highlights for comment ID: ${id}`);
     
     // Try to find highlights with this specific comment ID
-    const highlights = document.querySelectorAll(`span[data-comment-id="${id}"]`);
+    const highlights = document.querySelectorAll(`.text-comment-highlight[data-comment-id="${id}"]`);
     console.log(`Found ${highlights.length} highlights with ID ${id}`);
     
     highlights.forEach((highlight, index) => {
@@ -369,7 +369,7 @@ export function clearCurrentModeComments() {
     // If no highlights found by ID, try to find by text content as fallback
     if (highlights.length === 0) {
       console.log(`No highlights found by ID, trying text content fallback for: ${comment.selectedText.substring(0, 30)}`);
-      const allHighlights = document.querySelectorAll('span[data-comment-id]');
+      const allHighlights = document.querySelectorAll('.text-comment-highlight');
       let found = false;
       
       allHighlights.forEach(highlight => {
@@ -547,14 +547,14 @@ export function initTextSelection() {
   document.addEventListener('click', function(e) {
     // Only hide comment window if clicking completely outside the comment system
     if (!e.target.closest('.floating-comment') && 
-        !e.target.closest('span[data-comment-id]') &&
+        !e.target.closest('.text-comment-highlight') &&
         !window.getSelection().toString().trim()) {
       elements.floatingComment.style.display = 'none';
     }
     
     // Clear active annotation highlighting when clicking elsewhere (but not on annotation windows or highlighted text)
     if (!e.target.closest('.floating-annotation') && 
-        !e.target.closest('span[data-comment-id]')) {
+        !e.target.closest('.text-comment-highlight')) {
       clearActiveAnnotationHighlight();
     }
   });
@@ -1032,7 +1032,7 @@ function highlightInEditorFallback(editor, selectedText, commentId, selectionRan
   let content = editor.innerHTML;
   
   // Create a span with yellow background for the selected text
-  const replacement = `<span data-comment-id="${commentId}" title="Click to view comment" style="background-color: #ffff99; display: inline-block;">${selectedText}</span>`;
+  const replacement = `<span class="text-comment-highlight" data-comment-id="${commentId}" title="Click to view comment">${selectedText}</span>`;
   
   // For multi-line text, we need to handle HTML representation of line breaks
   // Convert the selected text to match how it might appear in HTML
@@ -1059,8 +1059,8 @@ function highlightInEditorFallback(editor, selectedText, commentId, selectionRan
       console.log('- match result:', match ? match[0].substring(0, 100) + '...' : 'null');
       
       if (match) {
-        // Simple approach: wrap entire match in a highlight div
-        const replacement = `<div class="text-comment-highlight" data-comment-id="${commentId}" title="Click to view comment" style="display: inline-block;">${match[0]}</div>`;
+        // Simple approach: wrap entire match in a highlight span
+        const replacement = `<span class="text-comment-highlight" data-comment-id="${commentId}" title="Click to view comment">${match[0]}</span>`;
         content = content.replace(regex, replacement);
         console.log('Simple multi-line replacement successful');
       } else {
@@ -1116,7 +1116,7 @@ function highlightInEditorFallback(editor, selectedText, commentId, selectionRan
   editor.innerHTML = content;
   
   // Add event listener to the newly created highlight immediately
-  const newHighlight = editor.querySelector(`[data-comment-id="${commentId}"]`);
+  const newHighlight = editor.querySelector(`.text-comment-highlight[data-comment-id="${commentId}"]`);
   if (newHighlight && !newHighlight.hasAttribute('data-listener-attached')) {
     newHighlight.addEventListener('click', (e) => {
       e.preventDefault();

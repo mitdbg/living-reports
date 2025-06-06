@@ -587,7 +587,7 @@ export class DocumentManager {
       });
       
       // Remove all comment highlights from DOM
-      const highlights = document.querySelectorAll('span[data-comment-id]');
+      const highlights = document.querySelectorAll('.text-comment-highlight');
       console.log(`Removing ${highlights.length} text highlights`);
       highlights.forEach(highlight => {
         highlight.replaceWith(document.createTextNode(highlight.textContent));
@@ -1093,7 +1093,7 @@ export class DocumentManager {
                 // Debug: Check what's actually in the DOM after setting innerHTML
                 setTimeout(() => {
                   console.log('DOM content after innerHTML set:', previewContent.innerHTML);
-                  console.log('Found highlight spans:', previewContent.querySelectorAll('span[data-comment-id]').length);
+                  console.log('Found highlight spans:', previewContent.querySelectorAll('.text-comment-highlight').length);
                 }, 100);
                 
                 // Restore highlights for preview mode after content replacement
@@ -1819,14 +1819,14 @@ export class DocumentManager {
       const srcEditor = container.querySelector('.source-editor');
       
       if (tempEditor) {
-        const templateHighlights = tempEditor.querySelectorAll('span[data-comment-id]');
+        const templateHighlights = tempEditor.querySelectorAll('.text-comment-highlight');
         templateHighlights.forEach(highlight => {
           highlight.replaceWith(document.createTextNode(highlight.textContent));
         });
       }
       
       if (srcEditor) {
-        const sourceHighlights = srcEditor.querySelectorAll('span[data-comment-id]');
+        const sourceHighlights = srcEditor.querySelectorAll('.text-comment-highlight');
         sourceHighlights.forEach(highlight => {
           highlight.replaceWith(document.createTextNode(highlight.textContent));
         });
@@ -1957,7 +1957,7 @@ export class DocumentManager {
           if (savedComment.mode === 'preview') {
             const container = document.getElementById(`document-${this.activeDocumentId}`);
             const targetElement = container?.querySelector('.preview-content');
-            const existingHighlight = targetElement?.querySelector(`[data-comment-id="${savedComment.id}"]`);
+            const existingHighlight = targetElement?.querySelector(`.text-comment-highlight[data-comment-id="${savedComment.id}"]`);
             
             // Debug logging
             console.log(`Preview mode debug for comment ${savedComment.id}:`);
@@ -2064,7 +2064,7 @@ export class DocumentManager {
           console.log(`Preview mode: highlight already exists for comment ${savedComment.id}, just adding event listeners`);
           
           // Just ensure event listeners are attached
-          const existingHighlight = targetElement.querySelector(`[data-comment-id="${savedComment.id}"]`);
+          const existingHighlight = targetElement.querySelector(`.text-comment-highlight[data-comment-id="${savedComment.id}"]`);
           if (existingHighlight && !existingHighlight.hasAttribute('data-listener-attached')) {
             const { showAnnotationForText } = await import('./annotations.js');
             existingHighlight.addEventListener('click', (e) => {
@@ -2090,7 +2090,7 @@ export class DocumentManager {
       }
 
       // Remove any existing highlight for this comment first
-      const existingHighlight = targetElement.querySelector(`[data-comment-id="${savedComment.id}"]`);
+      const existingHighlight = targetElement.querySelector(`.text-comment-highlight[data-comment-id="${savedComment.id}"]`);
       if (existingHighlight) {
         existingHighlight.outerHTML = existingHighlight.innerHTML;
       }
@@ -2244,7 +2244,7 @@ export class DocumentManager {
           console.log(`Comment ${commentId} was deleted by another user, removing locally`);
           
           // Remove highlight for this comment
-          const highlights = document.querySelectorAll(`span[data-comment-id="${commentId}"]`);
+          const highlights = document.querySelectorAll(`.text-comment-highlight[data-comment-id="${commentId}"]`);
           highlights.forEach(highlight => {
             highlight.replaceWith(document.createTextNode(highlight.textContent));
           });
