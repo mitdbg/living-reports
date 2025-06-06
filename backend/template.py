@@ -75,13 +75,23 @@ class Template:
     ) -> str:
         """Process the template text, evaluating variables and LLM calls."""
 
+        # Track variable instance counts for unique identification
+        variable_instances = {}
+
         # Helper function to substitute variables in any text
         def substitute_all_variables(text: str) -> str:
             # Replace $name format
             def substitute_variable(match):
                 var_name = match.group(1)
                 if var_name in variables:
-                    return variables[var_name]["value"]
+                    # Track instance count for this variable
+                    if var_name not in variable_instances:
+                        variable_instances[var_name] = 0
+                    variable_instances[var_name] += 1
+                    
+                    value = variables[var_name]["value"]
+                    # Wrap in span with metadata for content-to-template mapping
+                    return f'<span class="var-ref" data-var="{var_name}" data-instance="{variable_instances[var_name]}" data-value="{value}">{value}</span>'
                 return f"${var_name}"  # Keep original if not found
 
             text = re.sub(r"\$(\w+)", substitute_variable, text)
@@ -90,7 +100,14 @@ class Template:
             def substitute_curly_variable(match):
                 var_name = match.group(1)
                 if var_name in variables:
-                    return variables[var_name]["value"]
+                    # Track instance count for this variable
+                    if var_name not in variable_instances:
+                        variable_instances[var_name] = 0
+                    variable_instances[var_name] += 1
+                    
+                    value = variables[var_name]["value"]
+                    # Wrap in span with metadata for content-to-template mapping
+                    return f'<span class="var-ref" data-var="{var_name}" data-instance="{variable_instances[var_name]}" data-value="{value}">{value}</span>'
                 return f"{{{{${var_name}}}}}"  # Keep original if not found
 
             return re.sub(r"\{\{\$(\w+)\}\}", substitute_curly_variable, text)

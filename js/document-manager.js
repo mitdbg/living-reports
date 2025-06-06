@@ -7,6 +7,7 @@ import { initChat, initAskLLMButton, resetChatInitialization } from './chat.js';
 import { initTextSelection, initCommentButtons, resetTextSelectionInitialization, resetCommentButtonsInitialization } from './comments.js';
 import { initFileOperations, resetFileOperationsInitialization } from './file-operations.js';
 import { initSharing, resetSharingInitialization } from './sharing.js';
+import { initContentMapping, resetContentMappingInitialization } from './content-mapping.js';
 import { hideAllAnnotations, clearAnnotationsForDocument, updateAnnotationsVisibility, refreshAnnotationElements } from './annotations.js';
 import { clearAllComments } from './comments.js';
 import { addMessageToUI } from './chat.js';
@@ -399,6 +400,7 @@ export class DocumentManager {
         resetChatInitialization();
         resetFileOperationsInitialization();
         resetSharingInitialization();
+        resetContentMappingInitialization();
         
         // Now initialize all modules
         initModes();
@@ -410,6 +412,7 @@ export class DocumentManager {
         initAskLLMButton();
         initFileOperations();
         initSharing();
+        initContentMapping();
         
       } catch (error) {
         console.error(`Error initializing document functionality:`, error);
@@ -513,6 +516,7 @@ export class DocumentManager {
       resetChatInitialization();
       resetFileOperationsInitialization();
       resetSharingInitialization();
+      resetContentMappingInitialization();
     }
     
     // Step 2: Clear all annotations and comments specific to this document

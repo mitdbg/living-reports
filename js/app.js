@@ -11,6 +11,7 @@ import { initChat, initAskLLMButton } from './chat.js';
 import { initTextSelection, initCommentButtons } from './comments.js';
 import { initFileOperations } from './file-operations.js';
 import { initSharing } from './sharing.js';
+import { initContentMapping } from './content-mapping.js';
 
 let documentManager;
 
@@ -87,6 +88,15 @@ async function initializeCoreModules() {
     initAskLLMButton();
     initFileOperations();
     initSharing();
+    initContentMapping();
+    
+    // Initialize comment translation module
+    try {
+      await import('./comment-translation.js');
+      console.log('✅ Comment translation module loaded');
+    } catch (error) {
+      console.warn('⚠️ Comment translation module not available:', error);
+    }
     
     console.log('Core modules initialized successfully');
   } catch (error) {

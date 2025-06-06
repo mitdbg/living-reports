@@ -742,63 +742,63 @@ export function initCommentButtons() {
     commentsData.currentCancelCommentBtn.removeEventListener('click', commentsData.cancelCommentHandler);
   }
   
-  // Ask AI button handler
+  // Ask AI button handler (restore original functionality)
+  commentsData.askLLMHandler = async () => {
+    console.log(`[${windowId}] Ask AI clicked`);
+    const selectedText = elements.floatingComment.dataset.selectedText;
+    const commentContent = elements.commentText.value.trim();
+    
+    if (selectedText) {
+      let message;
+      if (commentContent) {
+        message = `Context: "${selectedText}"\n\nRequest: ${commentContent}\n\n`;
+      } else {
+        message = `Context: "${selectedText}"\n\nPlease provide suggestions for this code.`;
+      }
+      
+      let waitingIndicatorAdded = false;
+      
+      try {
+        // Add the message to chat UI first
+        addMessageToUI('user', message);
+
+        // Add a waiting indicator
+        addWaitingIndicator();
+        waitingIndicatorAdded = true;
+
+        // Send to backend with suggest_template=true for template suggestions based on selected text
+        const { sendToBackend } = await import('./template-execution.js');
+        await sendToBackend(message, true);
+
+        // Hide the floating comment window after sending
+        elements.floatingComment.style.display = 'none';
+        
+      } catch (error) {
+        console.error('Error sending to AI:', error);
+        addMessageToUI('system', 'Error: Failed to send message to AI. Please try again.');
+      } finally {
+        // Always remove waiting indicator if it was added
+        if (waitingIndicatorAdded) {
+          try {
+            removeWaitingIndicator();
+          } catch (indicatorError) {
+            console.warn('Error removing waiting indicator:', indicatorError);
+          }
+        }
+      }
+    } else {
+      addMessageToUI('system', 'Please select some text first.');
+    }
+  };
+  
+  // Add Ask AI button event listener
   const askLLMBtn = elements.floatingComment.querySelector('.ask-llm');
   if (askLLMBtn) {
     // Remove existing listener from previous button if it exists
-    if (commentsData.askLLMHandler && commentsData.currentAskLLMBtn) {
+    if (commentsData.currentAskLLMBtn) {
       console.log(`[${windowId}] 🧹 Removing event listener from previous ask AI button`);
       commentsData.currentAskLLMBtn.removeEventListener('click', commentsData.askLLMHandler);
     }
-    
-    // Create new event handler
-    commentsData.askLLMHandler = async () => {
-      console.log(`[${windowId}] 🤖 Ask AI clicked`);
-      const selectedText = elements.floatingComment.dataset.selectedText;
-      const commentContent = elements.commentText.value.trim();
-      
-      if (selectedText) {
-        let message;
-        if (commentContent) {
-          message = `Context: "${selectedText}"\n\nRequest: ${commentContent}\n\n`;
-        } else {
-          message = `Context: "${selectedText}"\n\nPlease provide suggestions for this code.`;
-        }
-        
-        let waitingIndicatorAdded = false;
-        
-        try {
-          // Add the message to chat UI first
-          addMessageToUI('user', message);
-
-          // Add a waiting indicator
-          addWaitingIndicator();
-          waitingIndicatorAdded = true;
-
-          // Send to backend with suggest_template=true for template suggestions based on selected text
-          const { sendToBackend } = await import('./template-execution.js');
-          await sendToBackend(message, true);
-
-          // Hide the floating comment window after sending
-          elements.floatingComment.style.display = 'none';
-          
-        } catch (error) {
-          console.error('Error sending to AI:', error);
-          addMessageToUI('system', 'Error: Failed to send message to AI. Please try again.');
-        } finally {
-          // Always remove waiting indicator if it was added
-          if (waitingIndicatorAdded) {
-            try {
-              removeWaitingIndicator();
-            } catch (indicatorError) {
-              console.warn('Error removing waiting indicator:', indicatorError);
-            }
-          }
-        }
-      } else {
-        addMessageToUI('system', 'Please select some text first.');
-      }
-    };
     
     askLLMBtn.addEventListener('click', commentsData.askLLMHandler);
     commentsData.currentAskLLMBtn = askLLMBtn;
@@ -812,10 +812,29 @@ export function initCommentButtons() {
       const commentContent = elements.commentText.value.trim();
       
       if (commentContent && selectedText) {
+        // First, create a regular comment for the selected content
         createTextComment(selectedText, commentContent);
+        
+        // Then, generate template edit suggestions as follow-up actions
+        try {
+          const { askAIWithCommentTranslation } = await import('./comment-translation.js');
+          
+          // Add a system message indicating we're analyzing for template changes
+          addMessageToUI('system', '🔄 Analyzing comment for template edit suggestions...');
+          
+          // Use the comment translation service to generate template suggestions
+          await askAIWithCommentTranslation(selectedText, commentContent, state.currentMode);
+          
+        } catch (error) {
+          console.error('Error generating template suggestions:', error);
+          addMessageToUI('system', '⚠️ Comment created, but template analysis unavailable. You can manually review and apply changes.');
+        }
+      } else if (selectedText && !commentContent) {
+        // If no comment content, just create a regular comment with placeholder text
+        createTextComment(selectedText, 'Comment on selected text');
       }
     } catch (error) {
-      console.error('Error creating comment:', error);
+      console.error('Error processing comment:', error);
     }
     
     // Always hide the floating comment window, regardless of success/failure

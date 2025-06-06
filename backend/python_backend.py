@@ -19,6 +19,7 @@ from template import Template
 from execution_result import ExecutionResult
 from simple_view import SimpleView
 from diff_view import DiffView  
+from translate_comments_to_code_change import CommentTranslationService, CommentContext
 
 # Add file processing imports
 import pandas as pd
@@ -71,6 +72,9 @@ except Exception as e:
 # Global state
 view_registry = {}  # session_id -> View
 chat_manager = ChatManager(client, view_registry) if client else None
+
+# Initialize comment translation service
+comment_translation_service = CommentTranslationService(client) if client else None
 
 # Persistent storage for all documents
 DATABASE_DIR = 'database'
@@ -240,6 +244,103 @@ def clear_file_context():
         return jsonify({
             'error': str(e),
             'success': False
+        }), 500
+
+@app.route('/api/translate-comment', methods=['POST'])
+def translate_comment():
+    """Translate user comment into template edit suggestion."""
+    try:
+        data = request.get_json()
+        
+        # Extract comment data
+        comment_text = data.get('comment_text', '')
+        selected_text = data.get('selected_text', '')
+        mode = data.get('mode', 'preview')  # 'preview', 'template', 'source'
+        
+        # Extract document context
+        template_content = data.get('template_content', '')
+        preview_content = data.get('preview_content', '')
+        source_content = data.get('source_content', '')
+        variables = data.get('variables', {})
+        
+        # Document and session info
+        document_id = data.get('document_id')
+        session_id = data.get('session_id', 'default')
+        
+        # Validate required fields
+        if not comment_text:
+            return jsonify({
+                'success': False,
+                'error': 'Comment text is required'
+            }), 400
+        
+        # Check if comment translation service is available
+        if comment_translation_service is None:
+            return jsonify({
+                'success': False,
+                'error': 'Comment translation service not available (API key not configured)',
+                'fallback_suggestion': {
+                    'original_comment': comment_text,
+                    'selected_text': selected_text,
+                    'suggested_change': f"Review and address the comment: '{comment_text}'",
+                    'explanation': "Please manually review this comment and update the template accordingly. AI assistance is not available without an API key.",
+                    'confidence': 0.5,
+                    'change_type': 'manual_review'
+                }
+            })
+        
+        # Create comment context
+        comment_context = CommentContext(
+            comment_text=comment_text,
+            selected_text=selected_text,
+            mode=mode,
+            template_content=template_content,
+            preview_content=preview_content,
+            source_content=source_content,
+            variables=variables
+        )
+        
+        # Get translation suggestion
+        suggestion = comment_translation_service.translate_comment_to_template_edit(comment_context)
+        
+        # Convert suggestion to dict for JSON response
+        suggestion_dict = {
+            'original_comment': suggestion.original_comment,
+            'selected_text': suggestion.selected_text,
+            'suggested_change': suggestion.suggested_change,
+            'explanation': suggestion.explanation,
+            'confidence': suggestion.confidence,
+            'change_type': suggestion.change_type,
+            'target_location': suggestion.target_location
+        }
+        
+        logger.info(f"Generated comment translation for document {document_id}: {comment_text[:50]}...")
+        
+        return jsonify({
+            'success': True,
+            'suggestion': suggestion_dict,
+            'analysis': {
+                'comment_length': len(comment_text),
+                'selected_text_length': len(selected_text),
+                'mode': mode,
+                'template_length': len(template_content),
+                'variables_count': len(variables)
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error translating comment: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'fallback_suggestion': {
+                'original_comment': comment_text if 'comment_text' in locals() else '',
+                'selected_text': selected_text if 'selected_text' in locals() else '',
+                'suggested_change': f"Error occurred while processing comment. Please review manually.",
+                'explanation': f"An error occurred: {str(e)}",
+                'confidence': 0.1,
+                'change_type': 'error'
+            }
         }), 500
 
 @app.route('/api/compute-diff', methods=['POST'])

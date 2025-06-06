@@ -813,4 +813,109 @@ export function unresolveFloatingAnnotation(annotationId) {
   if (window.documentManager) {
     window.documentManager.onCommentChange();
   }
+}
+
+// Create special annotation for template suggestions with apply/reject buttons
+export function createTemplateSuggestionAnnotation(commentData) {
+  const annotationId = commentData.id;
+  
+  // Extract comment number from ID for display
+  let commentNumber = state.commentIdCounter;
+  const match = commentData.id.match(/(\d+)$/);
+  if (match) {
+    commentNumber = match[1];
+  }
+  
+  // Build suggestion details HTML
+  let suggestionDetailsHtml = '';
+  if (commentData.aiSuggestion) {
+    const suggestion = commentData.aiSuggestion;
+    suggestionDetailsHtml = `
+      <div class="template-suggestion-details">
+        <div class="suggestion-change">
+          <strong>Suggested Change (${suggestion.change_type}):</strong>
+          <div class="suggestion-code">${escapeHtml(suggestion.suggested_change)}</div>
+        </div>
+        ${suggestion.target_location ? `<div class="suggestion-location"><strong>Location:</strong> ${escapeHtml(suggestion.target_location)}</div>` : ''}
+        <div class="suggestion-confidence">
+          <strong>Confidence:</strong> ${Math.round(suggestion.confidence * 100)}%
+          <div class="confidence-bar">
+            <div class="confidence-fill" style="width: ${suggestion.confidence * 100}%"></div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+  
+  // Create annotation element with special template suggestion styling
+  const annotation = document.createElement('div');
+  annotation.className = 'floating-annotation template-suggestion-annotation';
+  annotation.id = annotationId;
+  annotation.innerHTML = `
+    <div class="annotation-header template-suggestion-header">
+      <div class="annotation-title">
+        <span>🔄 Template Suggestion #${commentNumber}</span>
+        <div class="annotation-author" style="color: ${commentData.authorColor};">
+          <span class="author-emoji">${commentData.authorEmoji}</span>
+          <span class="author-name">${commentData.authorName}</span>
+        </div>
+      </div>
+      <div class="annotation-actions">
+        <button class="annotation-close" onclick="closeFloatingAnnotation('${annotationId}')" title="Close window">×</button>
+      </div>
+    </div>
+    <div class="annotation-content">
+      <div class="original-comment">
+        <strong>💬 Original Comment:</strong>
+        <div class="comment-text">${escapeHtml(commentData.originalComment)}</div>
+      </div>
+      ${suggestionDetailsHtml}
+      <div class="template-suggestion-actions">
+        <button class="template-apply-btn" onclick="window.applyTemplateSuggestion('${annotationId}')" title="Apply this suggestion to the template">
+          ✅ Apply Change
+        </button>
+        <button class="template-reject-btn" onclick="window.rejectTemplateSuggestion('${annotationId}')" title="Reject this suggestion">
+          ❌ Reject
+        </button>
+      </div>
+    </div>
+  `;
+  
+  // Calculate positioning - Template suggestions appear on the right side
+  const annotationWidth = 380; // Wider for template suggestions
+  const rightMargin = 20;
+  const topMargin = 120;
+  
+  const right = rightMargin;
+  const top = topMargin;
+  
+  // Set initial position
+  annotation.style.position = 'fixed';
+  annotation.style.right = `${right}px`;
+  annotation.style.top = `${top}px`;
+  annotation.style.width = `${annotationWidth}px`;
+  annotation.style.zIndex = '10001';
+  
+  // Make it draggable
+  makeAnnotationDraggable(annotation);
+  
+  // Add to DOM
+  document.body.appendChild(annotation);
+  
+  // Store UI state
+  if (commentData.ui) {
+    commentData.ui.element = annotation;
+    commentData.ui.position = { top, right };
+    commentData.ui.isVisible = true;
+  }
+  
+  // Add fade-in animation
+  setTimeout(() => {
+    annotation.style.opacity = '1';
+    annotation.style.transform = 'scale(1)';
+  }, 10);
+  
+  console.log(`Created template suggestion annotation: ${annotationId}`);
+  
+  return annotation;
 } 

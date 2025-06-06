@@ -98,9 +98,19 @@ async function executeTemplateRequest(templateText, clearCache = false, isLiveUp
 
 function escapeAndFormatOutput(text) {
   if (!text) return 'No output generated';
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML.replace(/\n/g, '<br>');
+  
+  // Check if the text contains HTML (specifically our variable reference spans)
+  const containsVariableSpans = /<span[^>]*class="var-ref"[^>]*>/.test(text);
+  
+  if (containsVariableSpans) {
+    // Text already contains HTML spans for variable references, just format line breaks
+    return text.replace(/\n/g, '<br>');
+  } else {
+    // Plain text, escape HTML and format line breaks
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML.replace(/\n/g, '<br>');
+  }
 }
 
 function setExecutionStatus(message, type) {
