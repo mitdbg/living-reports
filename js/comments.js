@@ -9,7 +9,6 @@ import { getCurrentUser } from './auth.js';
 const COMMENTS_KEY = `comments_${windowId}`;
 if (!window[COMMENTS_KEY]) {
   window[COMMENTS_KEY] = {
-    initCallCount: 0,
     textSelectionInitialized: false,
     commentButtonsInitialized: false,
     previewMouseUpHandler: null,
@@ -202,11 +201,6 @@ export function refreshHighlightEventListeners(skipAnnotationRefresh = false) {
   }
 }
 
-function highlightIntemplateEditor(selectedText, commentId, selectionRange) {
-  // Simplified to use only text matching
-  highlightIntemplateEditorFallback(selectedText, commentId, selectionRange);
-}
-
 // Text replacement method for highlighting in template editor
 function highlightIntemplateEditorFallback(selectedText, commentId, selectionRange) {
   const editor = elements.templateEditor;
@@ -323,14 +317,6 @@ function reattachSourceEditorHighlightEventListeners() {
       element.setAttribute('data-listener-attached', 'true');
     }
   });
-}
-
-function showTextComment(commentId) {
-  const comment = state.comments[commentId];
-  if (!comment) return;
-  
-  // Find the annotation for this comment and make it visible
-  showAnnotationForText(comment.selectedText);
 }
 
 export function closeTextCommentPopup() {
@@ -535,35 +521,7 @@ function calculateCommentPosition(selectionRect, preferredSide = 'right') {
 }
 
 // Text selection handlers
-export function initTextSelection() {
-  commentsData.initCallCount++;
-  console.log(`[${windowId}] initTextSelection called (attempt #${commentsData.initCallCount}) - starting initialization...`);
-  console.log(`[${windowId}] Current textSelectionInitialized flag:`, commentsData.textSelectionInitialized);
-  
-  // Log element availability
-  console.log(`[${windowId}] Element availability check:`, {
-    previewContent: {
-      exists: !!elements.previewContent,
-      element: elements.previewContent,
-      inDOM: !!(elements.previewContent && document.contains(elements.previewContent))
-    },
-    templateEditor: {
-      exists: !!elements.templateEditor,
-      element: elements.templateEditor,
-      inDOM: !!(elements.templateEditor && document.contains(elements.templateEditor))
-    },
-    sourceEditor: {
-      exists: !!elements.sourceEditor,
-      element: elements.sourceEditor,
-      inDOM: !!(elements.sourceEditor && document.contains(elements.sourceEditor))
-    },
-    floatingComment: {
-      exists: !!elements.floatingComment,
-      element: elements.floatingComment,
-      inDOM: !!(elements.floatingComment && document.contains(elements.floatingComment))
-    }
-  });
-  
+export function initTextSelection() {  
   if (!elements.previewContent || !elements.templateEditor || !elements.sourceEditor || !elements.floatingComment) {
     console.error(`[${windowId}] Text selection elements not found!`, {
       previewContent: !!elements.previewContent,
@@ -665,28 +623,11 @@ export function initTextSelection() {
   // Mark as initialized
   commentsData.textSelectionInitialized = true;
   window[COMMENTS_KEY] = commentsData;
-  
-  // Verify elements were found and handlers attached
-  console.log(`[${windowId}] Text selection initialized successfully with elements:`, {
-    previewContent: !!elements.previewContent,
-    templateEditor: !!elements.templateEditor,
-    sourceEditor: !!elements.sourceEditor,
-    floatingComment: !!elements.floatingComment,
-    handlersAttached: {
-      preview: !!commentsData.previewMouseUpHandler,
-      template: !!commentsData.templateEditorMouseUpHandler,
-      source: !!commentsData.sourceEditorMouseUpHandler
-    }
-  });
 }
 
 function handleTextSelection(event) {
-  console.log('[DEBUG] handleTextSelection called from element:', event?.target?.className || 'unknown');
-  
   const selection = window.getSelection();
   const selectedText = selection.toString().trim();
-  
-  console.log('[DEBUG] Selected text:', selectedText);
   
   if (selectedText.length > 0) {
     // Validate and clean the selected text before processing
@@ -718,8 +659,6 @@ function handleTextSelection(event) {
       // Store the range in the floating comment element for later retrieval
       elements.floatingComment.storedSelectionRange = storedRange;
       elements.commentText.value = '';
-      
-      console.log('[DEBUG] Comment window should be visible now');
     } else {
       elements.floatingComment.style.display = 'none';
       elements.floatingComment.storedSelectionRange = null;
@@ -1049,11 +988,6 @@ function createHighlightFromTextSearch(targetElement, selectedText, commentId) {
   }
 }
 
-function highlightInSourceEditor(selectedText, commentId, selectionRange) {
-  // Simplified to use only text matching
-  highlightInSourceEditorFallback(selectedText, commentId, selectionRange);
-}
-
 // Text replacement method for highlighting in source editor
 function highlightInSourceEditorFallback(selectedText, commentId, selectionRange) {
   const editor = elements.sourceEditor;
@@ -1101,34 +1035,3 @@ function highlightInSourceEditorFallback(selectedText, commentId, selectionRange
     newHighlight.setAttribute('data-listener-attached', 'true');
   }
 }
-
-// Test function to verify source editor exists and can receive events
-export function testSourceEditor() {
-  console.log('[TEST] Testing source editor...');
-  console.log('[TEST] elements.sourceEditor:', elements.sourceEditor);
-  console.log('[TEST] sourceEditor in DOM:', document.querySelector('.source-editor'));
-  
-  if (elements.sourceEditor) {
-    console.log('[TEST] Source editor element found, testing click event...');
-    
-    // Add a temporary test event listener
-    const testHandler = () => {
-      console.log('[TEST] Source editor click event works!');
-    };
-    
-    elements.sourceEditor.addEventListener('click', testHandler);
-    
-    // Remove after 5 seconds
-    setTimeout(() => {
-      elements.sourceEditor.removeEventListener('click', testHandler);
-      console.log('[TEST] Test handler removed');
-    }, 5000);
-    
-    console.log('[TEST] Click on the source editor within 5 seconds to test');
-  } else {
-    console.log('[TEST] Source editor element NOT found!');
-  }
-}
-
-// Make test function globally accessible
-window.testSourceEditor = testSourceEditor; 
