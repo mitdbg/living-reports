@@ -128,14 +128,9 @@ RESPONSE:`;
       parsedSuggestion = parseStructuredLLMResponse(result.suggestion, documentContext.template_content, variableInfo);
     }
     
-    // If parsing failed, create a fallback suggestion
-    if (!parsedSuggestion) {
-      parsedSuggestion = createFallbackSuggestion(commentText, plainSelectedText, documentContext.template_content, variableInfo);
-    }
-    
     console.log('Parsed comment translation result:', parsedSuggestion);
     return {
-      success: true,
+      success: parsedSuggestion !== null,
       suggestion: parsedSuggestion,
       original_comment: commentText,
       original_selected_text: selectedText,
@@ -145,21 +140,12 @@ RESPONSE:`;
   } catch (error) {
     console.error('Error translating comment:', error);
     
-    // Return fallback suggestion on error
-    const documentContext = await getCurrentDocumentContext();
-    const variableInfo = parseVariableFromSelectedText(selectedText);
-    let plainSelectedText = selectedText;
-    if (/<[^>]*>/.test(selectedText)) {
-      const tempDiv = document.createElement('div');
-      tempDiv.innerHTML = selectedText;
-      plainSelectedText = tempDiv.textContent || tempDiv.innerText || '';
-    }
-    
     return {
       success: false,
       error: error.message,
-      fallback_suggestion: createFallbackSuggestion(commentText, plainSelectedText, documentContext.template_content, variableInfo),
-      variable_context: variableInfo
+      original_comment: commentText,
+      original_selected_text: selectedText,
+      variable_context: parseVariableFromSelectedText(selectedText)
     };
   }
 }
@@ -630,72 +616,6 @@ function parseStructuredLLMResponse(suggestion, templateContent, variableInfo) {
 }
 
 /**
- * Create a fallback suggestion when LLM parsing fails
- * @param {string} commentText - User's comment
- * @param {string} selectedText - Selected text (plain)
- * @param {string} templateContent - Template content
- * @param {Object} variableInfo - Variable context information
- * @returns {Object} Fallback suggestion
- */
-function createFallbackSuggestion(commentText, selectedText, templateContent, variableInfo) {
-  // Try to find the selected text in template
-  let targetText = selectedText;
-  let changeType = 'replace';
-  
-  if (!templateContent.includes(selectedText)) {
-    // Try to find similar text
-    const words = selectedText.split(' ').filter(word => word.length > 2);
-    let foundText = null;
-    
-    for (const word of words) {
-      if (templateContent.includes(word)) {
-        foundText = word;
-        break;
-      }
-    }
-    
-    if (foundText) {
-      targetText = foundText;
-    } else {
-      // If no match found, default to add operation
-      changeType = 'add';
-      targetText = '';
-    }
-  }
-  
-  // Generate a basic suggestion based on comment - make it generic for any comment
-  let suggestedChange;
-  const comment = commentText.toLowerCase();
-  
-  if (comment.includes('remove') || comment.includes('delete')) {
-    changeType = 'remove';
-    suggestedChange = '';
-  } else if (comment.includes('add') || comment.includes('include')) {
-    changeType = 'add';
-    suggestedChange = `Additional content: ${commentText}`;
-  } else {
-    // For any other comment, create a meaningful suggestion
-    changeType = 'replace';
-    suggestedChange = `[${commentText}] ${selectedText}`;
-  }
-  
-  const startIndex = targetText ? templateContent.indexOf(targetText) : templateContent.length;
-  
-  return {
-    change_type: changeType,
-    target_text: targetText,
-    suggested_change: suggestedChange,
-    new_text: suggestedChange,
-    explanation: `Fallback suggestion based on comment: "${commentText}"`,
-    confidence: 0.4, // Low confidence for fallback
-    character_start: startIndex,
-    character_end: startIndex + (targetText ? targetText.length : 0),
-    line_number: startIndex !== -1 ? (templateContent.substring(0, startIndex).match(/\n/g) || []).length + 1 : 1,
-    variable_context: variableInfo
-  };
-}
-
-/**
  * Parse variable information from selected text
  * @param {string} selectedText - The selected text (may contain HTML with data attributes)
  * @returns {Object} Variable information
@@ -786,29 +706,15 @@ export async function askAIWithCommentTranslation(selectedText, commentText, mod
       addMessageToUI('system', successMessage);
       
     } else {
-      // Handle fallback
-      const fallbackSuggestion = translationResult.fallback_suggestion;
-      if (fallbackSuggestion) {
-        await createTemplateEditSuggestionComment(commentText, selectedText, fallbackSuggestion, mode);
-        addMessageToUI('system', '⚠️ Created basic suggestion (structured parsing failed). Review manually.');
-      } else {
-        throw new Error(translationResult.error || 'Failed to generate suggestion');
-      }
+      // No valid template suggestion from LLM - don't create any comment
+      console.log('No valid template suggestion from LLM, skipping comment creation');
+      addMessageToUI('system', '🤖 LLM could not suggest template changes for this comment.');
     }
     
   } catch (error) {
     console.error('Error in askAIWithCommentTranslation:', error);
-    addMessageToUI('system', `❌ Failed to create template suggestion: ${error.message}`);
-    
-    // Create basic comment as fallback
-    try {
-      const { createTextComment } = await import('./comments.js');
-      createTextComment(selectedText, commentText);
-      addMessageToUI('system', '💡 Created regular comment instead. Manual review needed.');
-    } catch (fallbackError) {
-      console.error('Error creating fallback comment:', fallbackError);
-    }
-    
+    addMessageToUI('system', `❌ Failed to analyze comment for template changes: ${error.message}`);
+    // Don't create any comment when there's an error
   } finally {
     if (waitingIndicatorAdded) {
       try {
