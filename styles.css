@@ -4148,3 +4148,212 @@ p {
 .template-editor.template-diff-mode .diff-line-container {
   margin: 2px 0;
 }
+
+/* Template Suggestion Highlighting */
+.template-suggestion-highlight {
+  background: linear-gradient(135deg, #e8f5e8 0%, #f0f9ff 100%);
+  border: 2px solid #10b981;
+  border-radius: 4px;
+  position: relative;
+  padding: 2px 4px;
+  margin: 0 1px;
+  display: inline-block;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 4px rgba(16, 185, 129, 0.1);
+}
+
+.template-suggestion-highlight:hover {
+  background: linear-gradient(135deg, #dcfce7 0%, #e0f2fe 100%);
+  border-color: #059669;
+  box-shadow: 0 4px 8px rgba(16, 185, 129, 0.2);
+  transform: translateY(-1px);
+}
+
+/* Confidence-based styling */
+.template-suggestion-highlight.high-confidence {
+  border-color: #10b981;
+  background: linear-gradient(135deg, #dcfce7 0%, #f0f9ff 100%);
+}
+
+.template-suggestion-highlight.high-confidence::before {
+  content: '🟢';
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  font-size: 10px;
+  background: white;
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.template-suggestion-highlight.medium-confidence {
+  border-color: #f59e0b;
+  background: linear-gradient(135deg, #fef3c7 0%, #fffbeb 100%);
+}
+
+.template-suggestion-highlight.medium-confidence::before {
+  content: '🟡';
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  font-size: 10px;
+  background: white;
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.template-suggestion-highlight.low-confidence {
+  border-color: #fbbf24;
+  background: linear-gradient(135deg, #fef3c7 0%, #fefce8 100%);
+}
+
+.template-suggestion-highlight.low-confidence:hover {
+  border-color: #f59e0b;
+  background: linear-gradient(135deg, #fed7aa 0%, #fef3c7 100%);
+}
+
+/* Change type styling */
+.template-suggestion-highlight[data-change-type="add"]::after {
+  content: '➕';
+  position: absolute;
+  top: -8px;
+  left: -8px;
+  font-size: 10px;
+  background: white;
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.template-suggestion-highlight[data-change-type="remove"]::after {
+  content: '❌';
+  position: absolute;
+  top: -8px;
+  left: -8px;
+  font-size: 10px;
+  background: white;
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.template-suggestion-highlight[data-change-type="replace"]::after {
+  content: '🔄';
+  position: absolute;
+  top: -8px;
+  left: -8px;
+  font-size: 10px;
+  background: white;
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* Animation for template suggestions */
+@keyframes templateSuggestionPulse {
+  0%, 100% {
+    box-shadow: 0 2px 4px rgba(16, 185, 129, 0.1);
+  }
+  50% {
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+  }
+}
+
+.template-suggestion-highlight:hover {
+  animation: templateSuggestionPulse 2s ease-in-out;
+}
+
+/* Inline Diff Styles */
+.inline-diff-delete {
+  background-color: #fee2e2;
+  text-decoration: line-through;
+  color: #dc2626;
+  padding: 2px 4px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.inline-diff-delete:hover {
+  background-color: #fecaca;
+  box-shadow: 0 2px 4px rgba(220, 38, 38, 0.2);
+}
+
+.inline-diff-add {
+  background-color: #dcfce7;
+  color: #16a34a;
+  padding: 2px 4px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.inline-diff-add:hover {
+  background-color: #bbf7d0;
+  box-shadow: 0 2px 4px rgba(22, 163, 74, 0.2);
+}
+
+/* Inline Diff Action Popup */
+.inline-diff-actions {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+  padding: 8px;
+  display: flex;
+  gap: 8px;
+  z-index: 1000;
+}
+
+.inline-diff-actions .diff-action-btn {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.inline-diff-actions .diff-action-btn.accept {
+  background-color: #16a34a;
+  color: white;
+}
+
+.inline-diff-actions .diff-action-btn.accept:hover {
+  background-color: #15803d;
+  transform: translateY(-1px);
+}
+
+.inline-diff-actions .diff-action-btn.reject {
+  background-color: #dc2626;
+  color: white;
+}
+
+.inline-diff-actions .diff-action-btn.reject:hover {
+  background-color: #b91c1c;
+  transform: translateY(-1px);
+}
