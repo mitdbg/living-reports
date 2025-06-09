@@ -1285,7 +1285,8 @@ export class DocumentManager {
     const previewContent = container.querySelector('.preview-content');
     const sourceEditor = container.querySelector('.source-editor');
 
-    const currentTemplateContent = templateEditor ? getTextContentWithLineBreaks(templateEditor) : '';
+    // CRITICAL FIX: Get clean template content, not diff HTML
+    const currentTemplateContent = this.getCleanTemplateContent(templateEditor);
     const currentPreviewContent = previewContent ? previewContent.innerHTML : '';
     const currentSourceContent = sourceEditor ? getTextContentWithLineBreaks(sourceEditor) : '';
     
@@ -1347,6 +1348,58 @@ export class DocumentManager {
   }
 
   /**
+   * Get clean template content without inline diff HTML
+   * @param {Element} templateEditor - The template editor element
+   * @returns {string} Clean template content
+   */
+  getCleanTemplateContent(templateEditor) {
+    if (!templateEditor) {
+      return '';
+    }
+
+    // Check if there are active inline diffs
+    const hasInlineDiffs = templateEditor.querySelector('.inline-diff-delete, .inline-diff-add');
+    
+    if (hasInlineDiffs) {
+      console.log('🧹 Found inline diffs, getting clean template content...');
+      
+      // Check if we have stored original content from comments using window.currentInlineDiffs
+      if (window.currentInlineDiffs) {
+        const activeDiffIds = Object.keys(window.currentInlineDiffs);
+        if (activeDiffIds.length > 0) {
+          const firstDiff = window.currentInlineDiffs[activeDiffIds[0]];
+          if (firstDiff.commentData && firstDiff.commentData.originalTemplateContent) {
+            const cleanContent = firstDiff.commentData.originalTemplateContent;
+            console.log('✅ Using stored original template content from currentInlineDiffs:', cleanContent);
+            return cleanContent;
+          }
+        }
+      }
+      
+      // Fallback: try to clean the HTML by removing diff elements
+      const tempEditor = templateEditor.cloneNode(true);
+      
+      // Remove all diff delete elements and replace with their text content
+      const deleteElements = tempEditor.querySelectorAll('.inline-diff-delete');
+      deleteElements.forEach(el => {
+        const textNode = document.createTextNode(el.textContent);
+        el.parentNode.replaceChild(textNode, el);
+      });
+      
+      // Remove all diff add elements entirely
+      const addElements = tempEditor.querySelectorAll('.inline-diff-add');
+      addElements.forEach(el => el.remove());
+      
+      const cleanedContent = getTextContentWithLineBreaks(tempEditor);
+      console.log('⚠️ Fallback: cleaned diff HTML to get content:', cleanedContent);
+      return cleanedContent;
+    } else {
+      // No inline diffs, get content normally
+      return getTextContentWithLineBreaks(templateEditor);
+    }
+  }
+
+  /**
    * Capture comments with UI state preservation for saving
    */
   captureCommentsWithUIState(stateComments) {
@@ -1382,6 +1435,16 @@ export class DocumentManager {
         savedComment.suggestedTemplate = comment.suggestedTemplate;
         savedComment.aiMessage = comment.aiMessage;
         savedComment.requestedBy = comment.requestedBy;
+      }
+
+      // Save template suggestion-specific properties
+      if (comment.isTemplateSuggestion) {
+        savedComment.isTemplateSuggestion = true;
+        savedComment.originalComment = comment.originalComment;
+        savedComment.aiSuggestion = comment.aiSuggestion;
+        savedComment.confidence = comment.confidence;
+        savedComment.inlineDiffData = comment.inlineDiffData;
+        savedComment.inlineDiffState = comment.inlineDiffState;
       }
 
       // Store UI state separately for restoration (but don't save DOM elements to backend)
@@ -1867,6 +1930,14 @@ export class DocumentManager {
             aiMessage: savedComment.aiMessage,
             requestedBy: savedComment.requestedBy,
             
+            // Restore template suggestion-specific properties for syncing
+            isTemplateSuggestion: savedComment.isTemplateSuggestion || false,
+            originalComment: savedComment.originalComment,
+            aiSuggestion: savedComment.aiSuggestion,
+            confidence: savedComment.confidence,
+            inlineDiffData: savedComment.inlineDiffData,
+            inlineDiffState: savedComment.inlineDiffState,
+            
             ui: {
               position: savedComment.uiState?.position || null,
               element: null,
@@ -1949,6 +2020,34 @@ export class DocumentManager {
               
             } catch (error) {
               console.error(`Error creating AI suggestion annotation for ${commentId}:`, error);
+            }
+          }
+          
+        } else if (savedComment.isTemplateSuggestion && savedComment.inlineDiffData) {
+          console.log(`Restoring template suggestion comment: ${commentId}`);
+          
+          // Recreate inline diff for template suggestions
+          const diffCreated = await this.recreateTemplateSuggestionDiff(savedComment);
+          
+          // Check if annotation already exists
+          const existingAnnotation = document.getElementById(commentId);
+          
+          if (!existingAnnotation && !createdAnnotations.has(commentId)) {
+            try {
+              // Create template suggestion annotation
+              createFloatingAnnotation(savedComment.selectedText, savedComment.commentMessage, currentComment);
+              createdAnnotations.add(commentId);
+              
+              // Apply saved position if available
+              const annotation = document.getElementById(commentId);
+              if (annotation && savedComment.uiState?.position) {
+                const { top, left } = savedComment.uiState.position;
+                annotation.style.top = `${top}px`;
+                annotation.style.left = `${left}px`;
+              }
+              
+            } catch (error) {
+              console.error(`Error creating template suggestion annotation for ${commentId}:`, error);
             }
           }
           
@@ -2224,6 +2323,126 @@ export class DocumentManager {
 
     } catch (error) {
       console.error('Error recreating AI suggestion diff:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Recreate inline diff highlighting for a restored template suggestion comment
+   */
+  async recreateTemplateSuggestionDiff(savedComment) {
+    if (!savedComment.inlineDiffData || !savedComment.inlineDiffState) {
+      console.warn('Missing inline diff data for template suggestion:', savedComment.id);
+      return false;
+    }
+
+    try {
+      // Get the document container first
+      const container = document.getElementById(`document-${this.activeDocumentId}`);
+      if (!container) {
+        console.warn('Document container not found for template suggestion restoration');
+        return false;
+      }
+
+      const templateEditor = container.querySelector('.template-editor');
+      if (!templateEditor) {
+        console.warn('Template editor not found for template suggestion restoration');
+        return false;
+      }
+
+      console.log('🔄 Restoring template suggestion inline diff:', savedComment.id);
+      console.log('📊 Diff data:', savedComment.inlineDiffData);
+      console.log('🎯 Diff state:', savedComment.inlineDiffState);
+      
+      const commentId = savedComment.id;
+      const diffData = savedComment.inlineDiffData;
+      const diffState = savedComment.inlineDiffState;
+      
+      // Check if the diff is still active (not applied)
+      if (diffState.isActive) {
+        // Use contentWithDiff if available (debug version), otherwise appliedHtml (production version)
+        const diffHtml = diffState.contentWithDiff || diffState.appliedHtml;
+        
+        if (diffHtml) {
+          console.log('✨ Restoring diff HTML:', diffHtml);
+          templateEditor.innerHTML = diffHtml;
+          
+          // Restore the window.currentInlineDiffs data for immediate use
+          if (!window.currentInlineDiffs) {
+            window.currentInlineDiffs = {};
+          }
+          window.currentInlineDiffs[commentId] = {
+            suggestion: savedComment.aiSuggestion,
+            commentData: savedComment,
+            originalText: diffData.targetText,
+            newText: diffData.newText,
+            changeType: diffData.changeType,
+            characterStart: diffData.characterStart,
+            characterEnd: diffData.characterEnd,
+            lineNumber: diffData.lineNumber
+          };
+          
+          // Reattach event listeners for accept/reject actions
+          const { addInlineDiffEventListeners } = await import('./comment-translation.js');
+          addInlineDiffEventListeners(commentId);
+          
+          console.log(`✅ Successfully restored inline diff for template suggestion: ${commentId}`);
+          return true;
+          
+        } else {
+          console.warn('No diff HTML found in saved state for:', commentId);
+          
+          // Try to recreate the diff from scratch using the original logic
+          if (diffState.originalContent && diffData.targetText && diffData.newText) {
+            console.log('🔄 Recreating diff from original data...');
+            
+            const originalContent = diffState.originalContent;
+            const targetText = diffData.targetText;
+            const newText = diffData.newText;
+            
+            if (originalContent.includes(targetText)) {
+              const inlineDiffHtml = `<span class="inline-diff-delete" data-comment-id="${commentId}" title="Click to accept/reject">${targetText}</span><span class="inline-diff-add" data-comment-id="${commentId}" title="Click to accept/reject">${newText}</span>`;
+              const contentWithDiff = originalContent.replace(targetText, inlineDiffHtml);
+              
+              templateEditor.innerHTML = contentWithDiff;
+              
+              // Update the saved state with the recreated HTML
+              savedComment.inlineDiffState.contentWithDiff = contentWithDiff;
+              
+              // Restore currentInlineDiffs
+              if (!window.currentInlineDiffs) {
+                window.currentInlineDiffs = {};
+              }
+              window.currentInlineDiffs[commentId] = {
+                suggestion: savedComment.aiSuggestion,
+                commentData: savedComment,
+                originalText: targetText,
+                newText: newText,
+                changeType: diffData.changeType
+              };
+              
+              // Reattach event listeners
+              const { addInlineDiffEventListeners } = await import('./comment-translation.js');
+              addInlineDiffEventListeners(commentId);
+              
+              console.log(`✅ Successfully recreated inline diff for: ${commentId}`);
+              return true;
+            } else {
+              console.warn('Target text not found in original content during recreation');
+              return false;
+            }
+          }
+          
+          return false;
+        }
+        
+      } else {
+        console.log(`Template suggestion ${commentId} was already applied, skipping diff restoration`);
+        return false;
+      }
+
+    } catch (error) {
+      console.error('Error recreating template suggestion diff:', error);
       return false;
     }
   }

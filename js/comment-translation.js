@@ -197,7 +197,7 @@ export async function createTemplateEditSuggestionComment(originalComment, selec
     const currentUser = getCurrentUser();
     const commentId = `template-suggestion-${incrementCommentCounter()}`;
     
-    // Create simplified comment data
+    // Create simplified comment data with inline diff metadata
     const commentData = {
       id: commentId,
       selectedText: selectedText,
@@ -214,6 +214,16 @@ export async function createTemplateEditSuggestionComment(originalComment, selec
       originalComment: originalComment,
       aiSuggestion: suggestion,
       confidence: suggestion.confidence,
+      // Add inline diff metadata for persistence
+      inlineDiffData: {
+        changeType: suggestion.change_type,
+        targetText: suggestion.target_text,
+        newText: suggestion.suggested_change || suggestion.new_text || '',
+        characterStart: suggestion.character_start,
+        characterEnd: suggestion.character_end,
+        lineNumber: suggestion.line_number,
+        variableContext: suggestion.variable_context
+      },
       ui: { position: null, element: null, isVisible: true, isDragging: false }
     };
     
@@ -328,6 +338,19 @@ async function showTemplateEditorDiffForSuggestion(suggestion, commentData) {
       lineNumber: suggestion.line_number
     };
     
+    // CRITICAL: Also save this state to the comment data for persistence
+    commentData.inlineDiffState = {
+      isActive: true,
+      appliedHtml: templateEditor.innerHTML,
+      originalContent: templateTextContent,
+      targetText: targetText,
+      newText: newText,
+      changeType: changeType
+    };
+    
+    // Update the state to trigger persistence
+    state.comments[commentData.id] = commentData;
+    
     // Show success message with confidence level
     const confidenceLevel = suggestion.confidence > 0.8 ? 'High' : 
                            suggestion.confidence > 0.6 ? 'Medium' : 'Low';
@@ -361,6 +384,9 @@ function addInlineDiffEventListeners(commentId) {
     }
   });
 }
+
+// Export the function for use in document manager
+export { addInlineDiffEventListeners };
 
 /**
  * Show inline diff actions (accept/reject) near the clicked element
