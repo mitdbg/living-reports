@@ -303,6 +303,7 @@ def translate_comment():
         # Get translation suggestion
         suggestion = comment_translation_service.translate_comment_to_template_edit(comment_context)
         
+        print(f"_____Suggestion: {suggestion}")
         # Convert suggestion to dict for JSON response
         suggestion_dict = {
             'original_comment': suggestion.original_comment,
@@ -311,7 +312,7 @@ def translate_comment():
             'explanation': suggestion.explanation,
             'confidence': suggestion.confidence,
             'change_type': suggestion.change_type,
-            'target_location': suggestion.target_location
+            'original_text': suggestion.original_text
         }
         
         logger.info(f"Generated comment translation for document {document_id}: {comment_text[:50]}...")

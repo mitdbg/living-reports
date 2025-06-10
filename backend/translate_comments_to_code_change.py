@@ -43,7 +43,7 @@ class TemplateEditSuggestion:
     explanation: str
     confidence: float
     change_type: str
-    target_location: Optional[str] = None
+    original_text: str
 
 class CommentTranslationService:
     """Service for translating user comments into template edit suggestions"""
@@ -177,6 +177,7 @@ class CommentTranslationService:
             response = self._call_llm(prompt)
             suggestion_text = response.choices[0].message.content.strip()
             
+            print(f"_____Original LLM response: {suggestion_text}")
             # Parse LLM response
             parsed_suggestion = self._parse_llm_response(suggestion_text, comment_context, analysis)
             
@@ -188,49 +189,7 @@ class CommentTranslationService:
     
     def _create_llm_prompt(self, context: CommentContext, analysis: CommentAnalysis) -> str:
         """Create a detailed prompt for the LLM based on context and analysis"""
-        
-        prompt = f"""You are helping translate a user comment into specific template code changes.
-
-CONTEXT:
-- User commented on {context.mode} content
-- Comment: "{context.comment_text}"
-- Selected text: "{context.selected_text}"
-- Detected intent: {analysis.intent.value} (confidence: {analysis.confidence:.2f})
-
-CURRENT TEMPLATE:
-```
-{context.template_content}
-```
-
-CURRENT PREVIEW OUTPUT:
-```
-{context.preview_content[:500]}{'...' if len(context.preview_content) > 500 else ''}
-```
-
-VARIABLES AVAILABLE:
-{json.dumps(context.variables, indent=2)}
-
-TASK:
-Based on the user's comment and the selected text, provide a specific template edit suggestion.
-
-RESPONSE FORMAT (JSON):
-{{
-    "suggested_change": "The exact template code change to make",
-    "explanation": "Clear explanation of what this change does and why",
-    "change_type": "replace|add|remove|modify_logic",
-    "target_location": "Description of where in template to make the change",
-    "confidence": 0.8
-}}
-
-Focus on:
-1. Making minimal, precise changes to the template
-2. Preserving existing functionality where possible
-3. Addressing the user's specific concern in their comment
-4. Maintaining template syntax and variable references
-
-Provide only the JSON response, no additional text."""
-
-        return prompt
+        return context.comment_text
     
     def _call_llm(self, prompt: str):
         """Call the LLM with the given prompt"""
@@ -268,11 +227,11 @@ Provide only the JSON response, no additional text."""
             return TemplateEditSuggestion(
                 original_comment=context.comment_text,
                 selected_text=context.selected_text,
-                suggested_change=response_data.get("suggested_change", ""),
+                suggested_change=response_data.get("new_text", ""),
                 explanation=response_data.get("explanation", ""),
                 confidence=response_data.get("confidence", 0.7),
                 change_type=response_data.get("change_type", "modify"),
-                target_location=response_data.get("target_location")
+                original_text=response_data.get("original_text")
             )
             
         except json.JSONDecodeError:

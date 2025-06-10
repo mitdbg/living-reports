@@ -72,18 +72,26 @@ ${variableInfo.isVariable ?
 RESPONSE FORMAT (JSON):
 {
   "change_type": "replace|add|remove",
-  "target_text": "exact text in template to change",
+  "original_text": "exact text in template to change",
   "new_text": "replacement text", 
   "explanation": "brief explanation",
   "confidence": 0.85,
   "variable_name": "${variableInfo.isVariable ? variableInfo.varName : null}"
 }
 
+
+CRITICAL REQUIREMENTS:
+1. "original_text" MUST be the exact text that exists in the template, so user will know what to change
+2. For variable assignments like {{var:=value}}, original_text should be the FULL assignment
+3. For static text, original_text should be the literal text in template
+4. "new_text" is what should replace the original_text
+5. Always return valid JSON only
+
 INSTRUCTIONS:
 1. Find the exact text in template that corresponds to the selection
-2. For variables: target the variable pattern ($varName or {{varName}})
+2. For variables: target the variable pattern ($varName or {{varName:=value}})
 3. For static text: target the literal text
-4. Ensure "target_text" exactly matches text in the template
+4. Ensure "original_text" exactly matches text in the template
 5. Return ONLY the JSON object
 
 RESPONSE:`;
@@ -217,7 +225,7 @@ export async function createTemplateEditSuggestionComment(originalComment, selec
       // Add inline diff metadata for persistence
       inlineDiffData: {
         changeType: suggestion.change_type,
-        targetText: suggestion.target_text,
+        originalText: suggestion.original_text,
         newText: suggestion.suggested_change || suggestion.new_text || '',
         characterStart: suggestion.character_start,
         characterEnd: suggestion.character_end,
@@ -259,31 +267,48 @@ async function showTemplateEditorDiffForSuggestion(suggestion, commentData) {
       return;
     }
     
-    // Work with the template editor's textContent for precise positioning
-    const templateTextContent = templateEditor.textContent || '';
+    // Work with the current HTML content (may contain existing diffs)
+    let currentHtmlContent = templateEditor.innerHTML || '';
+    const originalText = suggestion.original_text || '';
+    const newText = suggestion.suggested_change || suggestion.new_text || '';
     const changeType = suggestion.change_type;
     
     console.log('Creating inline diff for suggestion:', suggestion);
-    console.log('Template content length:', templateTextContent.length);
+    console.log('Current HTML content length:', currentHtmlContent.length);
     
-    // Use the precise target_text from LLM response
-    const targetText = suggestion.target_text || '';
-    const newText = suggestion.suggested_change || suggestion.new_text || '';
+    // Check for conflicts with existing diffs targeting the same text
+    const conflictingDiffs = findConflictingDiffs(originalText, currentHtmlContent);
+    
+    // Remove conflicting diffs before applying new one
+    if (conflictingDiffs.length > 0) {
+      console.log(`Found ${conflictingDiffs.length} conflicting diffs, removing them...`);
+      currentHtmlContent = removeConflictingInlineDiffs(currentHtmlContent, conflictingDiffs);
+      
+      // Clean up the conflicting diff data
+      conflictingDiffs.forEach(commentId => {
+        if (window.currentInlineDiffs && window.currentInlineDiffs[commentId]) {
+          delete window.currentInlineDiffs[commentId];
+          console.log(`Cleaned up conflicting diff data for comment: ${commentId}`);
+        }
+      });
+    }
+    
+    // Apply the new diff based on change type
+    let newContent = currentHtmlContent;
     
     if (changeType === 'replace') {
-      // For replace: use precise target_text from LLM
-      if (templateTextContent.includes(targetText)) {
+      // For replace: use precise original_text from LLM
+      if (newContent.includes(originalText)) {
         // Create the inline diff replacement
-        const inlineDiffHtml = `<span class="inline-diff-delete" data-comment-id="${commentData.id}" title="Click to accept/reject (${Math.round(suggestion.confidence * 100)}% confidence)">${targetText}</span><span class="inline-diff-add" data-comment-id="${commentData.id}" title="Click to accept/reject">${newText}</span>`;
+        const inlineDiffHtml = `<span class="inline-diff-delete" data-comment-id="${commentData.id}" title="Click to accept/reject (${Math.round(suggestion.confidence * 100)}% confidence)">${originalText}</span><span class="inline-diff-add" data-comment-id="${commentData.id}" title="Click to accept/reject">${newText}</span>`;
         
-        // Replace the target text directly in the template editor
-        const newContent = templateTextContent.replace(targetText, inlineDiffHtml);
-        templateEditor.innerHTML = newContent;
+        // Replace the target text in the current content
+        newContent = newContent.replace(originalText, inlineDiffHtml);
         
-        console.log(`Applied inline replace diff: "${targetText}" → "${newText}"`);
+        console.log(`Applied inline replace diff: "${originalText}" → "${newText}"`);
       } else {
-        console.warn('Target text not found in template:', targetText);
-        addMessageToUI('system', `⚠️ Could not locate target text "${targetText}" in template. Please check the suggestion manually.`);
+        console.warn('Target text not found in current content:', originalText);
+        addMessageToUI('system', `⚠️ Could not locate target text "${originalText}" in template. Please check the suggestion manually.`);
         return;
       }
       
@@ -291,34 +316,40 @@ async function showTemplateEditorDiffForSuggestion(suggestion, commentData) {
       // For add: use character position if available, otherwise append
       const additionHtml = `<span class="inline-diff-add" data-comment-id="${commentData.id}" title="Click to accept/reject">${newText}</span>`;
       
-      let newContent;
+      // Get the plain text version for position calculation
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = newContent;
+      const plainText = tempDiv.textContent || tempDiv.innerText || '';
+      
       if (suggestion.character_start !== undefined) {
-        // Insert at specific position
-        const insertPosition = Math.min(suggestion.character_start, templateTextContent.length);
-        newContent = templateTextContent.slice(0, insertPosition) + additionHtml + templateTextContent.slice(insertPosition);
+        // Insert at specific position (need to map from plain text position to HTML position)
+        const insertPosition = Math.min(suggestion.character_start, plainText.length);
+        // For now, append at the end to avoid complex HTML position mapping
+        newContent = newContent + '\n' + additionHtml;
       } else {
         // Append at the end
-        newContent = templateTextContent + '\n' + additionHtml;
+        newContent = newContent + '\n' + additionHtml;
       }
       
-      templateEditor.innerHTML = newContent;
-      console.log(`Applied inline add diff at position ${suggestion.character_start}: "${newText}"`);
+      console.log(`Applied inline add diff: "${newText}"`);
       
     } else if (changeType === 'remove') {
       // For remove: show target text with strikethrough
-      if (templateTextContent.includes(targetText)) {
-        const deletionHtml = `<span class="inline-diff-delete" data-comment-id="${commentData.id}" title="Click to accept/reject">${targetText}</span>`;
+      if (newContent.includes(originalText)) {
+        const deletionHtml = `<span class="inline-diff-delete" data-comment-id="${commentData.id}" title="Click to accept/reject">${originalText}</span>`;
         
-        const newContent = templateTextContent.replace(targetText, deletionHtml);
-        templateEditor.innerHTML = newContent;
+        newContent = newContent.replace(originalText, deletionHtml);
         
-        console.log(`Applied inline remove diff: "${targetText}"`);
+        console.log(`Applied inline remove diff: "${originalText}"`);
       } else {
-        console.warn('Target text for removal not found in template:', targetText);
-        addMessageToUI('system', `⚠️ Could not locate text to remove "${targetText}" in template.`);
+        console.warn('Target text for removal not found in current content:', originalText);
+        addMessageToUI('system', `⚠️ Could not locate text to remove "${originalText}" in template.`);
         return;
       }
     }
+    
+    // Update the template editor with the new content
+    templateEditor.innerHTML = newContent;
     
     // Add click handlers to the diff elements for accept/reject actions
     addInlineDiffEventListeners(commentData.id);
@@ -330,7 +361,7 @@ async function showTemplateEditorDiffForSuggestion(suggestion, commentData) {
     window.currentInlineDiffs[commentData.id] = {
       suggestion: suggestion,
       commentData: commentData,
-      originalText: targetText,
+      originalText: originalText,
       newText: newText,
       changeType: changeType,
       characterStart: suggestion.character_start,
@@ -342,8 +373,8 @@ async function showTemplateEditorDiffForSuggestion(suggestion, commentData) {
     commentData.inlineDiffState = {
       isActive: true,
       appliedHtml: templateEditor.innerHTML,
-      originalContent: templateTextContent,
-      targetText: targetText,
+      originalContent: newContent, // Store the content after applying this diff
+      originalText: originalText,
       newText: newText,
       changeType: changeType
     };
@@ -355,12 +386,78 @@ async function showTemplateEditorDiffForSuggestion(suggestion, commentData) {
     const confidenceLevel = suggestion.confidence > 0.8 ? 'High' : 
                            suggestion.confidence > 0.6 ? 'Medium' : 'Low';
     
-    addMessageToUI('system', `✨ Inline diff created with ${confidenceLevel} confidence (${Math.round(suggestion.confidence * 100)}%). Click the highlighted text to accept or reject.`);
+    const existingDiffCount = Object.keys(window.currentInlineDiffs || {}).length;
+    addMessageToUI('system', `✨ Inline diff created with ${confidenceLevel} confidence (${Math.round(suggestion.confidence * 100)}%). ${existingDiffCount > 1 ? `Total active diffs: ${existingDiffCount}` : ''} Click highlighted text to accept or reject.`);
     
   } catch (error) {
     console.error('Error showing inline template diff:', error);
     addMessageToUI('system', `❌ Failed to show inline diff: ${error.message}`);
   }
+}
+
+/**
+ * Find conflicting inline diffs that target the same text
+ * @param {string} targetText - The text that the new diff wants to target
+ * @param {string} htmlContent - Current HTML content with existing diffs
+ * @returns {Array} Array of comment IDs that have conflicting diffs
+ */
+function findConflictingDiffs(targetText, htmlContent) {
+  const conflicts = [];
+  
+  // Look for existing diff elements that contain the target text
+  const tempDiv = document.createElement('div');
+  tempDiv.innerHTML = htmlContent;
+  
+  // Find all existing diff elements
+  const existingDiffElements = tempDiv.querySelectorAll('.inline-diff-delete, .inline-diff-add');
+  
+  existingDiffElements.forEach(element => {
+    const commentId = element.getAttribute('data-comment-id');
+    const elementText = element.textContent;
+    
+    // Check if this existing diff conflicts with the new target text
+    if (elementText === targetText || targetText.includes(elementText) || elementText.includes(targetText)) {
+      if (commentId && !conflicts.includes(commentId)) {
+        conflicts.push(commentId);
+      }
+    }
+  });
+  
+  return conflicts;
+}
+
+/**
+ * Remove conflicting inline diffs from HTML content
+ * @param {string} htmlContent - Current HTML content
+ * @param {Array} conflictingCommentIds - Array of comment IDs to remove
+ * @returns {string} HTML content with conflicting diffs removed
+ */
+function removeConflictingInlineDiffs(htmlContent, conflictingCommentIds) {
+  let cleanedContent = htmlContent;
+  
+  conflictingCommentIds.forEach(commentId => {
+    // Create a temporary div to work with the HTML
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = cleanedContent;
+    
+    // Find and remove all diff elements for this comment ID
+    const diffElements = tempDiv.querySelectorAll(`[data-comment-id="${commentId}"]`);
+    
+    diffElements.forEach(element => {
+      if (element.classList.contains('inline-diff-delete')) {
+        // For delete elements, replace with the original text
+        const textNode = document.createTextNode(element.textContent);
+        element.parentNode.replaceChild(textNode, element);
+      } else if (element.classList.contains('inline-diff-add')) {
+        // For add elements, remove them completely
+        element.remove();
+      }
+    });
+    
+    cleanedContent = tempDiv.innerHTML;
+  });
+  
+  return cleanedContent;
 }
 
 // Inline diff helper functions
@@ -581,7 +678,7 @@ function parseStructuredLLMResponse(suggestion, templateContent, variableInfo) {
     }
     
     // Validate required fields
-    const requiredFields = ['change_type', 'target_text', 'explanation'];
+    const requiredFields = ['change_type', 'original_text', 'explanation'];
     for (const field of requiredFields) {
       if (!parsedSuggestion[field]) {
         console.warn(`Missing required field: ${field}`);
@@ -595,33 +692,16 @@ function parseStructuredLLMResponse(suggestion, templateContent, variableInfo) {
       return null;
     }
     
-    // Validate that target_text exists in template (for replace/remove operations)
-    if (['replace', 'remove'].includes(parsedSuggestion.change_type)) {
-      if (!templateContent.includes(parsedSuggestion.target_text)) {
-        console.warn('Target text not found in template:', parsedSuggestion.target_text);
-        // Try to find similar text
-        const words = parsedSuggestion.target_text.split(' ');
-        const firstWord = words[0];
-        if (firstWord && templateContent.includes(firstWord)) {
-          // Update target_text to first word that exists
-          parsedSuggestion.target_text = firstWord;
-          console.log('Updated target_text to first matching word:', firstWord);
-        } else {
-          return null;
-        }
-      }
-    }
-    
     // Set defaults for missing optional fields
     parsedSuggestion.confidence = parsedSuggestion.confidence || 0.7;
-    parsedSuggestion.suggested_change = parsedSuggestion.new_text || parsedSuggestion.target_text;
+    parsedSuggestion.suggested_change = parsedSuggestion.suggested_change || parsedSuggestion.new_text;
     
     // Calculate character positions if not provided
-    if (parsedSuggestion.target_text && !parsedSuggestion.character_start) {
-      const startIndex = templateContent.indexOf(parsedSuggestion.target_text);
+    if (parsedSuggestion.original_text && !parsedSuggestion.character_start) {
+      const startIndex = templateContent.indexOf(parsedSuggestion.original_text);
       if (startIndex !== -1) {
         parsedSuggestion.character_start = startIndex;
-        parsedSuggestion.character_end = startIndex + parsedSuggestion.target_text.length;
+        parsedSuggestion.character_end = startIndex + parsedSuggestion.original_text.length;
         
         // Calculate line number
         const textBeforeTarget = templateContent.substring(0, startIndex);
@@ -722,9 +802,9 @@ export async function askAIWithCommentTranslation(selectedText, commentText, mod
       let successMessage = `✅ Created template edit suggestion with ${confidencePercent}% confidence.`;
       
       if (varInfo && varInfo.isVariable) {
-        successMessage += ` Variable "${varInfo.varName}" (value: ${varInfo.currentValue}) → Target: "${suggestion.target_text}"`;
+        successMessage += ` Variable "${varInfo.varName}" (value: ${varInfo.currentValue}) → Target: "${suggestion.original_text}"`;
       } else {
-        successMessage += ` Target: "${suggestion.target_text}"`;
+        successMessage += ` Target: "${suggestion.original_text}"`;
       }
       
       successMessage += ` | Change: ${suggestion.change_type}`;
