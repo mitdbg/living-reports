@@ -827,7 +827,7 @@ export function initCommentButtons() {
           
         } catch (error) {
           console.error('Error generating template suggestions:', error);
-          addMessageToUI('system', '⚠️ Comment created, but template analysis unavailable. You can manually review and apply changes.');
+          addMessageToUI('system', `⚠️ Comment created, but template analysis failed: ${error.message}`);
         }
       } else if (selectedText && !commentContent) {
         // If no comment content, just create a regular comment with placeholder text

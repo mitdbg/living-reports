@@ -210,7 +210,7 @@ export async function createTemplateEditSuggestionComment(originalComment, selec
       id: commentId,
       selectedText: selectedText,
       commentMessage: `🎯 ${originalComment}\n🤖 ${suggestion.explanation}`,
-      mode: 'template',
+      mode: "template",
       author: currentUser ? currentUser.id : 'anonymous',
       authorName: currentUser ? currentUser.name : 'Anonymous',
       authorEmoji: '🔄',
@@ -240,6 +240,10 @@ export async function createTemplateEditSuggestionComment(originalComment, selec
     
     // Create inline diff in template editor
     await showTemplateEditorDiffForSuggestion(suggestion, commentData);
+    
+    // Create floating annotation window for the template suggestion
+    const { createTemplateSuggestionAnnotation } = await import('./annotations.js');
+    createTemplateSuggestionAnnotation(commentData);
     
     // Trigger auto-save
     if (window.documentManager) {

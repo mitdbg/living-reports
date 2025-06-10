@@ -875,11 +875,12 @@ export function createTemplateSuggestionAnnotation(commentData) {
   let suggestionDetailsHtml = '';
   if (commentData.aiSuggestion) {
     const suggestion = commentData.aiSuggestion;
+    const suggestedText = suggestion.suggested_change || suggestion.new_text || '';
     suggestionDetailsHtml = `
       <div class="template-suggestion-details">
         <div class="suggestion-change">
           <strong>Suggested Change (${suggestion.change_type}):</strong>
-          <div class="suggestion-code">${escapeHtml(suggestion.suggested_change)}</div>
+          <div class="suggestion-code">${escapeHtml(suggestedText)}</div>
         </div>
         ${suggestion.target_location ? `<div class="suggestion-location"><strong>Location:</strong> ${escapeHtml(suggestion.target_location)}</div>` : ''}
         <div class="suggestion-confidence">

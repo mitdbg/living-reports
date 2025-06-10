@@ -1986,6 +1986,13 @@ export class DocumentManager {
           continue;
         }
 
+        console.log(`Processing comment ${commentId}:`, {
+          isAISuggestion: savedComment.isAISuggestion,
+          isTemplateSuggestion: savedComment.isTemplateSuggestion,
+          hasLineDiffs: !!savedComment.lineDiffs,
+          hasInlineDiffData: !!savedComment.inlineDiffData
+        });
+
         // Handle AI suggestion comments specially
         if (savedComment.isAISuggestion && savedComment.lineDiffs) {
           console.log(`Restoring AI suggestion comment: ${commentId}`);
@@ -2026,10 +2033,12 @@ export class DocumentManager {
           
           if (!existingAnnotation && !createdAnnotations.has(commentId)) {
             try {
+              console.log(`Creating template suggestion annotation for ${commentId}...`);
               // Create template suggestion annotation with Apply/Reject buttons
               const { createTemplateSuggestionAnnotation } = await import('./annotations.js');
               createTemplateSuggestionAnnotation(currentComment);
               createdAnnotations.add(commentId);
+              console.log(`Template suggestion annotation created for ${commentId}`);
               
               // Apply saved position if available
               const annotation = document.getElementById(commentId);
@@ -2045,6 +2054,7 @@ export class DocumentManager {
           }
           
         } else {
+          console.log(`Processing regular comment: ${commentId}`);
           // Handle regular comments
           
           let highlightCreated = true; // Assume success by default
