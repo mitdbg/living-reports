@@ -1,3 +1,4 @@
 node_modules
 backend/database
 __pycache__
+.vscode
