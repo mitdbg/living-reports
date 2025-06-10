@@ -415,7 +415,7 @@ export function addMessageToAnnotation(annotationId, message, author = null) {
 }
 
 // Update annotation messages UI
-function updateAnnotationMessagesUI(annotationId) {
+export function updateAnnotationMessagesUI(annotationId) {
   const annotation = state.comments[annotationId];
   const element = document.getElementById(annotationId);
   

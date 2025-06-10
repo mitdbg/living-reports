@@ -1411,7 +1411,10 @@ export class DocumentManager {
         createdAt: comment.createdAt,
         selectionRange: comment.selectionRange,
         isResolved: comment.isResolved,
-        isActive: comment.isActive
+        isActive: comment.isActive,
+        
+        // Save conversation messages
+        messages: comment.messages || []
       };
 
       // Include detailed range information for precise restoration
@@ -1910,6 +1913,9 @@ export class DocumentManager {
             selectionRange: savedComment.selectionRange,
             isResolved: savedComment.isResolved || false,
             isActive: savedComment.isActive !== false,
+            
+            // Restore conversation messages
+            messages: savedComment.messages || [],
             
             // CRITICAL: Preserve detailedRangeInfo for accurate text highlighting
             detailedRangeInfo: savedComment.detailedRangeInfo,
@@ -2490,6 +2496,9 @@ export class DocumentManager {
             isActive: savedComment.isActive !== false,
             detailedRangeInfo: savedComment.detailedRangeInfo,
             
+            // Restore conversation messages
+            messages: savedComment.messages || [],
+            
             // Restore AI suggestion-specific properties for syncing
             isAISuggestion: savedComment.isAISuggestion || false,
             lineDiffs: savedComment.lineDiffs,
@@ -2510,6 +2519,27 @@ export class DocumentManager {
           
           // Recreate UI for this specific comment
           await this.recreateCommentUIElements({ [commentId]: savedComment }, state, documentId);
+        } else {
+          // Comment exists, but check if messages have been updated
+          const savedComment = freshComments[commentId];
+          const currentComment = currentComments[commentId];
+          
+          const freshMessages = savedComment.messages || [];
+          const currentMessages = currentComment.messages || [];
+          
+          if (freshMessages.length > currentMessages.length) {
+            console.log(`Comment ${commentId} has new messages from other users, syncing...`);
+            
+            // Update messages in local state
+            currentComment.messages = freshMessages;
+            
+            // Update the UI if the annotation window is visible
+            const { updateAnnotationMessagesUI } = await import('./annotations.js');
+            const element = document.getElementById(commentId);
+            if (element && element.style.display !== 'none') {
+              updateAnnotationMessagesUI(commentId);
+            }
+          }
         }
       }
 
