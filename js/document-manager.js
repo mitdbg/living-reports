@@ -1993,36 +1993,8 @@ export class DocumentManager {
           hasInlineDiffData: !!savedComment.inlineDiffData
         });
 
-        // Handle AI suggestion comments specially
-        if (savedComment.isAISuggestion && savedComment.lineDiffs) {
-          console.log(`Restoring AI suggestion comment: ${commentId}`);
-          
-          // Recreate inline diff highlighting
-          const diffCreated = await this.recreateAISuggestionDiff(savedComment, documentId);
-          
-          // Check if annotation already exists
-          const existingAnnotation = document.getElementById(commentId);
-          
-          if (!existingAnnotation && !createdAnnotations.has(commentId)) {
-            try {
-              // Create AI suggestion annotation with Accept/Reject buttons
-              createAISuggestionAnnotation(currentComment);
-              createdAnnotations.add(commentId);
-              
-              // Apply saved position if available
-              const annotation = document.getElementById(commentId);
-              if (annotation && savedComment.uiState?.position) {
-                const { top, left } = savedComment.uiState.position;
-                annotation.style.top = `${top}px`;
-                annotation.style.left = `${left}px`;
-              }
-              
-            } catch (error) {
-              console.error(`Error creating AI suggestion annotation for ${commentId}:`, error);
-            }
-          }
-          
-        } else if (savedComment.isTemplateSuggestion && savedComment.inlineDiffData) {
+        // Handle template suggestion comments first (they take priority over AI suggestions)
+        if (savedComment.isTemplateSuggestion && savedComment.inlineDiffData) {
           console.log(`Restoring template suggestion comment: ${commentId}`);
           
           // Recreate inline diff for template suggestions
@@ -2048,6 +2020,34 @@ export class DocumentManager {
               
             } catch (error) {
               console.error(`Error creating template suggestion annotation for ${commentId}:`, error);
+            }
+          }
+          
+        } else if (savedComment.isAISuggestion && savedComment.lineDiffs) {
+          console.log(`Restoring AI suggestion comment: ${commentId}`);
+          
+          // Recreate inline diff highlighting
+          const diffCreated = await this.recreateAISuggestionDiff(savedComment, documentId);
+          
+          // Check if annotation already exists
+          const existingAnnotation = document.getElementById(commentId);
+          
+          if (!existingAnnotation && !createdAnnotations.has(commentId)) {
+            try {
+              // Create AI suggestion annotation with Accept/Reject buttons
+              createAISuggestionAnnotation(currentComment);
+              createdAnnotations.add(commentId);
+              
+              // Apply saved position if available
+              const annotation = document.getElementById(commentId);
+              if (annotation && savedComment.uiState?.position) {
+                const { top, left } = savedComment.uiState.position;
+                annotation.style.top = `${top}px`;
+                annotation.style.left = `${left}px`;
+              }
+              
+            } catch (error) {
+              console.error(`Error creating AI suggestion annotation for ${commentId}:`, error);
             }
           }
           

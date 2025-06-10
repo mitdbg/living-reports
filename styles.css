@@ -4357,3 +4357,144 @@ p {
   background-color: #b91c1c;
   transform: translateY(-1px);
 }
+
+/* Annotation Conversation Styles */
+.annotation-original-message {
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  margin-bottom: 12px;
+  border-left: 3px solid #f59e0b;
+  color: #92400e;
+  font-weight: 500;
+}
+
+.annotation-messages {
+  max-height: 120px;
+  overflow-y: auto;
+  margin-bottom: 8px;
+  border-radius: 6px;
+  background: rgba(248, 250, 252, 0.5);
+}
+
+.annotation-message {
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.annotation-message:last-child {
+  border-bottom: none;
+}
+
+.annotation-message .message-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.annotation-message .message-author {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.annotation-message .author-emoji {
+  font-size: 12px;
+}
+
+.annotation-message .author-name {
+  font-weight: 600;
+}
+
+.annotation-message .message-time {
+  font-size: 10px;
+  color: #94a3b8;
+  font-weight: 400;
+}
+
+.annotation-message .message-content {
+  font-size: 12px;
+  line-height: 1.4;
+  color: #475569;
+}
+
+.annotation-reply {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  margin-top: 8px;
+}
+
+.annotation-reply-input {
+  flex: 1;
+  resize: none;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-family: inherit;
+  line-height: 1.3;
+  background: white;
+  transition: border-color 0.2s ease;
+}
+
+.annotation-reply-input:focus {
+  outline: none;
+  border-color: #d97706;
+  box-shadow: 0 0 0 2px rgba(217, 119, 6, 0.1);
+}
+
+.annotation-reply-input::placeholder {
+  color: #94a3b8;
+}
+
+.annotation-reply-btn {
+  background: linear-gradient(135deg, #d97706 0%, #ea580c 100%);
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  white-space: nowrap;
+}
+
+.annotation-reply-btn:hover {
+  background: linear-gradient(135deg, #ea580c 0%, #dc2626 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(217, 119, 6, 0.3);
+}
+
+.annotation-reply-btn:active {
+  transform: translateY(0);
+}
+
+@keyframes annotationPulse {
+  0% {
+    transform: scale(1);
+    box-shadow: 
+      0 16px 32px rgba(0, 0, 0, 0.12),
+      0 6px 12px rgba(0, 0, 0, 0.1),
+      0 0 0 1px rgba(255, 255, 255, 0.9);
+  }
+  50% {
+    transform: scale(1.02);
+    box-shadow: 
+      0 20px 40px rgba(0, 0, 0, 0.15),
+      0 8px 16px rgba(0, 0, 0, 0.12),
+      0 0 0 1px rgba(255, 255, 255, 0.9);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 
+      0 16px 32px rgba(0, 0, 0, 0.12),
+      0 6px 12px rgba(0, 0, 0, 0.1),
+      0 0 0 1px rgba(255, 255, 255, 0.9);
+  }
+}

@@ -86,6 +86,9 @@ export function createTextComment(selectedText, commentContent) {
     authorColor: currentUser ? currentUser.color : '#666666',
     createdAt: new Date().toISOString(),
     
+    // Conversation messages
+    messages: [],
+    
     // State flags
     isResolved: false,
     isActive: true,

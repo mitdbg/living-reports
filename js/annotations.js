@@ -85,12 +85,21 @@ export function createFloatingAnnotation(selectedText, commentContent, commentDa
         <button class="annotation-close" onclick="closeFloatingAnnotation('${annotationId}')" title="Close window">×</button>
       </div>
     </div>
-    <div class="annotation-content">${escapeHtml(commentContent)}</div>
+    <div class="annotation-content">
+      <div class="annotation-original-message">${escapeHtml(commentContent)}</div>
+      <div class="annotation-messages"></div>
+      <div class="annotation-reply">
+        <textarea class="annotation-reply-input" placeholder="Add a reply..." rows="2"></textarea>
+        <button class="annotation-reply-btn" onclick="handleAnnotationReply('${annotationId}')" title="Send reply">
+          Send
+        </button>
+      </div>
+    </div>
   `;
   
   // Calculate smart positioning on the right side, stacked vertically
-  const annotationWidth = 280;
-  const annotationHeight = 150;
+  const annotationWidth = 320; // Increased width for conversation UI
+  const annotationHeight = 200; // Increased height for conversation UI
   const rightMargin = 20;
   const topMargin = 100;
   const verticalSpacing = 20;
@@ -158,6 +167,9 @@ export function createFloatingAnnotation(selectedText, commentContent, commentDa
   
   // Make annotation draggable
   makeAnnotationDraggable(annotation, commentData);
+  
+  // Initialize conversation UI
+  initializeAnnotationConversationUI(annotationId);
   
   // Trigger auto-save for comment changes
   if (window.documentManager) {
@@ -365,6 +377,111 @@ export function closeFloatingAnnotation(annotationId) {
   }
 }
 
+// Add message to annotation conversation
+export function addMessageToAnnotation(annotationId, message, author = null) {
+  const annotation = state.comments[annotationId];
+  if (!annotation) return;
+  
+  // Initialize messages array if it doesn't exist
+  if (!annotation.messages) {
+    annotation.messages = [];
+  }
+  
+  // Get current user info
+  const currentUser = author || getCurrentUser();
+  const messageData = {
+    id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    content: message,
+    author: currentUser ? currentUser.id : 'anonymous',
+    authorName: currentUser ? currentUser.name : 'Anonymous',
+    authorEmoji: currentUser ? currentUser.emoji : '👤',
+    authorColor: currentUser ? currentUser.color : '#666666',
+    timestamp: new Date().toISOString()
+  };
+  
+  // Add message to annotation
+  annotation.messages.push(messageData);
+  
+  // Update the UI if the annotation window is visible
+  const element = document.getElementById(annotationId);
+  if (element) {
+    updateAnnotationMessagesUI(annotationId);
+  }
+  
+  // Trigger auto-save for comment changes
+  if (window.documentManager) {
+    window.documentManager.onCommentChange();
+  }
+}
+
+// Update annotation messages UI
+function updateAnnotationMessagesUI(annotationId) {
+  const annotation = state.comments[annotationId];
+  const element = document.getElementById(annotationId);
+  
+  if (!annotation || !element) return;
+  
+  const messagesContainer = element.querySelector('.annotation-messages');
+  if (!messagesContainer) return;
+  
+  // Clear existing messages
+  messagesContainer.innerHTML = '';
+  
+  // Add messages
+  if (annotation.messages && annotation.messages.length > 0) {
+    annotation.messages.forEach(message => {
+      const messageElement = document.createElement('div');
+      messageElement.className = 'annotation-message';
+      messageElement.innerHTML = `
+        <div class="message-header">
+          <span class="message-author" style="color: ${message.authorColor};">
+            <span class="author-emoji">${message.authorEmoji}</span>
+            <span class="author-name">${message.authorName}</span>
+          </span>
+          <span class="message-time">${formatTimestamp(message.timestamp)}</span>
+        </div>
+        <div class="message-content">${escapeHtml(message.content)}</div>
+      `;
+      messagesContainer.appendChild(messageElement);
+    });
+  }
+  
+  // Scroll to bottom of messages
+  messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
+
+// Format timestamp for display
+function formatTimestamp(timestamp) {
+  const date = new Date(timestamp);
+  const now = new Date();
+  const diffMs = now - date;
+  const diffMins = Math.floor(diffMs / 60000);
+  
+  if (diffMins < 1) return 'just now';
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffMins < 1440) return `${Math.floor(diffMins / 60)}h ago`;
+  
+  return date.toLocaleDateString();
+}
+
+// Handle reply submission
+function handleAnnotationReply(annotationId) {
+  const element = document.getElementById(annotationId);
+  if (!element) return;
+  
+  const replyInput = element.querySelector('.annotation-reply-input');
+  if (!replyInput) return;
+  
+  const message = replyInput.value.trim();
+  if (!message) return;
+  
+  // Add the message
+  addMessageToAnnotation(annotationId, message);
+  
+  // Clear the input
+  replyInput.value = '';
+}
+
 function makeAnnotationDraggable(element, annotationData) {
   if (!annotationData) {
     console.warn('makeAnnotationDraggable: annotationData is undefined, skipping drag setup');
@@ -375,11 +492,13 @@ function makeAnnotationDraggable(element, annotationData) {
   let startX, startY, initialLeft, initialTop;
   
   element.addEventListener('mousedown', (e) => {
-    // Only start dragging if not clicking on action buttons
+    // Only start dragging if not clicking on action buttons, inputs, or messages
     if (e.target.classList.contains('annotation-close') || 
         e.target.classList.contains('annotation-delete') ||
         e.target.classList.contains('annotation-resolve') ||
-        e.target.closest('.annotation-actions')) {
+        e.target.closest('.annotation-actions') ||
+        e.target.closest('.annotation-reply') ||
+        e.target.closest('.annotation-messages')) {
       return;
     }
     
@@ -405,46 +524,36 @@ function makeAnnotationDraggable(element, annotationData) {
     element.style.cursor = 'grabbing';
     element.style.opacity = '0.8';
   });
-  
+
   function onMouseMove(e) {
     if (!isDragging) return;
     
-    // Calculate how much the mouse has moved
-    const deltaX = e.clientX - startX;
-    const deltaY = e.clientY - startY;
-    
     // Calculate new position
-    const newLeft = initialLeft + deltaX;
-    const newTop = initialTop + deltaY;
-    
-    // Keep annotation within viewport bounds
-    const annotationRect = element.getBoundingClientRect();
-    const maxLeft = window.innerWidth - annotationRect.width;
-    const maxTop = window.innerHeight - annotationRect.height;
-    
-    const clampedLeft = Math.max(0, Math.min(newLeft, maxLeft));
-    const clampedTop = Math.max(0, Math.min(newTop, maxTop));
+    const newLeft = initialLeft + (e.clientX - startX);
+    const newTop = initialTop + (e.clientY - startY);
     
     // Apply new position
-    element.style.left = `${clampedLeft}px`;
-    element.style.top = `${clampedTop}px`;
+    element.style.left = `${newLeft}px`;
+    element.style.top = `${newTop}px`;
     
-    // Update stored position - ensure ui.position exists
-    if (annotationData.ui && annotationData.ui.position) {
-      annotationData.ui.position.left = clampedLeft;
-      annotationData.ui.position.top = clampedTop;
+    // Update stored position
+    if (annotationData && annotationData.ui) {
+      annotationData.ui.position = { top: newTop, left: newLeft };
     }
   }
   
   function onMouseUp() {
+    if (!isDragging) return;
+    
     isDragging = false;
+    
+    // Remove global listeners
     document.removeEventListener('mousemove', onMouseMove);
     document.removeEventListener('mouseup', onMouseUp);
     
     // Remove visual feedback
-    element.style.cursor = 'default';
+    element.style.cursor = 'grab';
     element.style.opacity = '1';
-
   }
 }
 
@@ -676,7 +785,16 @@ function recreateAnnotationElement(annotationData) {
         <button class="annotation-close" onclick="closeFloatingAnnotation('${id}')" title="Close window">×</button>
       </div>
     </div>
-    <div class="annotation-content">${escapeHtml(commentMessage)}</div>
+    <div class="annotation-content">
+      <div class="annotation-original-message">${escapeHtml(commentMessage)}</div>
+      <div class="annotation-messages"></div>
+      <div class="annotation-reply">
+        <textarea class="annotation-reply-input" placeholder="Add a reply..." rows="2"></textarea>
+        <button class="annotation-reply-btn" onclick="handleAnnotationReply('${id}')" title="Send reply">
+          Send
+        </button>
+      </div>
+    </div>
   `;
   
   // Use stored position if available, otherwise calculate new position on right side
@@ -686,8 +804,8 @@ function recreateAnnotationElement(annotationData) {
     left = annotationData.ui.position.left;
   } else {
     // Calculate default position on right side
-    const annotationWidth = 280;
-    const annotationHeight = 150;
+    const annotationWidth = 320; // Updated width for conversation UI
+    const annotationHeight = 200; // Updated height for conversation UI
     const rightMargin = 20;
     const topMargin = 100;
     
@@ -717,6 +835,9 @@ function recreateAnnotationElement(annotationData) {
   
   // Make annotation draggable
   makeAnnotationDraggable(annotation, annotationData);
+  
+  // Initialize conversation UI
+  initializeAnnotationConversationUI(annotationData.id);
 }
 
 // Make functions globally accessible for onclick handlers
@@ -724,7 +845,8 @@ window.removeFloatingAnnotation = removeFloatingAnnotation;
 window.deleteFloatingAnnotation = deleteFloatingAnnotation;
 window.closeFloatingAnnotation = closeFloatingAnnotation;
 window.resolveFloatingAnnotation = resolveFloatingAnnotation;
-window.unresolveFloatingAnnotation = unresolveFloatingAnnotation;
+window.handleAnnotationReply = handleAnnotationReply;
+window.addMessageToAnnotation = addMessageToAnnotation;
 
 // Handle window resize to reposition annotations that might go off-screen
 function handleWindowResize() {
@@ -760,99 +882,35 @@ function handleWindowResize() {
 // Add window resize listener
 window.addEventListener('resize', handleWindowResize);
 
-// Resolve comment (mark as resolved, change appearance)
+// Resolve comment (remove the annotation window and highlighting)
 export function resolveFloatingAnnotation(annotationId) {
   // Find the annotation data
   const annotation = state.comments[annotationId];
   if (!annotation) return;
   
-  // Mark as resolved
-  annotation.isResolved = true;
-  
-  // Extract comment number for display
-  let commentNumber = annotationId;
-  const match = annotationId.match(/(\d+)$/);
-  if (match) {
-    commentNumber = match[1];
-  }
-  
-  // Update the annotation appearance
+  // Remove the annotation window from DOM
   const element = document.getElementById(annotationId);
   if (element) {
-    element.classList.add('annotation-resolved');
-    
-    // Update the header to show resolved state
-    const header = element.querySelector('.annotation-header span');
-    if (header) {
-      header.textContent = `Comment #${commentNumber} ✓ Resolved`;
-    }
-    
-    // Change the resolve button to show it's resolved
-    const resolveBtn = element.querySelector('.annotation-resolve');
-    if (resolveBtn) {
-      resolveBtn.innerHTML = '↺';
-      resolveBtn.title = 'Mark as unresolved';
-      resolveBtn.onclick = () => unresolveFloatingAnnotation(annotationId);
-    }
+    element.remove();
   }
   
-  // Also update the highlighting to show resolved state
-  const highlights = document.querySelectorAll('.text-comment-highlight');
+  // Remove text highlighting for this comment
+  const highlights = document.querySelectorAll(`.text-comment-highlight[data-comment-id="${annotationId}"]`);
   highlights.forEach(highlight => {
-    if (highlight.textContent === annotation.selectedText) {
-      highlight.classList.add('text-comment-resolved');
+    const textContent = highlight.textContent;
+    const parentNode = highlight.parentNode;
+    
+    // Replace the highlight wrapper with just the text content
+    if (parentNode) {
+      const textNode = document.createTextNode(textContent);
+      parentNode.replaceChild(textNode, highlight);
+      // Normalize adjacent text nodes
+      parentNode.normalize();
     }
   });
   
-  // Trigger auto-save for comment changes
-  if (window.documentManager) {
-    window.documentManager.onCommentChange();
-  }
-}
-
-// Unresolve comment (mark as active again)
-export function unresolveFloatingAnnotation(annotationId) {
-  // Find the annotation data
-  const annotation = state.comments[annotationId];
-  if (!annotation) return;
-  
-  // Mark as unresolved
-  annotation.isResolved = false;
-  
-  // Extract comment number for display
-  let commentNumber = annotationId;
-  const match = annotationId.match(/(\d+)$/);
-  if (match) {
-    commentNumber = match[1];
-  }
-  
-  // Update the annotation appearance
-  const element = document.getElementById(annotationId);
-  if (element) {
-    element.classList.remove('annotation-resolved');
-    
-    // Update the header to show active state
-    const header = element.querySelector('.annotation-header span');
-    if (header) {
-      header.textContent = `Comment #${commentNumber}`;
-    }
-    
-    // Change the resolve button back
-    const resolveBtn = element.querySelector('.annotation-resolve');
-    if (resolveBtn) {
-      resolveBtn.innerHTML = '✓';
-      resolveBtn.title = 'Mark as resolved';
-      resolveBtn.onclick = () => resolveFloatingAnnotation(annotationId);
-    }
-  }
-  
-  // Remove resolved styling from highlighting
-  const highlights = document.querySelectorAll('.text-comment-highlight');
-  highlights.forEach(highlight => {
-    if (highlight.textContent === annotation.selectedText) {
-      highlight.classList.remove('text-comment-resolved');
-    }
-  });
+  // Remove from state
+  delete state.comments[annotationId];
   
   // Trigger auto-save for comment changes
   if (window.documentManager) {
@@ -965,4 +1023,24 @@ export function createTemplateSuggestionAnnotation(commentData) {
   console.log(`Created template suggestion annotation: ${annotationId}`);
   
   return annotation;
+}
+
+// Initialize conversation UI
+function initializeAnnotationConversationUI(annotationId) {
+  const element = document.getElementById(annotationId);
+  if (!element) return;
+  
+  // Set up keyboard handling for reply input
+  const replyInput = element.querySelector('.annotation-reply-input');
+  if (replyInput) {
+    replyInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        handleAnnotationReply(annotationId);
+      }
+    });
+  }
+  
+  // Load existing messages if any
+  updateAnnotationMessagesUI(annotationId);
 } 
