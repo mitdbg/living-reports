@@ -218,6 +218,7 @@ export async function createTemplateEditSuggestionComment(originalComment, selec
       createdAt: new Date().toISOString(),
       isResolved: false,
       isActive: true,
+      isAISuggestion: true,
       isTemplateSuggestion: true,
       originalComment: originalComment,
       aiSuggestion: suggestion,

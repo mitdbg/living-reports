@@ -2033,12 +2033,10 @@ export class DocumentManager {
           
           if (!existingAnnotation && !createdAnnotations.has(commentId)) {
             try {
-              console.log(`Creating template suggestion annotation for ${commentId}...`);
               // Create template suggestion annotation with Apply/Reject buttons
               const { createTemplateSuggestionAnnotation } = await import('./annotations.js');
               createTemplateSuggestionAnnotation(currentComment);
               createdAnnotations.add(commentId);
-              console.log(`Template suggestion annotation created for ${commentId}`);
               
               // Apply saved position if available
               const annotation = document.getElementById(commentId);
@@ -2066,8 +2064,6 @@ export class DocumentManager {
             const existingHighlight = targetElement?.querySelector(`.text-comment-highlight[data-comment-id="${savedComment.id}"]`);
             
             if (existingHighlight) {
-              console.log(`Preview mode: highlight already exists for comment ${savedComment.id}, just adding event listeners`);
-              
               // Just ensure event listeners are attached to existing highlights
               if (!existingHighlight.hasAttribute('data-listener-attached')) {
                 const { showAnnotationForText } = await import('./annotations.js');
@@ -2079,7 +2075,6 @@ export class DocumentManager {
                 existingHighlight.setAttribute('data-listener-attached', 'true');
               }
             } else {
-              console.log(`Preview mode: highlight missing for comment ${savedComment.id}, recreating it`);
               // Highlight doesn't exist, recreate it
               highlightCreated = await this.recreateTextHighlight(savedComment, documentId);
             }
@@ -2159,8 +2154,6 @@ export class DocumentManager {
         
         // For preview mode, check if highlights already exist in HTML
         if (targetElement && targetElement.innerHTML.includes(`data-comment-id="${savedComment.id}"`)) {
-          console.log(`Preview mode: highlight already exists for comment ${savedComment.id}, just adding event listeners`);
-          
           // Just ensure event listeners are attached
           const existingHighlight = targetElement.querySelector(`.text-comment-highlight[data-comment-id="${savedComment.id}"]`);
           if (existingHighlight && !existingHighlight.hasAttribute('data-listener-attached')) {
