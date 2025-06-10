@@ -12,6 +12,7 @@ import { initTextSelection, initCommentButtons } from './comments.js';
 import { initFileOperations } from './file-operations.js';
 import { initSharing } from './sharing.js';
 import { initContentMapping } from './content-mapping.js';
+import { initVerification } from './verification.js';
 
 let documentManager;
 
@@ -89,6 +90,7 @@ async function initializeCoreModules() {
     initFileOperations();
     initSharing();
     initContentMapping();
+    initVerification();
     
     // Initialize comment translation module
     try {

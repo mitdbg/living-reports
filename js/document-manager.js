@@ -483,6 +483,17 @@ export class DocumentManager {
       updateAnnotationsVisibility();
     }, 100);
     
+    // Load verification status for this document
+    setTimeout(async () => {
+      try {
+        const { loadDocumentVerification } = await import('./verification.js');
+        await loadDocumentVerification();
+        console.log(`✅ Verification status loaded for document ${documentId}`);
+      } catch (error) {
+        console.warn('Could not load verification status:', error);
+      }
+    }, 150);
+    
     // Start auto-save for the new document (with small delay to ensure elements are ready)
     setTimeout(() => {
       this.startAutoSave();
@@ -1730,7 +1741,7 @@ export class DocumentManager {
         previewContent.innerHTML = freshDoc.preview_content;
       }
 
-      // Now handle code content and comments together
+      // Now handle template content and comments together
       if (freshDoc.template_content !== undefined) {
         // Clear any existing content first
         templateEditor.innerHTML = '';
@@ -1759,17 +1770,36 @@ export class DocumentManager {
         console.log('Preview content contains highlights:', previewContent?.innerHTML?.includes('data-comment-id') || false);
         await this.restoreDocumentComments(documentId, freshDoc);
         
-        return; // Success, exit retry loop
+        // Load verification status after content and comments are loaded
+        try {
+          const { loadDocumentVerification } = await import('./verification.js');
+          await loadDocumentVerification();
+          console.log(`✅ Verification status loaded for document ${documentId}`);
+        } catch (error) {
+          console.warn('Could not load verification status:', error);
+        }
+        
+        return true; // Success, exit retry loop
         
       } else {
         // Still try to restore comments even if no content
         await this.restoreDocumentComments(documentId, freshDoc);
         
-        return;
+        // Load verification status
+        try {
+          const { loadDocumentVerification } = await import('./verification.js');
+          await loadDocumentVerification();
+          console.log(`✅ Verification status loaded for document ${documentId}`);
+        } catch (error) {
+          console.warn('Could not load verification status:', error);
+        }
+        
+        return true;
       }
     }
     
     addMessageToUI('system', '⚠️ Document content may not have loaded properly');
+    return false;
   }
 
   /**

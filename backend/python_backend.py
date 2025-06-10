@@ -116,6 +116,38 @@ def save_documents():
 documents = {}  # Global storage for all documents
 load_documents()
 
+# Persistent storage for document verifications
+VERIFICATIONS_FILE = os.path.join(DATABASE_DIR, 'verifications.json')
+
+def load_verifications():
+    """Load all verifications from file"""
+    try:
+        ensure_database_dir()
+        if os.path.exists(VERIFICATIONS_FILE):
+            with open(VERIFICATIONS_FILE, 'r') as f:
+                verifications = json.load(f)
+                logger.info(f"📋 Loaded verifications for {len(verifications)} documents from {VERIFICATIONS_FILE}")
+                return verifications
+        else:
+            logger.info("📋 No existing verifications file found. Starting fresh.")
+            return {}
+    except Exception as e:
+        logger.error(f"❌ Error loading verifications: {e}")
+        return {}
+
+def save_verifications(verifications):
+    """Save all verifications to file"""
+    try:
+        ensure_database_dir()
+        with open(VERIFICATIONS_FILE, 'w') as f:
+            json.dump(verifications, f, indent=2)
+        logger.info(f"💾 Saved verifications for {len(verifications)} documents to {VERIFICATIONS_FILE}")
+    except Exception as e:
+        logger.error(f"❌ Error saving verifications: {e}")
+
+# Initialize verifications storage
+verifications = load_verifications()
+
 @app.before_request
 def log_request():
     """Log all incoming requests for debugging."""
@@ -839,6 +871,85 @@ def delete_document(document_id):
             
     except Exception as e:
         logger.error(f"Error deleting document {document_id}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/verify-document', methods=['POST'])
+def verify_document():
+    """Save document verification."""
+    try:
+        data = request.get_json()
+        
+        # Extract verification data
+        session_id = data.get('session_id')
+        user_id = data.get('user_id')
+        user_name = data.get('user_name')
+        user_emoji = data.get('user_emoji')
+        verified_at = data.get('verified_at')
+        document_content = data.get('document_content', '')
+        
+        if not session_id or not user_id or not user_name:
+            return jsonify({
+                'success': False,
+                'error': 'Missing required fields: session_id, user_id, user_name'
+            }), 400
+        
+        # Create verification record
+        verification = {
+            'user_id': user_id,
+            'user_name': user_name,
+            'user_emoji': user_emoji,
+            'verified_at': verified_at,
+            'document_content_hash': hash(document_content) if document_content else None,
+            'content_length': len(document_content) if document_content else 0,
+            'saved_at': datetime.now().isoformat()
+        }
+        
+        # Initialize verifications for this session if not exists
+        if session_id not in verifications:
+            verifications[session_id] = []
+        
+        # Add verification to the list
+        verifications[session_id].append(verification)
+        
+        # Save to file
+        save_verifications(verifications)
+        
+        logger.info(f"✅ Document verification saved: {user_name} verified document {session_id}")
+        
+        return jsonify({
+            'success': True,
+            'message': f'Document verified by {user_name}',
+            'verification': verification
+        })
+        
+    except Exception as e:
+        logger.error(f"Error saving verification: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/get-verification/<session_id>', methods=['GET'])
+def get_verification(session_id):
+    """Get verification history for a document."""
+    try:
+        document_verifications = verifications.get(session_id, [])
+        
+        # Sort verifications by date (newest first)
+        document_verifications = sorted(
+            document_verifications, 
+            key=lambda x: x.get('verified_at', ''), 
+            reverse=True
+        )
+        
+        logger.info(f"📋 Returning {len(document_verifications)} verifications for document {session_id}")
+        
+        return jsonify({
+            'success': True,
+            'session_id': session_id,
+            'verifications': document_verifications,
+            'count': len(document_verifications)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting verification for {session_id}: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 if __name__ == '__main__':

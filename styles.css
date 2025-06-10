@@ -4476,25 +4476,158 @@ p {
 }
 
 @keyframes annotationPulse {
-  0% {
-    transform: scale(1);
-    box-shadow: 
-      0 16px 32px rgba(0, 0, 0, 0.12),
-      0 6px 12px rgba(0, 0, 0, 0.1),
-      0 0 0 1px rgba(255, 255, 255, 0.9);
+  0%, 50%, 100% {
+    background-color: rgba(255, 235, 59, 0.8);
   }
-  50% {
-    transform: scale(1.02);
-    box-shadow: 
-      0 20px 40px rgba(0, 0, 0, 0.15),
-      0 8px 16px rgba(0, 0, 0, 0.12),
-      0 0 0 1px rgba(255, 255, 255, 0.9);
+  25%, 75% {
+    background-color: rgba(255, 235, 59, 1);
   }
-  100% {
-    transform: scale(1);
-    box-shadow: 
-      0 16px 32px rgba(0, 0, 0, 0.12),
-      0 6px 12px rgba(0, 0, 0, 0.1),
-      0 0 0 1px rgba(255, 255, 255, 0.9);
+}
+
+/* Verification Status Styles */
+.verification-status {
+  padding: 12px 15px;
+  margin-bottom: 15px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+  border: 1px solid #28a745;
+  box-shadow: 0 2px 4px rgba(40, 167, 69, 0.1);
+}
+
+.verification-message {
+  color: #155724;
+  font-weight: 500;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.verification-message::before {
+  content: none; /* Remove the default checkmark since we have it in the text */
+}
+
+.latest-verification {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.verification-text {
+  font-weight: 600;
+  color: #155724;
+}
+
+.verification-history {
+  margin-top: 10px;
+  border-top: 1px solid rgba(21, 87, 36, 0.2);
+  padding-top: 8px;
+}
+
+.verification-details {
+  cursor: pointer;
+}
+
+.verification-summary {
+  font-size: 12px;
+  color: #155724;
+  opacity: 0.8;
+  cursor: pointer;
+  list-style: none;
+  padding: 4px 0;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.verification-summary:hover {
+  opacity: 1;
+  background: rgba(21, 87, 36, 0.05);
+  padding-left: 8px;
+}
+
+.verification-summary::marker {
+  content: "📋 ";
+}
+
+.verification-list {
+  margin-top: 8px;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.verification-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 8px;
+  margin: 2px 0;
+  border-radius: 4px;
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.6);
+  border-left: 3px solid transparent;
+  transition: all 0.2s ease;
+}
+
+.verification-item:hover {
+  background: rgba(255, 255, 255, 0.8);
+  transform: translateX(2px);
+}
+
+.verification-item.latest {
+  border-left-color: #28a745;
+  background: rgba(21, 87, 36, 0.08);
+  font-weight: 600;
+}
+
+.verification-user {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 500;
+  color: #155724;
+}
+
+.verification-time {
+  font-size: 11px;
+  color: #6c757d;
+  white-space: nowrap;
+}
+
+.verification-status.fade-in {
+  animation: verificationFadeIn 0.5s ease-out;
+}
+
+@keyframes verificationFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
   }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.execute-template-btn:active {
+  transform: translateY(0);
+}
+
+.verify-template-btn {
+  background: #28a745;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  margin-left: 10px;
+}
+
+.verify-template-btn:hover {
+  background: #218838;
+  transform: translateY(-1px);
+}
+
+.verify-template-btn:active {
+  transform: translateY(0);
 }
