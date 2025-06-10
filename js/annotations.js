@@ -453,15 +453,19 @@ export function updateAnnotationMessagesUI(annotationId) {
 // Format timestamp for display
 function formatTimestamp(timestamp) {
   const date = new Date(timestamp);
-  const now = new Date();
-  const diffMs = now - date;
-  const diffMins = Math.floor(diffMs / 60000);
   
-  if (diffMins < 1) return 'just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffMins < 1440) return `${Math.floor(diffMins / 60)}h ago`;
-  
-  return date.toLocaleDateString();
+  const timeOptions = {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  };
+
+  // Show date and time for other days: "Dec 15, 2:34 PM"
+  return date.toLocaleDateString('en-US', { 
+    month: 'short', 
+    day: 'numeric',
+    ...timeOptions
+  });
 }
 
 // Handle reply submission
