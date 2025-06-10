@@ -904,12 +904,16 @@ def verify_document():
             'saved_at': datetime.now().isoformat()
         }
         
-        # Initialize verifications for this session if not exists
+        # Initialize verifications structure for this session if not exists
         if session_id not in verifications:
-            verifications[session_id] = []
+            verifications[session_id] = {}
         
-        # Add verification to the list
-        verifications[session_id].append(verification)
+        # Initialize user's verification list if not exists
+        if user_id not in verifications[session_id]:
+            verifications[session_id][user_id] = []
+        
+        # Add verification to the user's list
+        verifications[session_id][user_id].append(verification)
         
         # Save to file
         save_verifications(verifications)
@@ -930,16 +934,7 @@ def verify_document():
 def get_verification(session_id):
     """Get verification history for a document."""
     try:
-        document_verifications = verifications.get(session_id, [])
-        
-        # Sort verifications by date (newest first)
-        document_verifications = sorted(
-            document_verifications, 
-            key=lambda x: x.get('verified_at', ''), 
-            reverse=True
-        )
-        
-        logger.info(f"📋 Returning {len(document_verifications)} verifications for document {session_id}")
+        document_verifications = verifications.get(session_id, {})
         
         return jsonify({
             'success': True,

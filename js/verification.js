@@ -8,7 +8,7 @@ if (!window[VERIFICATION_KEY]) {
   window[VERIFICATION_KEY] = {
     verificationInitialized: false,
     eventDelegationSetup: false,
-    currentVerifications: [] // Store verification history
+    verificationsByUser: {} // Store organized structure by user
   };
 }
 
@@ -78,24 +78,17 @@ async function loadVerificationFromBackend() {
 
     const result = await response.json();
     
-    // Map backend property names to frontend expected names
-    const mappedVerifications = (result.verifications || []).map(v => ({
-      userId: v.user_id,
-      userName: v.user_name,
-      userEmoji: v.user_emoji,
-      verifiedAt: v.verified_at,
-      displayTime: new Date(v.verified_at).toLocaleString(),
-      documentContent: v.document_content || ''
-    }));
+    console.log("loaded verification result", result);
     
-    verificationData.currentVerifications = mappedVerifications;
+    verificationData.verificationsByUser = result.verifications; // Store organized structure
     window[VERIFICATION_KEY] = verificationData;
-    
+
     console.log('Verification loaded from backend:', { 
-      count: mappedVerifications.length,
-      latest: mappedVerifications[0] 
+      count: result.verifications.length,
+      organized: result.verifications,
+      users: Object.keys(result.verifications)
     });
-    return { verifications: mappedVerifications };
+    return result.verifications;
   } catch (error) {
     console.error('Error loading verification from backend:', error);
     // Don't throw error, just return empty verifications
@@ -123,6 +116,23 @@ function getCurrentDocumentContent() {
   return '';
 }
 
+// Helper function to format timestamp like Python's datetime.now().isoformat()
+function formatTimestampLikePython(date) {
+  // Python's isoformat() returns: "2025-06-10T16:47:50.035463"
+  // JavaScript toISOString() returns: "2025-06-10T08:47:50.030Z"
+  
+  // Get local time components (not UTC)
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const seconds = String(date.getSeconds()).padStart(2, '0');
+  const microseconds = String(date.getMilliseconds() * 1000).padStart(6, '0');
+  
+  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${microseconds}`;
+}
+
 // Handle verify button click
 async function handleVerifyClick() {
   const currentUser = getCurrentUser();
@@ -147,7 +157,7 @@ async function handleVerifyClick() {
     userId: currentUser.id,
     userName: currentUser.name,
     userEmoji: currentUser.emoji,
-    verifiedAt: now.toISOString(),
+    verifiedAt: formatTimestampLikePython(now),
     displayTime: now.toLocaleString(),
     documentContent: documentContent
   };
@@ -156,20 +166,14 @@ async function handleVerifyClick() {
     // Save to backend first
     await saveVerificationToBackend(verification);
     
-    // Add to local storage
-    verificationData.currentVerifications.push(verification);
-    window[VERIFICATION_KEY] = verificationData;
-    
-    // Update UI
-    updateVerificationDisplay(activeContainer);
+    // Reload verification data from backend to ensure we have latest
+    await loadDocumentVerification();
     
     console.log(`Document verified by ${currentUser.name} at ${verification.displayTime}`);
   } catch (error) {
     console.error('Failed to save verification:', error);
-    // Still update UI even if backend save failed
-    verificationData.currentVerifications.push(verification);
-    window[VERIFICATION_KEY] = verificationData;
-    updateVerificationDisplay(activeContainer);
+    // Still reload data even if backend save failed
+    await loadDocumentVerification();
   }
 }
 
@@ -179,73 +183,61 @@ function updateVerificationDisplay(container) {
   const verificationMessage = container.querySelector('.verification-message');
   
   if (!verificationStatus || !verificationMessage) {
-    console.log('Verification status elements not found');
+    console.log('Verification status elements not found in container:', container);
     return;
   }
   
-  const verifications = verificationData.currentVerifications || [];
-  
-  if (verifications.length === 0) {
+  const verifications = verificationData.verificationsByUser || {};
+  if (Object.keys(verifications).length === 0) {
+    console.log('No verifications to display');
     verificationStatus.style.display = 'none';
     return;
   }
   
-  // Show the most recent verification prominently
-  const latestVerification = verifications[verifications.length - 1];
+  // Get the latest verification for each user using the organized structure
+  const latestVerifications = [];
   
-  // Validate verification data to prevent undefined values
-  const userName = latestVerification.userName || 'Unknown User';
-  const userEmoji = latestVerification.userEmoji || '👤';
-  const displayTime = latestVerification.displayTime || 'Unknown time';
-  
-  console.log('Displaying verification:', { userName, userEmoji, displayTime });
-  
-  // Create verification display
-  let displayHtml = `
-    <div class="latest-verification">
-      <span class="verification-text">✅ Verified by ${userName} ${userEmoji} at ${displayTime}</span>
-    </div>
-  `;
-  
-  // If there are multiple verifications, show a summary
-  if (verifications.length > 1) {
-    displayHtml += `
-      <div class="verification-history">
-        <details class="verification-details">
-          <summary class="verification-summary">View verification history (${verifications.length} total)</summary>
-          <div class="verification-list">
-    `;
-    
-    // Show all verifications in reverse chronological order
-    for (let i = verifications.length - 1; i >= 0; i--) {
-      const v = verifications[i];
-      const isLatest = i === verifications.length - 1;
-      
-      // Validate each verification item
-      const vUserName = v.userName || 'Unknown User';
-      const vUserEmoji = v.userEmoji || '👤';
-      const vDisplayTime = v.displayTime || 'Unknown time';
-      
-      displayHtml += `
-        <div class="verification-item ${isLatest ? 'latest' : ''}">
-          <span class="verification-user">${vUserEmoji} ${vUserName}</span>
-          <span class="verification-time">${vDisplayTime}</span>
-        </div>
-      `;
+  for (const userId in verifications) {
+    const userVerifications = verifications[userId];
+    if (userVerifications && userVerifications.length > 0) {
+      // Take the last item (latest chronologically)
+      const latest = userVerifications[userVerifications.length - 1];
+      latestVerifications.push(latest);
     }
+  }
+  
+  // Sort by verification time (newest first)
+  latestVerifications.sort((a, b) => new Date(b.verified_at) - new Date(a.verified_at));
+
+  console.log('Latest verifications by user:', latestVerifications.map(v => ({ 
+    user: v.user_name, 
+    time: v.verified_at 
+  })));
+  
+  // Always show in multiple users format
+  let displayHtml = '<div class="latest-verification">';
+  
+  latestVerifications.forEach((verification) => {
+    const userName = verification.user_name || 'Unknown User';
+    const userEmoji = verification.user_emoji || '👤';
+    const displayTime = new Date(verification.verified_at).toLocaleString() || 'Unknown time';
     
     displayHtml += `
-          </div>
-        </details>
-      </div>
+        <span class="verification-text">✅ Verified by:</span>
+        <span class="verification-user">${userEmoji} ${userName}</span>
+        <span class="verification-time">${displayTime}</span>
     `;
-  }
+  });
+  
+  displayHtml += '</div>';
   
   verificationMessage.innerHTML = displayHtml;
   
   // Show the verification status with animation
   verificationStatus.style.display = 'block';
   verificationStatus.classList.add('fade-in');
+  
+  console.log('✅ Verification display updated in container');
   
   // Remove animation class after animation completes
   setTimeout(() => {
@@ -276,17 +268,16 @@ export async function loadDocumentVerification() {
   
   try {
     const result = await loadVerificationFromBackend();
+    console.log("------------loaded verification result", result);
     
     // Update UI if we have verifications
-    if (result.verifications && result.verifications.length > 0) {
-      console.log('Found verifications, updating UI:', result.verifications.length);
-      const activeContainer = getActiveDocumentContainer();
-      if (activeContainer) {
-        updateVerificationDisplay(activeContainer);
-        console.log('✅ Verification display updated');
-      } else {
-        console.warn('No active container found for verification display');
-      }
+    if (Object.keys(result).length > 0) {
+      console.log('Found verifications, updating UI:', Object.keys(result).length);
+      
+      // Update verification display for ALL containers (template and preview)
+      refreshVerificationForAllContainers();
+      
+      console.log('✅ Verification display updated for all containers');
     } else {
       console.log('No verifications found for this document');
     }
@@ -308,24 +299,18 @@ export function clearVerificationStatus() {
   }
   
   // Clear local data
-  verificationData.currentVerifications = [];
+  verificationData.verificationsByUser = {};
   window[VERIFICATION_KEY] = verificationData;
 }
 
 // Check if document is verified
 export function isDocumentVerified() {
-  return verificationData.currentVerifications && verificationData.currentVerifications.length > 0;
+  return verificationData.verificationsByUser && Object.keys(verificationData.verificationsByUser).length > 0;
 }
 
 // Get verification history
 export function getVerificationHistory() {
-  return verificationData.currentVerifications || [];
-}
-
-// Get latest verification
-export function getLatestVerification() {
-  const verifications = verificationData.currentVerifications || [];
-  return verifications.length > 0 ? verifications[verifications.length - 1] : null;
+  return verificationData.verificationsByUser || {};
 }
 
 // Initialize verification functionality
@@ -348,6 +333,19 @@ export function initVerification() {
 export function resetVerificationInitialization() {
   verificationData.verificationInitialized = false;
   verificationData.eventDelegationSetup = false;
-  verificationData.currentVerifications = [];
+  verificationData.verificationsByUser = {};
   window[VERIFICATION_KEY] = verificationData;
+}
+
+// Update verification display for ALL containers (template and preview)
+export function refreshVerificationForAllContainers() {
+  // Find all document containers and update verification display for each
+  const allContainers = document.querySelectorAll('.tab-content[data-document-id]');
+  
+  allContainers.forEach(container => {
+    if (container.style.display !== 'none' && verificationData.verificationsByUser && Object.keys(verificationData.verificationsByUser).length > 0) {
+      console.log('Refreshing verification display for container:', container.id);
+      updateVerificationDisplay(container);
+    }
+  });
 } 
