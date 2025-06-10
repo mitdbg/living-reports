@@ -483,8 +483,6 @@ function removeConflictingInlineDiffs(htmlContent, conflictingCommentIds) {
  * @param {boolean} forceReattach - Force reattachment even if attribute says listener exists (for restoration)
  */
 function addInlineDiffEventListeners(commentId, documentId = null, forceReattach = false) {
-  console.log(`🔧 DEBUG: addInlineDiffEventListeners called for comment ${commentId}, documentId: ${documentId}, forceReattach: ${forceReattach}`);
-  
   // If documentId is provided, search within that document container
   // Otherwise, fall back to global search for backwards compatibility
   let searchScope = document;
@@ -492,43 +490,14 @@ function addInlineDiffEventListeners(commentId, documentId = null, forceReattach
     const container = document.getElementById(`document-${documentId}`);
     if (container) {
       searchScope = container;
-      console.log(`🔧 DEBUG: Using document container for search: document-${documentId}`);
-    } else {
-      console.warn(`🔧 DEBUG: Document container not found: document-${documentId}, falling back to global search`);
     }
-  } else {
-    console.log(`🔧 DEBUG: No documentId provided, using global document search`);
   }
   
   const diffElements = searchScope.querySelectorAll(`[data-comment-id="${commentId}"]`);
-  console.log(`🔧 DEBUG: Found ${diffElements.length} diff elements for comment ${commentId}`);
   
-  if (diffElements.length === 0) {
-    console.warn(`🔧 DEBUG: No diff elements found! Searching entire document for debugging...`);
-    const globalElements = document.querySelectorAll(`[data-comment-id="${commentId}"]`);
-    console.log(`🔧 DEBUG: Global search found ${globalElements.length} elements`);
-    
-    if (globalElements.length > 0) {
-      console.log(`🔧 DEBUG: Global elements found:`);
-      globalElements.forEach((el, index) => {
-        console.log(`  - Element ${index}: ${el.tagName}.${el.className} in container:`, el.closest('[data-document-id]')?.id || 'no document container');
-      });
-    }
-  }
-  
-  diffElements.forEach((element, index) => {
-    console.log(`🔧 DEBUG: Processing element ${index}: ${element.tagName}.${element.className}`);
-    console.log(`🔧 DEBUG: Element content: "${element.textContent.substring(0, 50)}..."`);
-    console.log(`🔧 DEBUG: Element already has listener attached: ${element.hasAttribute('data-diff-listener-attached')}`);
-    console.log(`🔧 DEBUG: Force reattach: ${forceReattach}`);
-    
+  diffElements.forEach(element => {
     if (!element.hasAttribute('data-diff-listener-attached') || forceReattach) {
-      if (forceReattach) {
-        console.log(`🔧 DEBUG: Force reattaching event listener to element ${index} (restoration mode)`);
-      }
-      
       element.addEventListener('click', (e) => {
-        console.log(`🔧 DEBUG: Click event triggered for comment ${commentId}, element:`, element);
         e.preventDefault();
         e.stopPropagation();
         
@@ -536,13 +505,8 @@ function addInlineDiffEventListeners(commentId, documentId = null, forceReattach
         showInlineDiffActions(commentId, element, documentId);
       });
       element.setAttribute('data-diff-listener-attached', 'true');
-      console.log(`🔧 DEBUG: Event listener attached to element ${index}`);
-    } else {
-      console.log(`🔧 DEBUG: Event listener already attached to element ${index}, skipping`);
     }
   });
-  
-  console.log(`🔧 DEBUG: addInlineDiffEventListeners completed for comment ${commentId}`);
 }
 
 // Export the function for use in document manager
@@ -555,12 +519,9 @@ export { addInlineDiffEventListeners };
  * @param {string} documentId - The document ID for context (optional)
  */
 function showInlineDiffActions(commentId, element, documentId = null) {
-  console.log(`🎯 DEBUG: showInlineDiffActions called for comment ${commentId}, documentId: ${documentId}`, element);
-  
   // Remove any existing action popup
   const existingPopup = document.querySelector('.inline-diff-actions');
   if (existingPopup) {
-    console.log(`🎯 DEBUG: Removing existing popup`);
     existingPopup.remove();
   }
   
@@ -580,13 +541,11 @@ function showInlineDiffActions(commentId, element, documentId = null) {
   popup.style.left = `${rect.left}px`;
   popup.style.zIndex = '1000';
   
-  console.log(`🎯 DEBUG: Adding popup to document body at position (${rect.left}, ${rect.bottom + 5})`);
   document.body.appendChild(popup);
   
   // Auto-hide after 5 seconds
   setTimeout(() => {
     if (popup.parentNode) {
-      console.log(`🎯 DEBUG: Auto-removing popup after 5 seconds`);
       popup.remove();
     }
   }, 5000);
@@ -598,34 +557,26 @@ function showInlineDiffActions(commentId, element, documentId = null) {
  * @param {string} documentId - The document ID (optional)
  */
 window.acceptInlineDiff = async function(commentId, documentId = null) {
-  console.log(`✅ DEBUG: acceptInlineDiff called for comment ${commentId}, documentId: ${documentId}`);
-  
   try {
     const diffData = window.currentInlineDiffs[commentId];
     if (!diffData) {
       console.warn('No diff data found for comment:', commentId);
-      console.log('Available diff data keys:', Object.keys(window.currentInlineDiffs || {}));
       return;
     }
-    
-    console.log(`✅ DEBUG: Found diff data for comment ${commentId}:`, diffData);
     
     // Get the correct template editor for the specific document
     let templateEditor;
     if (documentId && documentId !== '') {
       const container = document.getElementById(`document-${documentId}`);
       templateEditor = container?.querySelector('.template-editor');
-      console.log(`✅ DEBUG: Using specific document ${documentId}, templateEditor found: ${!!templateEditor}`);
     } else if (window.documentManager?.activeDocumentId) {
       // Fall back to active document
       const container = document.getElementById(`document-${window.documentManager.activeDocumentId}`);
       templateEditor = container?.querySelector('.template-editor');
-      console.log(`✅ DEBUG: Using active document ${window.documentManager.activeDocumentId}, templateEditor found: ${!!templateEditor}`);
     } else {
       // Final fallback to global elements
       const { elements } = await import('./state.js');
       templateEditor = elements.templateEditor;
-      console.log(`✅ DEBUG: Using global templateEditor, found: ${!!templateEditor}`);
     }
     
     if (!templateEditor) {
@@ -637,17 +588,13 @@ window.acceptInlineDiff = async function(commentId, documentId = null) {
     const deleteElements = templateEditor.querySelectorAll(`.inline-diff-delete[data-comment-id="${commentId}"]`);
     const addElements = templateEditor.querySelectorAll(`.inline-diff-add[data-comment-id="${commentId}"]`);
     
-    console.log(`✅ DEBUG: Found ${deleteElements.length} delete elements, ${addElements.length} add elements`);
-    
     // Remove delete elements (they represent text to be removed)
     deleteElements.forEach(el => {
-      console.log(`✅ DEBUG: Removing delete element: "${el.textContent}"`);
       el.remove();
     });
     
     // Convert add elements to plain text (they represent text to be kept)
     addElements.forEach(el => {
-      console.log(`✅ DEBUG: Converting add element to text: "${el.textContent}"`);
       const textNode = document.createTextNode(el.textContent);
       el.parentNode.replaceChild(textNode, el);
     });
@@ -704,34 +651,26 @@ window.acceptInlineDiff = async function(commentId, documentId = null) {
  * @param {string} documentId - The document ID (optional)
  */
 window.rejectInlineDiff = async function(commentId, documentId = null) {
-  console.log(`❌ DEBUG: rejectInlineDiff called for comment ${commentId}, documentId: ${documentId}`);
-  
   try {
     const diffData = window.currentInlineDiffs[commentId];
     if (!diffData) {
       console.warn('No diff data found for comment:', commentId);
-      console.log('Available diff data keys:', Object.keys(window.currentInlineDiffs || {}));
       return;
     }
-    
-    console.log(`❌ DEBUG: Found diff data for comment ${commentId}:`, diffData);
     
     // Get the correct template editor for the specific document
     let templateEditor;
     if (documentId && documentId !== '') {
       const container = document.getElementById(`document-${documentId}`);
       templateEditor = container?.querySelector('.template-editor');
-      console.log(`❌ DEBUG: Using specific document ${documentId}, templateEditor found: ${!!templateEditor}`);
     } else if (window.documentManager?.activeDocumentId) {
       // Fall back to active document
       const container = document.getElementById(`document-${window.documentManager.activeDocumentId}`);
       templateEditor = container?.querySelector('.template-editor');
-      console.log(`❌ DEBUG: Using active document ${window.documentManager.activeDocumentId}, templateEditor found: ${!!templateEditor}`);
     } else {
       // Final fallback to global elements
       const { elements } = await import('./state.js');
       templateEditor = elements.templateEditor;
-      console.log(`❌ DEBUG: Using global templateEditor, found: ${!!templateEditor}`);
     }
     
     if (!templateEditor) {
@@ -742,16 +681,12 @@ window.rejectInlineDiff = async function(commentId, documentId = null) {
     // Remove all diff elements and restore original content
     const diffElements = templateEditor.querySelectorAll(`[data-comment-id="${commentId}"]`);
     
-    console.log(`❌ DEBUG: Found ${diffElements.length} diff elements to remove`);
-    
     diffElements.forEach(el => {
       if (el.classList.contains('inline-diff-delete')) {
-        console.log(`❌ DEBUG: Restoring delete element to text: "${el.textContent}"`);
         // For delete elements, convert back to plain text (restore original)
         const textNode = document.createTextNode(el.textContent);
         el.parentNode.replaceChild(textNode, el);
       } else if (el.classList.contains('inline-diff-add')) {
-        console.log(`❌ DEBUG: Removing add element: "${el.textContent}"`);
         // For add elements, remove them (they were proposed additions)
         el.remove();
       }

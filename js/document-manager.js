@@ -1094,12 +1094,6 @@ export class DocumentManager {
                 console.log('NEW preview content from backend:', freshDoc.preview_content);
                 previewContent.innerHTML = freshDoc.preview_content;
                 
-                // Debug: Check what's actually in the DOM after setting innerHTML
-                setTimeout(() => {
-                  console.log('DOM content after innerHTML set:', previewContent.innerHTML);
-                  console.log('Found highlight divs:', previewContent.querySelectorAll('.text-comment-highlight').length);
-                }, 100);
-                
                 // Restore highlights for preview mode after content replacement
                 await this.restoreHighlightsForMode('preview');
               }
@@ -1361,8 +1355,6 @@ export class DocumentManager {
     const hasInlineDiffs = templateEditor.querySelector('.inline-diff-delete, .inline-diff-add');
     
     if (hasInlineDiffs) {
-      console.log('🧹 Found inline diffs, getting clean template content...');
-      
       // Check if we have stored original content from comments using window.currentInlineDiffs
       if (window.currentInlineDiffs) {
         const activeDiffIds = Object.keys(window.currentInlineDiffs);
@@ -1370,7 +1362,7 @@ export class DocumentManager {
           const firstDiff = window.currentInlineDiffs[activeDiffIds[0]];
           if (firstDiff.commentData && firstDiff.commentData.originalTemplateContent) {
             const cleanContent = firstDiff.commentData.originalTemplateContent;
-            console.log('✅ Using stored original template content from currentInlineDiffs:', cleanContent);
+            console.log('Using stored original template content from currentInlineDiffs:', cleanContent);
             return cleanContent;
           }
         }
@@ -1391,7 +1383,7 @@ export class DocumentManager {
       addElements.forEach(el => el.remove());
       
       const cleanedContent = getTextContentWithLineBreaks(tempEditor);
-      console.log('⚠️ Fallback: cleaned diff HTML to get content:', cleanedContent);
+      console.log('Fallback: cleaned diff HTML to get content:', cleanedContent);
       return cleanedContent;
     } else {
       // No inline diffs, get content normally
@@ -2034,8 +2026,9 @@ export class DocumentManager {
           
           if (!existingAnnotation && !createdAnnotations.has(commentId)) {
             try {
-              // Create template suggestion annotation
-              createFloatingAnnotation(savedComment.selectedText, savedComment.commentMessage, currentComment);
+              // Create template suggestion annotation with Apply/Reject buttons
+              const { createTemplateSuggestionAnnotation } = await import('./annotations.js');
+              createTemplateSuggestionAnnotation(currentComment);
               createdAnnotations.add(commentId);
               
               // Apply saved position if available
@@ -2061,14 +2054,6 @@ export class DocumentManager {
             const container = document.getElementById(`document-${documentId}`);
             const targetElement = container?.querySelector('.preview-content');
             const existingHighlight = targetElement?.querySelector(`.text-comment-highlight[data-comment-id="${savedComment.id}"]`);
-            
-            // Debug logging
-            console.log(`Preview mode debug for comment ${savedComment.id}:`);
-            console.log('- targetElement exists:', !!targetElement);
-            console.log('- targetElement innerHTML length:', targetElement?.innerHTML?.length || 0);
-            console.log('- targetElement innerHTML preview:', targetElement?.innerHTML?.substring(0, 200) || 'none');
-            console.log('- looking for data-comment-id:', savedComment.id);
-            console.log('- existingHighlight found:', !!existingHighlight);
             
             if (existingHighlight) {
               console.log(`Preview mode: highlight already exists for comment ${savedComment.id}, just adding event listeners`);
@@ -2331,8 +2316,6 @@ export class DocumentManager {
    * Recreate inline diff highlighting for a restored template suggestion comment
    */
   async recreateTemplateSuggestionDiff(savedComment, documentId) {
-    console.log(`🔄 DEBUG: recreateTemplateSuggestionDiff called for comment ${savedComment.id}, documentId: ${documentId}`);
-    
     if (!savedComment.inlineDiffData || !savedComment.inlineDiffState) {
       console.warn('Missing inline diff data for template suggestion:', savedComment.id);
       return false;
@@ -2342,19 +2325,17 @@ export class DocumentManager {
       // Get the document container using the specific documentId
       const container = document.getElementById(`document-${documentId}`);
       if (!container) {
-        console.warn(`🔄 DEBUG: Document container not found: document-${documentId}`);
+        console.warn(`Document container not found: document-${documentId}`);
         return false;
       }
 
       const templateEditor = container.querySelector('.template-editor');
       if (!templateEditor) {
-        console.warn(`🔄 DEBUG: Template editor not found in container document-${documentId}`);
+        console.warn(`Template editor not found in container document-${documentId}`);
         return false;
       }
 
-      console.log('🔄 Restoring template suggestion inline diff:', savedComment.id);
-      console.log('📊 Diff data:', savedComment.inlineDiffData);
-      console.log('🎯 Diff state:', savedComment.inlineDiffState);
+      console.log('Restoring template suggestion inline diff:', savedComment.id);
       
       const commentId = savedComment.id;
       const diffData = savedComment.inlineDiffData;
@@ -2366,30 +2347,10 @@ export class DocumentManager {
         const diffHtml = diffState.contentWithDiff || diffState.appliedHtml;
         
         if (diffHtml) {
-          console.log('✨ Restoring diff HTML:', diffHtml);
-          console.log(`🔄 DEBUG: Template editor before innerHTML:`, templateEditor.innerHTML.length, 'characters');
-          
           templateEditor.innerHTML = diffHtml;
-          
-          console.log(`🔄 DEBUG: Template editor after innerHTML:`, templateEditor.innerHTML.length, 'characters');
-          console.log(`🔄 DEBUG: Checking for diff elements immediately after innerHTML...`);
-          
-          const immediateCheck = templateEditor.querySelectorAll(`[data-comment-id="${commentId}"]`);
-          console.log(`🔄 DEBUG: Found ${immediateCheck.length} diff elements immediately after innerHTML`);
           
           // Wait a moment for DOM to update
           await new Promise(resolve => setTimeout(resolve, 10));
-          
-          console.log(`🔄 DEBUG: After 10ms delay, checking again...`);
-          const delayedCheck = templateEditor.querySelectorAll(`[data-comment-id="${commentId}"]`);
-          console.log(`🔄 DEBUG: Found ${delayedCheck.length} diff elements after delay`);
-          
-          if (delayedCheck.length > 0) {
-            console.log(`🔄 DEBUG: Diff elements found:`);
-            delayedCheck.forEach((el, index) => {
-              console.log(`  - Element ${index}: ${el.tagName}.${el.className}, content: "${el.textContent.substring(0, 30)}..."`);
-            });
-          }
           
           // Restore the window.currentInlineDiffs data for immediate use
           if (!window.currentInlineDiffs) {
@@ -2406,25 +2367,11 @@ export class DocumentManager {
             lineNumber: diffData.lineNumber
           };
           
-          console.log(`🔄 DEBUG: Stored window.currentInlineDiffs for comment ${commentId}`);
-          
           // Reattach event listeners for accept/reject actions using the specific documentId
-          console.log(`🔄 DEBUG: About to call addInlineDiffEventListeners for comment ${commentId}, documentId ${documentId}`);
           const { addInlineDiffEventListeners } = await import('./comment-translation.js');
           addInlineDiffEventListeners(commentId, documentId, true); // Force reattach during restoration
           
-          console.log(`🔄 DEBUG: After addInlineDiffEventListeners, checking elements again...`);
-          const finalCheck = templateEditor.querySelectorAll(`[data-comment-id="${commentId}"]`);
-          console.log(`🔄 DEBUG: Final check found ${finalCheck.length} diff elements`);
-          
-          if (finalCheck.length > 0) {
-            console.log(`🔄 DEBUG: Final diff elements:`);
-            finalCheck.forEach((el, index) => {
-              console.log(`  - Element ${index}: ${el.tagName}.${el.className}, hasListener: ${el.hasAttribute('data-diff-listener-attached')}`);
-            });
-          }
-          
-          console.log(`✅ Successfully restored inline diff for template suggestion: ${commentId}`);
+          console.log(`Successfully restored inline diff for template suggestion: ${commentId}`);
           return true;
           
         } else {
@@ -2432,8 +2379,6 @@ export class DocumentManager {
           
           // Try to recreate the diff from scratch using the original logic
           if (diffState.originalContent && diffData.targetText && diffData.newText) {
-            console.log('🔄 Recreating diff from original data...');
-            
             const originalContent = diffState.originalContent;
             const targetText = diffData.targetText;
             const newText = diffData.newText;
@@ -2442,15 +2387,10 @@ export class DocumentManager {
               const inlineDiffHtml = `<span class="inline-diff-delete" data-comment-id="${commentId}" title="Click to accept/reject">${targetText}</span><span class="inline-diff-add" data-comment-id="${commentId}" title="Click to accept/reject">${newText}</span>`;
               const contentWithDiff = originalContent.replace(targetText, inlineDiffHtml);
               
-              console.log(`🔄 DEBUG: Recreated diff HTML:`, contentWithDiff);
               templateEditor.innerHTML = contentWithDiff;
               
               // Wait a moment for DOM to update
               await new Promise(resolve => setTimeout(resolve, 10));
-              
-              console.log(`🔄 DEBUG: After recreated innerHTML, checking for elements...`);
-              const recreatedCheck = templateEditor.querySelectorAll(`[data-comment-id="${commentId}"]`);
-              console.log(`🔄 DEBUG: Found ${recreatedCheck.length} recreated diff elements`);
               
               // Update the saved state with the recreated HTML
               savedComment.inlineDiffState.contentWithDiff = contentWithDiff;
@@ -2468,11 +2408,10 @@ export class DocumentManager {
               };
               
               // Reattach event listeners using the specific documentId
-              console.log(`🔄 DEBUG: About to call addInlineDiffEventListeners for recreated comment ${commentId}, documentId ${documentId}`);
               const { addInlineDiffEventListeners } = await import('./comment-translation.js');
               addInlineDiffEventListeners(commentId, documentId, true); // Force reattach during restoration
               
-              console.log(`✅ Successfully recreated inline diff for: ${commentId}`);
+              console.log(`Successfully recreated inline diff for: ${commentId}`);
               return true;
             } else {
               console.warn('Target text not found in original content during recreation');

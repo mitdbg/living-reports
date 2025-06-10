@@ -916,10 +916,10 @@ export function createTemplateSuggestionAnnotation(commentData) {
       </div>
       ${suggestionDetailsHtml}
       <div class="template-suggestion-actions">
-        <button class="template-apply-btn" onclick="window.applyTemplateSuggestion('${annotationId}')" title="Apply this suggestion to the template">
+        <button class="template-apply-btn" onclick="window.acceptInlineDiff('${annotationId}', window.documentManager?.activeDocumentId || '')" title="Apply this suggestion to the template">
           ✅ Apply Change
         </button>
-        <button class="template-reject-btn" onclick="window.rejectTemplateSuggestion('${annotationId}')" title="Reject this suggestion">
+        <button class="template-reject-btn" onclick="window.rejectInlineDiff('${annotationId}', window.documentManager?.activeDocumentId || '')" title="Reject this suggestion">
           ❌ Reject
         </button>
       </div>
