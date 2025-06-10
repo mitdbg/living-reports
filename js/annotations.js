@@ -999,6 +999,7 @@ export function createTemplateSuggestionAnnotation(commentData) {
   annotation.style.top = `${top}px`;
   annotation.style.width = `${annotationWidth}px`;
   annotation.style.zIndex = '10001';
+  annotation.style.display = 'none';
   
   // Make it draggable - pass commentData as the second parameter
   makeAnnotationDraggable(annotation, commentData);
