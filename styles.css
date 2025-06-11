@@ -693,7 +693,7 @@ body, html {
   padding: 15px;
   border-radius: 5px;
   overflow-y: auto;
-  overflow-x: hidden;
+  overflow-x: auto;
   word-wrap: break-word;
 }
 

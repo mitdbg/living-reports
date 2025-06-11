@@ -66,72 +66,102 @@ class Template:
             # For images, create an HTML img tag
             if content.startswith('data:'):
                 # Already a data URL
-                return f'<img src="{content}" alt="{name}" style="max-width: 100%; height: auto;" />'
+                return f'<img src="{content}" alt="{name}" style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin: 10px 0;" />'
             else:
-                # Check if content is already base64 encoded or if it's raw binary
+                # Try to detect if it's base64 encoded binary data
                 try:
-                    # Try to decode as base64 to check if it's valid base64
-                    if self._is_valid_base64(content):
-                        # Content is already base64 encoded
-                        return f'<img src="data:{item_type};base64,{content}" alt="{name}" style="max-width: 100%; height: auto;" />'
-                    else:
-                        # Content might be raw binary data, encode it as base64
-                        import base64
-                        if isinstance(content, str):
-                            # Convert string to bytes and then to base64
-                            content_bytes = content.encode('latin1')  # Use latin1 to preserve binary data
-                        else:
-                            content_bytes = content
-                        base64_content = base64.b64encode(content_bytes).decode('utf-8')
-                        return f'<img src="data:{item_type};base64,{base64_content}" alt="{name}" style="max-width: 100%; height: auto;" />'
-                except Exception as e:
-                    print(f"Error processing image content for {name}: {e}")
-                    return f"[Error displaying image: {name}]"
+                    # If content looks like binary data, encode it as base64
+                    if isinstance(content, str) and len(content) > 0:
+                        # Check if it's already base64 or if it contains binary characters
+                        if not content.startswith('data:') and any(ord(c) > 127 or ord(c) < 32 for c in content if c not in '\r\n\t'):
+                            # Convert to base64
+                            content_bytes = content.encode('latin1') if isinstance(content, str) else content
+                            content = base64.b64encode(content_bytes).decode('ascii')
+                        
+                        # Create data URL with proper MIME type
+                        data_url = f"data:{item_type};base64,{content}"
+                        return f'<img src="{data_url}" alt="{name}" style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin: 10px 0;" />'
+                except Exception:
+                    pass
+                
+                # Fallback - return as text
+                return f"[Image: {name}] (Unable to display)"
                 
         elif item_type.startswith('video/'):
             # For videos, create an HTML video tag
             if content.startswith('data:'):
-                return f'<video controls style="max-width: 100%; height: auto;"><source src="{content}" type="{item_type}">Your browser does not support the video tag.</video>'
+                return f'<video controls style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin: 10px 0;"><source src="{content}" type="{item_type}">Your browser does not support the video tag.</video>'
             else:
+                # Try to detect if it's base64 encoded binary data
                 try:
-                    # Check if content is already base64 encoded or if it's raw binary
-                    if self._is_valid_base64(content):
-                        # Content is already base64 encoded
-                        return f'<video controls style="max-width: 100%; height: auto;"><source src="data:{item_type};base64,{content}" type="{item_type}">Your browser does not support the video tag.</video>'
-                    else:
-                        # Content might be raw binary data, encode it as base64
-                        import base64
-                        if isinstance(content, str):
-                            # Convert string to bytes and then to base64
-                            content_bytes = content.encode('latin1')  # Use latin1 to preserve binary data
-                        else:
-                            content_bytes = content
-                        base64_content = base64.b64encode(content_bytes).decode('utf-8')
-                        return f'<video controls style="max-width: 100%; height: auto;"><source src="data:{item_type};base64,{base64_content}" type="{item_type}">Your browser does not support the video tag.</video>'
-                except Exception as e:
-                    print(f"Error processing video content for {name}: {e}")
-                    return f"[Error displaying video: {name}]"
+                    if isinstance(content, str) and len(content) > 0:
+                        if not content.startswith('data:') and any(ord(c) > 127 or ord(c) < 32 for c in content if c not in '\r\n\t'):
+                            content_bytes = content.encode('latin1') if isinstance(content, str) else content
+                            content = base64.b64encode(content_bytes).decode('ascii')
+                        
+                        data_url = f"data:{item_type};base64,{content}"
+                        return f'<video controls style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin: 10px 0;"><source src="{data_url}" type="{item_type}">Your browser does not support the video tag.</video>'
+                except Exception:
+                    pass
+                
+                return f"[Video: {name}] (Unable to display)"
+                
+        elif item_type == 'text/csv' or name.lower().endswith('.csv'):
+            # For CSV files, render as HTML table
+            try:
+                import csv
+                import io
+                
+                # Parse CSV content
+                csv_reader = csv.reader(io.StringIO(content))
+                rows = list(csv_reader)
+                
+                if not rows:
+                    return content  # Return raw content if empty
+                
+                # Build HTML table
+                html_parts = ['<table class="csv-table" style="width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 14px;">']
+                
+                # Header row
+                if len(rows) > 0:
+                    html_parts.append('<thead><tr>')
+                    for cell in rows[0]:
+                        escaped_cell = self._escape_html(str(cell))
+                        html_parts.append(f'<th style="background: #f8f9fa; border: 1px solid #dee2e6; padding: 8px 12px; text-align: left; font-weight: 600; color: #495057;">{escaped_cell}</th>')
+                    html_parts.append('</tr></thead>')
+                
+                # Data rows
+                if len(rows) > 1:
+                    html_parts.append('<tbody>')
+                    for i, row in enumerate(rows[1:], 1):
+                        row_style = 'background: #f8f9fa;' if i % 2 == 0 else 'background: white;'
+                        html_parts.append(f'<tr style="{row_style}">')
+                        for cell in row:
+                            escaped_cell = self._escape_html(str(cell))
+                            html_parts.append(f'<td style="border: 1px solid #dee2e6; padding: 8px 12px;">{escaped_cell}</td>')
+                        html_parts.append('</tr>')
+                    html_parts.append('</tbody>')
+                
+                html_parts.append('</table>')
+                return ''.join(html_parts)
+                
+            except Exception as e:
+                # If CSV parsing fails, return as plain text
+                return content
                 
         else:
-            # For all other content types (text, markdown, json, xml, etc.), return content directly
+            # For all other types (text, markdown, json, xml, etc.), return the raw content
             return content
             
-    def _is_valid_base64(self, s: str) -> bool:
-        """Check if a string is valid base64."""
-        try:
-            import base64
-            # Check if string contains only valid base64 characters
-            if not s or not isinstance(s, str):
-                return False
-            # Remove whitespace and check length
-            s_clean = s.replace(' ', '').replace('\n', '').replace('\t', '').replace('\r', '')
-            if len(s_clean) % 4 != 0:
-                return False
-            # Try to decode
-            base64.b64decode(s_clean, validate=True)
-            return True
-        except Exception:
-            return False
+    def _escape_html(self, text: str) -> str:
+        """Escape HTML special characters."""
+        if not isinstance(text, str):
+            text = str(text)
+        return (text.replace('&', '&amp;')
+                   .replace('<', '&lt;')
+                   .replace('>', '&gt;')
+                   .replace('"', '&quot;')
+                   .replace("'", '&#x27;'))
 
     @staticmethod
     def _call_llm(client: Any, prompt: str):
