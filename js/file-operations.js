@@ -3,6 +3,7 @@ import { elements, state, updateState, windowId } from './state.js';
 import { addMessageToUI } from './chat.js';
 import { switchToPreview, switchToTemplate } from './modes.js';
 import { refreshHighlightEventListeners } from './comments.js';
+import { addToDataLake } from './data-lake.js';
 
 const { ipcRenderer } = require('electron');
 
@@ -253,7 +254,7 @@ async function loadContextFile() {
     }
     
     // Add file to context display immediately
-    addContextFileToDisplay(processedFile, false);
+    // addContextFileToDisplay(processedFile, false); // Removed: using Data Lake instead
     
     // Try to send file to backend as context
     let backendSaved = false;
@@ -280,12 +281,12 @@ async function loadContextFile() {
       addMessageToUI('system', data.message);
       backendSaved = true;
       
-      // Update the context file to mark it as backend saved
-      const contextFile = state.loadedContextFiles.find(f => f.name === processedFile.name);
-      if (contextFile) {
-        contextFile.backendSaved = true;
-        updateContextFilesDisplay();
-      }
+      // Update the context file to mark it as backend saved - removed since using Data Lake
+      // const contextFile = state.loadedContextFiles.find(f => f.name === processedFile.name);
+      // if (contextFile) {
+      //   contextFile.backendSaved = true;
+      //   updateContextFilesDisplay();
+      // }
     } catch (error) {
       console.error('Error saving context to backend:', error);
       addMessageToUI('system', 'Warning: Could not save to backend (backend may not be running). File still available for display.');
@@ -312,11 +313,12 @@ function showDisplayChoiceDialog(file, backendSaved) {
   dialog.innerHTML = `
     <div class="dialog-overlay">
       <div class="dialog-content">
-        <h3>Display Context File?</h3>
+        <h3>Context File Loaded</h3>
         <p>${backendStatus}</p>
-        <p>Would you like to display <strong>${file.name}</strong> in the preview?</p>
+        <p>What would you like to do with <strong>${file.name}</strong>?</p>
         <div class="dialog-actions">
           <button id="display-context-btn" class="btn-primary">Display in Preview</button>
+          <button id="add-to-data-lake-btn" class="btn-primary">Add to Data Lake</button>
           <button id="keep-hidden-btn" class="btn-secondary">Keep Hidden</button>
         </div>
       </div>
@@ -327,11 +329,29 @@ function showDisplayChoiceDialog(file, backendSaved) {
   
   // Add event listeners with unique IDs to avoid conflicts
   const displayBtn = document.getElementById('display-context-btn');
+  const dataLakeBtn = document.getElementById('add-to-data-lake-btn');
   const hideBtn = document.getElementById('keep-hidden-btn');
   
   if (displayBtn) {
     displayBtn.addEventListener('click', () => {
       displayContextInPreview(file);
+      document.body.removeChild(dialog);
+    });
+  }
+  
+  if (dataLakeBtn) {
+    dataLakeBtn.addEventListener('click', async () => {
+      console.log('🔍 DEBUG: Add to Data Lake button clicked');
+      console.log('🔍 DEBUG: File object being added:', file);
+      
+      // Add file to data lake
+      const result = await addToDataLake(file);
+      console.log('🔍 DEBUG: addToDataLake result:', result);
+      
+      // Generate the same reference name that data lake uses
+      const referenceName = file.name.replace(/\.[^/.]+$/, "").replace(/[^a-zA-Z0-9]/g, '_').replace(/_{2,}/g, '_').replace(/^_|_$/g, '').toLowerCase();
+      
+      addMessageToUI('system', `${file.name} added to Data Lake. Reference it with $${referenceName}`);
       document.body.removeChild(dialog);
     });
   }
@@ -348,7 +368,6 @@ function showDisplayChoiceDialog(file, backendSaved) {
   if (overlay) {
     overlay.addEventListener('click', (e) => {
       if (e.target === overlay) {
-        addMessageToUI('system', 'Context file loaded but not displayed.');
         document.body.removeChild(dialog);
       }
     });
@@ -522,20 +541,9 @@ async function clearFileContext() {
     const data = await response.json();
     addMessageToUI('system', data.message);
     
-    // Clear the context files display
-    state.loadedContextFiles = [];
-    updateContextFilesDisplay();
-    
-    // Clear preview if it's showing context
-    if (elements.previewContent.querySelector('.context-file-header')) {
-      elements.previewContent.innerHTML = `
-        <h2>Template Output</h2>
-        <p>Click "Execute Template" in code mode to see the processed output here.</p>
-      `;
-      
-      // Re-attach event listeners to highlighted text after content update
-      refreshHighlightEventListeners();
-    }
+    // Clear the context files display - removed since using Data Lake
+    // state.loadedContextFiles = [];
+    // updateContextFilesDisplay();
   } catch (error) {
     console.error('Error clearing context:', error);
     addMessageToUI('system', 'Error: Failed to clear context. Make sure the backend is running.');

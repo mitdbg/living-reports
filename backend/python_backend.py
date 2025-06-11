@@ -148,6 +148,38 @@ def save_verifications(verifications):
 # Initialize verifications storage
 verifications = load_verifications()
 
+# Persistent storage for Data Lake
+DATA_LAKE_FILE = os.path.join(DATABASE_DIR, 'data_lake.json')
+
+def load_data_lake():
+    """Load all data lake items from file"""
+    try:
+        ensure_database_dir()
+        if os.path.exists(DATA_LAKE_FILE):
+            with open(DATA_LAKE_FILE, 'r') as f:
+                data_lake = json.load(f)
+                logger.info(f"🗂️ Loaded data lake for {len(data_lake)} documents from {DATA_LAKE_FILE}")
+                return data_lake
+        else:
+            logger.info("🗂️ No existing data lake file found. Starting fresh.")
+            return {}
+    except Exception as e:
+        logger.error(f"❌ Error loading data lake: {e}")
+        return {}
+
+def save_data_lake(data_lake):
+    """Save all data lake items to file"""
+    try:
+        ensure_database_dir()
+        with open(DATA_LAKE_FILE, 'w') as f:
+            json.dump(data_lake, f, indent=2)
+        logger.info(f"💾 Saved data lake for {len(data_lake)} documents to {DATA_LAKE_FILE}")
+    except Exception as e:
+        logger.error(f"❌ Error saving data lake: {e}")
+
+# Initialize data lake storage
+data_lake_storage = load_data_lake()
+
 @app.before_request
 def log_request():
     """Log all incoming requests for debugging."""
@@ -945,6 +977,111 @@ def get_verification(session_id):
         
     except Exception as e:
         logger.error(f"Error getting verification for {session_id}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/data-lake', methods=['GET'])
+def get_data_lake():
+    """Get data lake items for a specific document."""
+    try:
+        document_id = request.args.get('documentId')
+        window_id = request.args.get('windowId', 'default')
+        session_id = request.args.get('session_id', 'default')
+        
+        if not document_id:
+            return jsonify({
+                'success': False,
+                'error': 'Missing documentId parameter'
+            }), 400
+        
+        # Get data lake items for this document
+        document_data_lake = data_lake_storage.get(document_id, [])
+        
+        logger.info(f"🗂️ Returning {len(document_data_lake)} data lake items for document {document_id}")
+        
+        return jsonify({
+            'success': True,
+            'dataLake': document_data_lake,
+            'documentId': document_id,
+            'count': len(document_data_lake)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting data lake: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/data-lake', methods=['POST'])
+def save_data_lake_endpoint():
+    """Save data lake items for a specific document."""
+    try:
+        data = request.get_json()
+        
+        document_id = data.get('documentId')
+        window_id = data.get('windowId', 'default')
+        session_id = data.get('session_id', 'default')
+        data_lake_items = data.get('dataLake', [])
+        
+        if not document_id:
+            return jsonify({
+                'success': False,
+                'error': 'Missing documentId in request'
+            }), 400
+        
+        # Store data lake items for this document
+        data_lake_storage[document_id] = data_lake_items
+        
+        # Persist to file
+        save_data_lake(data_lake_storage)
+        
+        logger.info(f"🗂️ Saved {len(data_lake_items)} data lake items for document {document_id}")
+        
+        return jsonify({
+            'success': True,
+            'message': f'Data lake saved for document {document_id}',
+            'documentId': document_id,
+            'count': len(data_lake_items)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error saving data lake: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/data-lake', methods=['DELETE'])
+def clear_data_lake_endpoint():
+    """Clear data lake items for a specific document."""
+    try:
+        document_id = request.args.get('documentId')
+        window_id = request.args.get('windowId', 'default')
+        session_id = request.args.get('session_id', 'default')
+        
+        if not document_id:
+            return jsonify({
+                'success': False,
+                'error': 'Missing documentId parameter'
+            }), 400
+        
+        # Clear data lake items for this document
+        if document_id in data_lake_storage:
+            del data_lake_storage[document_id]
+            
+            # Persist changes
+            save_data_lake(data_lake_storage)
+            
+            logger.info(f"🗂️ Cleared data lake for document {document_id}")
+            
+            return jsonify({
+                'success': True,
+                'message': f'Data lake cleared for document {document_id}',
+                'documentId': document_id
+            })
+        else:
+            return jsonify({
+                'success': True,
+                'message': f'No data lake found for document {document_id} (already empty)',
+                'documentId': document_id
+            })
+        
+    except Exception as e:
+        logger.error(f"Error clearing data lake: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 if __name__ == '__main__':

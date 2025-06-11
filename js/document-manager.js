@@ -1,6 +1,6 @@
 // Document Manager Module
 import { state, elements, updateState, windowId } from './state.js';
-import { initModes, resetModesInitialization } from './modes.js';
+import { initModes, resetModesInitialization, switchToTemplate, switchToPreview, switchToSource } from './modes.js';
 import { initTemplateExecution, resetTemplateExecutionInitialization } from './template-execution.js';
 import { initSourceExecution, resetSourceExecutionInitialization } from './source-execution.js';
 import { initChat, initAskLLMButton, resetChatInitialization } from './chat.js';
@@ -13,6 +13,7 @@ import { clearAllComments } from './comments.js';
 import { addMessageToUI } from './chat.js';
 import { getCurrentUser } from './auth.js';
 import { getTextContentWithLineBreaks } from './utils.js';
+import { setCurrentDocument } from './data-lake.js';
 
 // Export the class instead of singleton instance
 export class DocumentManager {
@@ -432,22 +433,36 @@ export class DocumentManager {
     });
   }
 
-  switchToDocument(documentId) {
-    const doc = this.documents.get(documentId);
-    if (!doc) {
-      console.error('Document not found:', documentId);
+  // Switch to a document tab
+  async switchToDocument(documentId) {
+    console.log(`[${windowId}] Switching to document:`, documentId);
+    
+    if (!this.documents.has(documentId)) {
+      console.error(`[${windowId}] Document not found:`, documentId);
       return;
     }
     
-    // Stop auto-save for previous document
-    this.stopAutoSave();
+    // Update state
+    this.activeDocumentId = documentId;
     
+    // Set current document for data lake
+    await setCurrentDocument(documentId);
+    
+    // Update UI
+    this.updateTabsUI();
+    this.showDocumentContent(documentId);
+    
+    console.log(`[${windowId}] Switched to document:`, documentId);
+  }
+
+  // Update tab UI states
+  updateTabsUI() {
     // Update tab active states
     document.querySelectorAll('.tab-item').forEach(tab => {
       tab.classList.remove('active');
     });
     
-    const activeTab = document.querySelector(`[data-tab="${documentId}"]`);
+    const activeTab = document.querySelector(`[data-tab="${this.activeDocumentId}"]`);
     if (activeTab) {
       activeTab.classList.add('active');
     }
@@ -458,7 +473,10 @@ export class DocumentManager {
       mainTab.classList.remove('active');
       mainTab.style.display = 'none';
     }
-    
+  }
+
+  // Show document content
+  showDocumentContent(documentId) {
     // Hide all other document contents
     document.querySelectorAll('.tab-content[data-document-id]').forEach(content => {
       content.classList.remove('active');
@@ -495,10 +513,19 @@ export class DocumentManager {
       }
     }, 150);
     
+    // Stop auto-save for previous document
+    this.stopAutoSave();
+    
     // Start auto-save for the new document (with small delay to ensure elements are ready)
     setTimeout(() => {
       this.startAutoSave();
     }, 500);
+  }
+
+  // Save current state
+  saveState() {
+    // This method can be implemented later if needed for state persistence
+    // For now, it's a placeholder to prevent errors
   }
 
   closeDocument(documentId) {
@@ -941,7 +968,6 @@ export class DocumentManager {
         // Update documentCounter to ensure new documents get the next sequential number
         if (highestUserDocNumber > 0) {
           this.documentCounter = Math.max(this.documentCounter, highestUserDocNumber);
-          console.log(`Updated document counter to ${this.documentCounter} based on existing documents`);
         }
         
         this.updateDocumentList();
@@ -1174,12 +1200,12 @@ export class DocumentManager {
     // Refresh every 1 second for discovering new shared documents
     setInterval(() => {
       this.loadSharedDocuments();
-    }, 1000);
+    }, 10000);
     
     // Refresh currently open document every 1 second for real-time collaboration
     setInterval(() => {
       this.refreshActiveDocument();
-    }, 2500);
+    }, 25000);
   }
 
   // // Clear all user-specific data when switching users

@@ -1,7 +1,7 @@
 // Main Application Module
 import { clearCurrentModeComments } from './comments.js';
 import { addMessageToUI } from './chat.js';
-import { initDOMElements, state } from './state.js';
+import { initDOMElements, state, windowId } from './state.js';
 import { initializeUser, isUserAuthenticated, getCurrentUser } from './auth.js';
 // Import all core functionality modules
 import { initModes } from './modes.js';
@@ -13,6 +13,7 @@ import { initFileOperations } from './file-operations.js';
 import { initSharing } from './sharing.js';
 import { initContentMapping } from './content-mapping.js';
 import { initVerification } from './verification.js';
+import { initDataLake } from './data-lake.js';
 
 let documentManager;
 
@@ -91,6 +92,7 @@ async function initializeCoreModules() {
     initSharing();
     initContentMapping();
     initVerification();
+    initDataLake(); // Initialize Data Lake functionality
     
     // Initialize comment translation module
     try {
