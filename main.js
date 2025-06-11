@@ -227,14 +227,43 @@ ipcMain.handle('open-file-dialog', async () => {
   
   try {
     // Determine if file should be read as binary
-    const binaryExtensions = ['.xlsx', '.xls', '.pdf'];
+    const binaryExtensions = [
+      '.xlsx', '.xls', '.pdf',
+      '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp', '.svg',
+      '.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm', '.mkv',
+      '.mp3', '.wav', '.ogg', '.m4a', '.flac',
+      '.zip', '.rar', '.7z', '.tar', '.gz',
+      '.exe', '.dmg', '.app', '.deb', '.rpm'
+    ];
     const isBinary = binaryExtensions.includes(fileExt);
     
     let content;
+    let mimeType = null;
+    
     if (isBinary) {
       // Read binary files and encode as base64
       const buffer = fs.readFileSync(filePath);
       content = buffer.toString('base64');
+      
+      // Determine MIME type for images and videos
+      const mimeMap = {
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.png': 'image/png',
+        '.gif': 'image/gif',
+        '.bmp': 'image/bmp',
+        '.tiff': 'image/tiff',
+        '.webp': 'image/webp',
+        '.svg': 'image/svg+xml',
+        '.mp4': 'video/mp4',
+        '.avi': 'video/x-msvideo',
+        '.mov': 'video/quicktime',
+        '.wmv': 'video/x-ms-wmv',
+        '.flv': 'video/x-flv',
+        '.webm': 'video/webm',
+        '.mkv': 'video/x-matroska'
+      };
+      mimeType = mimeMap[fileExt];
     } else {
       // Read text files as UTF-8
       content = fs.readFileSync(filePath, 'utf8');
@@ -244,6 +273,8 @@ ipcMain.handle('open-file-dialog', async () => {
       path: filePath,
       name: fileName,
       content: content,
+      type: mimeType || `text/${fileExt.substring(1)}`, // Add MIME type
+      size: fs.statSync(filePath).size, // Add file size
       isBinary: isBinary,
       fileType: fileExt
     };

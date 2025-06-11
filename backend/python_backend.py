@@ -234,16 +234,17 @@ def execute_template():
         data = request.get_json()
         template_text = data.get('template_text', '')
         session_id = data.get('session_id', 'default')
+        document_id = data.get('document_id', None)
         
         # Create or get the view for this session
         if session_id not in view_registry:
-            template = Template(template_text)
+            template = Template(template_text, document_id)
             execution_result = ExecutionResult()
             view_registry[session_id] = SimpleView(template, execution_result, client)
         
         # Update the template and execute it
         view = view_registry[session_id]
-        view.update_from_editor(template_text)
+        view.update_from_editor(template_text, document_id)
         
         # Get the rendered output
         output_data = view.render_output()
@@ -421,8 +422,9 @@ def compute_diff():
         # Use the backend diff computation from DiffViewStrategy
         if content_type == 'template':
             # For templates, we need to execute both to get outputs
-            current_template = Template(current_text)
-            suggested_template = Template(suggested_text)
+            document_id = data.get('document_id', None)
+            current_template = Template(current_text, document_id)
+            suggested_template = Template(suggested_text, document_id)
             
             # Execute both templates
             execution_result = ExecutionResult()

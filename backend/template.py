@@ -1,5 +1,8 @@
 from typing import Dict, Any, Optional, List
 import re
+import json
+import os
+import base64
 from execution_result import ExecutionResult
 from openai import OpenAI
 from together import Together
@@ -9,19 +12,127 @@ class Template:
     Represents a template with methods to process and execute it.
     """
 
-    def __init__(self, template_text: str):
+    def __init__(self, template_text: str, document_id: str = None):
         """
         Initialize a template.
 
         Args:
             template_text: The raw template text
+            document_id: The document ID for loading data lake items
         """
         self.template_text = template_text
+        self.document_id = document_id
         self.variable_pattern = r"\{\{(\w+):=(.*?)\}\}"
         self.llm_pattern = r"^LLM\((.*)\)$"
         self.sum_pattern = r"^SUM\((.*)\)$"
         self.avg_pattern = r"^AVG\((.*)\)$"
+        self.data_lake_items = self._load_data_lake_items()
         
+    def _load_data_lake_items(self) -> Dict[str, Any]:
+        """Load data lake items for the current document."""
+        if not self.document_id:
+            return {}
+            
+        try:
+            data_lake_file = os.path.join(os.path.dirname(__file__), 'database', 'data_lake.json')
+            if os.path.exists(data_lake_file):
+                with open(data_lake_file, 'r') as f:
+                    all_data_lake = json.load(f)
+                    document_data_lake = all_data_lake.get(self.document_id, [])
+                    
+                    # Convert to dict for easier lookup by reference name
+                    data_lake_dict = {}
+                    for item in document_data_lake:
+                        data_lake_dict[item.get('referenceName', '')] = item
+                    
+                    return data_lake_dict
+        except Exception as e:
+            print(f"Error loading data lake items: {e}")
+            
+        return {}
+    
+    def _render_data_source(self, reference_name: str) -> str:
+        """Render a data source based on its type."""
+        if reference_name not in self.data_lake_items:
+            return f"${reference_name}"  # Keep original if not found
+            
+        item = self.data_lake_items[reference_name]
+        content = item.get('content', '')
+        item_type = item.get('type', 'unknown').lower()
+        name = item.get('name', reference_name)
+        
+        # Handle different content types
+        if item_type.startswith('image/'):
+            # For images, create an HTML img tag
+            if content.startswith('data:'):
+                # Already a data URL
+                return f'<img src="{content}" alt="{name}" style="max-width: 100%; height: auto;" />'
+            else:
+                # Check if content is already base64 encoded or if it's raw binary
+                try:
+                    # Try to decode as base64 to check if it's valid base64
+                    if self._is_valid_base64(content):
+                        # Content is already base64 encoded
+                        return f'<img src="data:{item_type};base64,{content}" alt="{name}" style="max-width: 100%; height: auto;" />'
+                    else:
+                        # Content might be raw binary data, encode it as base64
+                        import base64
+                        if isinstance(content, str):
+                            # Convert string to bytes and then to base64
+                            content_bytes = content.encode('latin1')  # Use latin1 to preserve binary data
+                        else:
+                            content_bytes = content
+                        base64_content = base64.b64encode(content_bytes).decode('utf-8')
+                        return f'<img src="data:{item_type};base64,{base64_content}" alt="{name}" style="max-width: 100%; height: auto;" />'
+                except Exception as e:
+                    print(f"Error processing image content for {name}: {e}")
+                    return f"[Error displaying image: {name}]"
+                
+        elif item_type.startswith('video/'):
+            # For videos, create an HTML video tag
+            if content.startswith('data:'):
+                return f'<video controls style="max-width: 100%; height: auto;"><source src="{content}" type="{item_type}">Your browser does not support the video tag.</video>'
+            else:
+                try:
+                    # Check if content is already base64 encoded or if it's raw binary
+                    if self._is_valid_base64(content):
+                        # Content is already base64 encoded
+                        return f'<video controls style="max-width: 100%; height: auto;"><source src="data:{item_type};base64,{content}" type="{item_type}">Your browser does not support the video tag.</video>'
+                    else:
+                        # Content might be raw binary data, encode it as base64
+                        import base64
+                        if isinstance(content, str):
+                            # Convert string to bytes and then to base64
+                            content_bytes = content.encode('latin1')  # Use latin1 to preserve binary data
+                        else:
+                            content_bytes = content
+                        base64_content = base64.b64encode(content_bytes).decode('utf-8')
+                        return f'<video controls style="max-width: 100%; height: auto;"><source src="data:{item_type};base64,{base64_content}" type="{item_type}">Your browser does not support the video tag.</video>'
+                except Exception as e:
+                    print(f"Error processing video content for {name}: {e}")
+                    return f"[Error displaying video: {name}]"
+                
+        else:
+            # For all other content types (text, markdown, json, xml, etc.), return content directly
+            return content
+            
+    def _is_valid_base64(self, s: str) -> bool:
+        """Check if a string is valid base64."""
+        try:
+            import base64
+            # Check if string contains only valid base64 characters
+            if not s or not isinstance(s, str):
+                return False
+            # Remove whitespace and check length
+            s_clean = s.replace(' ', '').replace('\n', '').replace('\t', '').replace('\r', '')
+            if len(s_clean) % 4 != 0:
+                return False
+            # Try to decode
+            base64.b64decode(s_clean, validate=True)
+            return True
+        except Exception:
+            return False
+
     @staticmethod
     def _call_llm(client: Any, prompt: str):
             if isinstance(client, OpenAI):
@@ -92,6 +203,12 @@ class Template:
                     value = variables[var_name]["value"]
                     # Wrap in span with metadata for content-to-template mapping
                     return f'<span class="var-ref" data-var="{var_name}" data-instance="{variable_instances[var_name]}" data-value="{value}">{value}</span>'
+                else:
+                    # Check if it's a data source reference
+                    rendered_data_source = self._render_data_source(var_name)
+                    if rendered_data_source != f"${var_name}":  # Found a data source
+                        return rendered_data_source
+                
                 return f"${var_name}"  # Keep original if not found
 
             text = re.sub(r"\$(\w+)", substitute_variable, text)
@@ -108,6 +225,12 @@ class Template:
                     value = variables[var_name]["value"]
                     # Wrap in span with metadata for content-to-template mapping
                     return f'<span class="var-ref" data-var="{var_name}" data-instance="{variable_instances[var_name]}" data-value="{value}">{value}</span>'
+                else:
+                    # Check if it's a data source reference
+                    rendered_data_source = self._render_data_source(var_name)
+                    if rendered_data_source != f"${var_name}":  # Found a data source
+                        return rendered_data_source
+                        
                 return f"{{{{${var_name}}}}}"  # Keep original if not found
 
             return re.sub(r"\{\{\$(\w+)\}\}", substitute_curly_variable, text)
@@ -238,6 +361,12 @@ class Template:
                     formatted = f"$${var_name}:{{{variables[var_name]['value']}}}"
                     print(f"Formatting variable {var_name} as: {formatted}")
                     return formatted
+                else:
+                    # Check if it's a data source reference
+                    rendered_data_source = self._render_data_source(var_name)
+                    if rendered_data_source != f"${var_name}":  # Found a data source
+                        return rendered_data_source
+                
                 return f"${var_name}"  # Keep original if not found
             
             text = re.sub(r"\$(\w+)", substitute_variable, text)
@@ -248,6 +377,12 @@ class Template:
                 if var_name in variables:
                     # Special marked-up format for variables
                     return f"$${var_name}:{{{variables[var_name]['value']}}}"
+                else:
+                    # Check if it's a data source reference
+                    rendered_data_source = self._render_data_source(var_name)
+                    if rendered_data_source != f"${var_name}":  # Found a data source
+                        return rendered_data_source
+                        
                 return f"{{{{${var_name}}}}}"  # Keep original if not found
             
             return re.sub(r"\{\{\$(\w+)\}\}", substitute_curly_variable, text)
@@ -409,6 +544,12 @@ class Template:
             var_name = match.group(1)
             if var_name in variables:
                 return variables[var_name]["value"]
+            else:
+                # Check if it's a data source reference
+                rendered_data_source = self._render_data_source(var_name)
+                if rendered_data_source != f"${var_name}":  # Found a data source
+                    return rendered_data_source
+            
             return f"${var_name}"  # Keep original if not found
 
         content = re.sub(r"\$(\w+)", substitute_variable, content)
@@ -418,6 +559,12 @@ class Template:
             var_name = match.group(1)
             if var_name in variables:
                 return variables[var_name]["value"]
+            else:
+                # Check if it's a data source reference
+                rendered_data_source = self._render_data_source(var_name)
+                if rendered_data_source != f"${var_name}":  # Found a data source
+                    return rendered_data_source
+            
             return f"{{{{${var_name}}}}}"  # Keep original if not found
 
         return re.sub(r"\{\{\$(\w+)\}\}", substitute_curly_variable, content)

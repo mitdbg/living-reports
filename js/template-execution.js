@@ -43,12 +43,16 @@ export function executeTemplate(clearCache = false, isLiveUpdate = false) {
 
 async function executeTemplateRequest(templateText, clearCache = false, isLiveUpdate = false) {
   try {
+    // Get current document ID for data lake context
+    const documentId = window.documentManager?.activeDocumentId || null;
+    
     const response = await fetch('http://127.0.0.1:5000/api/execute-template', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
         template_text: templateText,
         session_id: state.sessionId,
+        document_id: documentId,
         clear_cache: clearCache
       })
     });
@@ -99,12 +103,12 @@ async function executeTemplateRequest(templateText, clearCache = false, isLiveUp
 function escapeAndFormatOutput(text) {
   if (!text) return 'No output generated';
   
-  // Check if the text contains HTML (specifically our variable reference spans)
-  const containsVariableSpans = /<span[^>]*class="var-ref"[^>]*>/.test(text);
+  // Check if the text contains HTML content from data sources or variable references
+  const containsHTML = /<(img|video|span)[^>]*>/.test(text);
   
-  if (containsVariableSpans) {
-    // Text already contains HTML spans for variable references, just format line breaks
-    return text.replace(/\n/g, '<br>');
+  if (containsHTML) {
+    // Text contains HTML elements, just format line breaks while preserving HTML
+    return text.replace(/\n(?![^<]*>)/g, '<br>');
   } else {
     // Plain text, escape HTML and format line breaks
     const div = document.createElement('div');

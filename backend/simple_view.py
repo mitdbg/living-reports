@@ -52,24 +52,26 @@ class SimpleView(View):
             "view_type": self.view_type,
         }
 
-    def update_from_editor(self, editor_content: str) -> None:
+    def update_from_editor(self, editor_content: str, document_id: str = None) -> None:
         """
         Update template from editor content.
 
         Args:
             editor_content: The new content from the editor
+            document_id: The document ID for loading data lake items
         """
-        self.template = Template(editor_content)
+        self.template = Template(editor_content, document_id)
         self.execution_result = self.template.execute(self.client, self.execution_result)
 
-    def handle_template_change(self, template_text: str) -> None:
+    def handle_template_change(self, template_text: str, document_id: str = None) -> None:
         """
         Handle changing the template.
 
         Args:
             template_text: The new template text
+            document_id: The document ID for loading data lake items
         """
-        self.template = Template(template_text)
+        self.template = Template(template_text, document_id)
         self.execution_result = self.template.execute(self.client, self.execution_result)
 
     def to_simple_view(self) -> "SimpleView":

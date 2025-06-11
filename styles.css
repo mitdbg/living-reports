@@ -692,6 +692,9 @@ body, html {
   border: 1px solid #ccc;
   padding: 15px;
   border-radius: 5px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  word-wrap: break-word;
 }
 
 .floating-comment {
@@ -5015,3 +5018,100 @@ p {
   display: flex;
   gap: 15px;
 }
+
+/* Data Source Content Rendering Styles */
+.rendered-markdown {
+  background: #f8f9fa;
+  border-left: 4px solid #007bff;
+  padding: 15px;
+  margin: 10px 0;
+  border-radius: 4px;
+}
+
+.rendered-markdown h1,
+.rendered-markdown h2,
+.rendered-markdown h3 {
+  margin-top: 0;
+  margin-bottom: 10px;
+}
+
+.rendered-markdown p {
+  margin-bottom: 10px;
+}
+
+.rendered-markdown code {
+  background: #e9ecef;
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-family: 'Monaco', 'Consolas', monospace;
+}
+
+.rendered-markdown pre {
+  background: #e9ecef;
+  padding: 10px;
+  border-radius: 4px;
+  overflow-x: auto;
+}
+
+.text-content {
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  padding: 15px;
+  margin: 10px 0;
+  border-radius: 4px;
+  font-family: 'Monaco', 'Consolas', monospace;
+  font-size: 14px;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
+.unknown-content {
+  background: #fff3cd;
+  border: 1px solid #ffeaa7;
+  padding: 15px;
+  margin: 10px 0;
+  border-radius: 4px;
+}
+
+.unknown-content strong {
+  color: #856404;
+}
+
+.unknown-content pre {
+  background: #f8f9fa;
+  padding: 10px;
+  margin-top: 10px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+/* Image and Video Styles in Preview */
+.preview-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  margin: 10px 0;
+}
+
+.preview-content video {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  margin: 10px 0;
+}
+
+/* Data Lake reference styles */
+.data-reference {
+  display: inline-block;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  margin: 0 2px;
+}
+
+/* Autocomplete Widget */
