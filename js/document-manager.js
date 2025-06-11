@@ -208,7 +208,8 @@ export class DocumentManager {
     }
     
     this.documentCounter++;
-    const documentId = `doc-${this.documentCounter}`;
+    // Generate globally unique document ID by including user ID
+    const documentId = `${currentUser.id}-doc-${this.documentCounter}`;
     const sessionId = this.generateSessionId();
     const documentTitle = title || this.documentTitleInput?.value?.trim() || `Document ${this.documentCounter}`;
     
@@ -910,6 +911,9 @@ export class DocumentManager {
       const data = await response.json();
       
       if (data.success && data.documents) {
+        // Track highest document number for current user to update counter
+        let highestUserDocNumber = 0;
+        
         // Add all documents that user has access to
         data.documents.forEach(doc => {
           // Add document if user has access and it's not already loaded
@@ -921,7 +925,24 @@ export class DocumentManager {
             doc.userPermission = doc.userPermission || {};
             this.documents.set(doc.id, doc);
           }
+          
+          // Check if this is the current user's document and extract the number
+          if (doc.author === currentUser.id && doc.id.startsWith(`${currentUser.id}-doc-`)) {
+            const docNumberMatch = doc.id.match(new RegExp(`^${currentUser.id}-doc-(\\d+)$`));
+            if (docNumberMatch) {
+              const docNumber = parseInt(docNumberMatch[1], 10);
+              if (docNumber > highestUserDocNumber) {
+                highestUserDocNumber = docNumber;
+              }
+            }
+          }
         });
+        
+        // Update documentCounter to ensure new documents get the next sequential number
+        if (highestUserDocNumber > 0) {
+          this.documentCounter = Math.max(this.documentCounter, highestUserDocNumber);
+          console.log(`Updated document counter to ${this.documentCounter} based on existing documents`);
+        }
         
         this.updateDocumentList();
         
