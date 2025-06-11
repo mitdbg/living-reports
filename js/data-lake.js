@@ -790,48 +790,84 @@ window.insertDataReference = function(referenceName) {
     return;
   }
   
-  const selection = window.getSelection();
-  if (selection.rangeCount === 0) {
-    // No selection, insert at the end
+  // Check if the template editor currently has focus
+  const templateHasFocus = document.activeElement === templateEditor || 
+                          templateEditor.contains(document.activeElement);
+  
+  let insertAtCursor = false;
+  let range = null;
+  
+  if (templateHasFocus) {
+    // Template editor has focus, try to insert at cursor position
+    const selection = window.getSelection();
+    if (selection.rangeCount > 0) {
+      range = selection.getRangeAt(0);
+      // Check if the selection is actually within the template editor
+      if (templateEditor.contains(range.commonAncestorContainer) || 
+          templateEditor === range.commonAncestorContainer) {
+        insertAtCursor = true;
+      }
+    }
+  }
+  
+  if (!insertAtCursor) {
+    // Either template editor doesn't have focus or no valid cursor position
+    // Insert at the bottom of the template editor
     templateEditor.focus();
-    const range = document.createRange();
+    range = document.createRange();
     range.selectNodeContents(templateEditor);
-    range.collapse(false);
+    range.collapse(false); // Collapse to end (bottom)
+    
+    const selection = window.getSelection();
     selection.removeAllRanges();
     selection.addRange(range);
   }
   
-  const range = selection.getRangeAt(0);
-  
-  // Check if we're replacing a partial '$variable' or just inserting
+  // Now insert the reference
   const text = templateEditor.textContent;
   const cursorPosition = range.startOffset;
-  const textBeforeCursor = text.substring(0, cursorPosition);
-  const lastDollarIndex = textBeforeCursor.lastIndexOf('$');
   
-  if (lastDollarIndex !== -1 && lastDollarIndex >= cursorPosition - 20) {
-    // Replace from the '$' position
-    const rangeToReplace = document.createRange();
-    const textNode = templateEditor.firstChild || templateEditor;
+  // Check if we're replacing a partial '$variable' or just inserting
+  if (insertAtCursor) {
+    const textBeforeCursor = text.substring(0, cursorPosition);
+    const lastDollarIndex = textBeforeCursor.lastIndexOf('$');
     
-    if (textNode.nodeType === Node.TEXT_NODE) {
-      rangeToReplace.setStart(textNode, lastDollarIndex);
-      rangeToReplace.setEnd(textNode, cursorPosition);
-      rangeToReplace.deleteContents();
-      rangeToReplace.insertNode(document.createTextNode(`$${referenceName}`));
+    if (lastDollarIndex !== -1 && lastDollarIndex >= cursorPosition - 20) {
+      // Replace from the '$' position
+      const rangeToReplace = document.createRange();
+      const textNode = templateEditor.firstChild || templateEditor;
+      
+      if (textNode.nodeType === Node.TEXT_NODE) {
+        rangeToReplace.setStart(textNode, lastDollarIndex);
+        rangeToReplace.setEnd(textNode, cursorPosition);
+        rangeToReplace.deleteContents();
+        rangeToReplace.insertNode(document.createTextNode(`$${referenceName}`));
+      }
+    } else {
+      // Insert new reference at cursor
+      range.deleteContents();
+      range.insertNode(document.createTextNode(`$${referenceName}`));
     }
   } else {
-    // Insert new reference
+    // Insert at bottom - add a newline if needed and then the reference
+    const needsNewline = text.length > 0 && !text.endsWith('\n');
+    const textToInsert = needsNewline ? `\n$${referenceName}` : `$${referenceName}`;
+    
     range.deleteContents();
-    range.insertNode(document.createTextNode(`$${referenceName}`));
+    range.insertNode(document.createTextNode(textToInsert));
   }
   
   // Move cursor after the inserted text
   range.collapse(false);
+  const selection = window.getSelection();
   selection.removeAllRanges();
   selection.addRange(range);
   
-  addMessageToUI('system', `Inserted data reference: $${referenceName}`);
+  // Focus the template editor to ensure it's active
+  templateEditor.focus();
+  
+  const location = insertAtCursor ? 'at cursor position' : 'at bottom of template';
+  addMessageToUI('system', `Inserted data reference: $${referenceName} (${location})`);
   
   // Close data lake dialog if open
   hideDataLakeDialog();
