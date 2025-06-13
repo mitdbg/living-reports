@@ -234,6 +234,8 @@ function findConflictingDiffs(targetText, htmlContent) {
     try {
       const diffData = window.currentInlineDiffs && window.currentInlineDiffs[commentId];
       
+      console.log('Accepting inline diff:', commentId, documentId);
+      console.log('diffData:', diffData);
       // Get the target element - try to find where the diff actually exists
       let targetElement;
       if (documentId && documentId !== '') {
@@ -251,38 +253,6 @@ function findConflictingDiffs(targetText, htmlContent) {
           targetElement = container?.querySelector('.source-editor');
         } else {
           targetElement = container?.querySelector('.template-editor'); // fallback
-        }
-      } else if (window.documentManager?.activeDocumentId) {
-        // Fall back to active document with same logic
-        const container = document.getElementById(`document-${window.documentManager.activeDocumentId}`);
-        const templateDiff = container?.querySelector(`.template-editor [data-comment-id="${commentId}"]`);
-        const previewDiff = container?.querySelector(`.preview-content [data-comment-id="${commentId}"]`);
-        const sourceDiff = container?.querySelector(`.source-editor [data-comment-id="${commentId}"]`);
-        
-        if (templateDiff) {
-          targetElement = container?.querySelector('.template-editor');
-        } else if (previewDiff) {
-          targetElement = container?.querySelector('.preview-content');
-        } else if (sourceDiff) {
-          targetElement = container?.querySelector('.source-editor');
-        } else {
-          targetElement = container?.querySelector('.template-editor'); // fallback
-        }
-      } else {
-        // Check template, preview, and source elements to see which one has the diff
-        const { elements } = await import('./state.js');
-        const templateDiff = elements.templateEditor?.querySelector(`[data-comment-id="${commentId}"]`);
-        const previewDiff = elements.previewContent?.querySelector(`[data-comment-id="${commentId}"]`);
-        const sourceDiff = elements.sourceEditor?.querySelector(`[data-comment-id="${commentId}"]`);
-        
-        if (templateDiff) {
-          targetElement = elements.templateEditor;
-        } else if (previewDiff) {
-          targetElement = elements.previewContent;
-        } else if (sourceDiff) {
-          targetElement = elements.sourceEditor;
-        } else {
-          targetElement = elements.templateEditor; // fallback
         }
       }
       
@@ -306,13 +276,41 @@ function findConflictingDiffs(targetText, htmlContent) {
       
       // Find root containers and replace with plain text
       const containers = targetElement.querySelectorAll(`.inline-diff-container[data-comment-id="${commentId}"], .inline-diff-addition[data-comment-id="${commentId}"]`);
-      containers.forEach(container => {
-        const textNode = document.createTextNode(acceptedText);
-        container.parentNode.replaceChild(textNode, container);
-      });
+      console.log('Accept diff - Containers found:', containers.length);
+      console.log('Accept diff - Containers:', containers);
+      
+      if (containers.length > 0) {
+        // Handle containerized diffs
+        containers.forEach(container => {
+          const textNode = document.createTextNode(acceptedText);
+          container.parentNode.replaceChild(textNode, container);
+        });
+      } else {
+        // Handle individual diff elements (no containers)
+        console.log('No containers found, handling individual elements');
+        
+        // For individual elements, we need to:
+        // 1. Remove delete elements (strikethrough text)  
+        // 2. Replace add elements with their text content
+        const deleteElements = targetElement.querySelectorAll(`.inline-diff-delete[data-comment-id="${commentId}"]`);
+        const addElements = targetElement.querySelectorAll(`.inline-diff-add[data-comment-id="${commentId}"]`);
+        
+        console.log('Individual delete elements:', deleteElements.length);
+        console.log('Individual add elements:', addElements.length);
+        
+        // Remove delete elements (we're accepting, so original text is removed)
+        deleteElements.forEach(el => el.remove());
+        
+        // Replace add elements with plain text
+        addElements.forEach(el => {
+          const textNode = document.createTextNode(el.textContent);
+          el.parentNode.replaceChild(textNode, el);
+        });
+      }
       
       // Remove any remaining individual diff elements  
       const remaining = targetElement.querySelectorAll(`[data-comment-id="${commentId}"]`);
+      console.log('Remaining elements to clean up:', remaining.length);
       remaining.forEach(el => el.remove());
       
       // For preview content, verify the change was applied correctly
@@ -416,38 +414,6 @@ function findConflictingDiffs(targetText, htmlContent) {
         } else {
           targetElement = container?.querySelector('.template-editor'); // fallback
         }
-      } else if (window.documentManager?.activeDocumentId) {
-        // Fall back to active document with same logic
-        const container = document.getElementById(`document-${window.documentManager.activeDocumentId}`);
-        const templateDiff = container?.querySelector(`.template-editor [data-comment-id="${commentId}"]`);
-        const previewDiff = container?.querySelector(`.preview-content [data-comment-id="${commentId}"]`);
-        const sourceDiff = container?.querySelector(`.source-editor [data-comment-id="${commentId}"]`);
-        
-        if (templateDiff) {
-          targetElement = container?.querySelector('.template-editor');
-        } else if (previewDiff) {
-          targetElement = container?.querySelector('.preview-content');
-        } else if (sourceDiff) {
-          targetElement = container?.querySelector('.source-editor');
-        } else {
-          targetElement = container?.querySelector('.template-editor'); // fallback
-        }
-      } else {
-        // Check template, preview, and source elements to see which one has the diff
-        const { elements } = await import('./state.js');
-        const templateDiff = elements.templateEditor?.querySelector(`[data-comment-id="${commentId}"]`);
-        const previewDiff = elements.previewContent?.querySelector(`[data-comment-id="${commentId}"]`);
-        const sourceDiff = elements.sourceEditor?.querySelector(`[data-comment-id="${commentId}"]`);
-        
-        if (templateDiff) {
-          targetElement = elements.templateEditor;
-        } else if (previewDiff) {
-          targetElement = elements.previewContent;
-        } else if (sourceDiff) {
-          targetElement = elements.sourceEditor;
-        } else {
-          targetElement = elements.templateEditor; // fallback
-        }
       }
       
       if (!targetElement) {
@@ -470,13 +436,40 @@ function findConflictingDiffs(targetText, htmlContent) {
       
       // Find root containers and replace with original text
       const containers = targetElement.querySelectorAll(`.inline-diff-container[data-comment-id="${commentId}"], .inline-diff-addition[data-comment-id="${commentId}"]`);
-      containers.forEach(container => {
-        const textNode = document.createTextNode(originalText);
-        container.parentNode.replaceChild(textNode, container);
-      });
+      console.log('Reject diff - Containers found:', containers.length);
+      
+      if (containers.length > 0) {
+        // Handle containerized diffs
+        containers.forEach(container => {
+          const textNode = document.createTextNode(originalText);
+          container.parentNode.replaceChild(textNode, container);
+        });
+      } else {
+        // Handle individual diff elements (no containers)
+        console.log('No containers found, handling individual elements');
+        
+        // For individual elements, we need to:
+        // 1. Replace delete elements with their text content (restore original)
+        // 2. Remove add elements (we're rejecting the addition)
+        const deleteElements = targetElement.querySelectorAll(`.inline-diff-delete[data-comment-id="${commentId}"]`);
+        const addElements = targetElement.querySelectorAll(`.inline-diff-add[data-comment-id="${commentId}"]`);
+        
+        console.log('Individual delete elements:', deleteElements.length);
+        console.log('Individual add elements:', addElements.length);
+        
+        // Replace delete elements with plain text (restore original)
+        deleteElements.forEach(el => {
+          const textNode = document.createTextNode(el.textContent);
+          el.parentNode.replaceChild(textNode, el);
+        });
+        
+        // Remove add elements (we're rejecting, so additions are removed)
+        addElements.forEach(el => el.remove());
+      }
       
       // Remove any remaining individual diff elements
       const remaining = targetElement.querySelectorAll(`[data-comment-id="${commentId}"]`);
+      console.log('Remaining elements to clean up:', remaining.length);
       remaining.forEach(el => el.remove());
       
       // For preview content, verify the change was applied correctly
