@@ -236,15 +236,15 @@ export async function createTemplateEditSuggestionComment(originalComment, selec
       },
       ui: { position: null, element: null, isVisible: true, isDragging: false }
     };
-    
-    // Store in comments state
-    state.comments[commentId] = commentData;
-    
+
     // Create inline diff in template editor
     await showTemplateEditorDiffForSuggestion(suggestion, commentData);
     
     // Create floating annotation window for the template suggestion
     if (show_floating_annotation) {
+      // Store in comments state
+      state.comments[commentId] = commentData;
+
       const { createTemplateSuggestionAnnotation } = await import('./annotations.js');
       createTemplateSuggestionAnnotation(commentData);
       // Trigger auto-save
@@ -288,6 +288,9 @@ async function showTemplateEditorDiffForSuggestion(suggestion, commentData) {
       return;
     }
     
+    console.log('Template editor found:', templateEditor);
+    console.log('+++++++++++suggestion:', suggestion);
+
     // Work with the current HTML content (may contain existing diffs)
     let currentHtmlContent = templateEditor.innerHTML || '';
     const originalText = suggestion.original_text || '';
@@ -314,67 +317,30 @@ async function showTemplateEditorDiffForSuggestion(suggestion, commentData) {
       });
     }
     
-    // Apply the new diff based on change type
-    let newContent = currentHtmlContent;
+    // Import the createInlineDiff helper function
+    const { createInlineDiff } = await import('./inline_diff.js');
     
-    if (changeType === 'replace') {
-      // For replace: use precise original_text from LLM
-      if (newContent.includes(originalText)) {
-        // Create the inline diff replacement
-        const inlineDiffHtml = `<span class="inline-diff-delete" data-comment-id="${commentData.id}" title="Click to accept/reject (${Math.round(suggestion.confidence * 100)}% confidence)">${originalText}</span><span class="inline-diff-add" data-comment-id="${commentData.id}" title="Click to accept/reject">${newText}</span>`;
-        
-        // Replace the target text in the current content
-        newContent = newContent.replace(originalText, inlineDiffHtml);
-        
-        console.log(`Applied inline replace diff: "${originalText}" → "${newText}"`);
-      } else {
-        console.warn('Target text not found in current content:', originalText);
-        addMessageToUI('system', `⚠️ Could not locate target text "${originalText}" in template. Please check the suggestion manually.`);
-        return;
-      }
-      
-    } else if (changeType === 'add') {
-      // For add: use character position if available, otherwise append
-      const additionHtml = `<span class="inline-diff-add" data-comment-id="${commentData.id}" title="Click to accept/reject">${newText}</span>`;
-      
-      // Get the plain text version for position calculation
-      const tempDiv = document.createElement('div');
-      tempDiv.innerHTML = newContent;
-      const plainText = tempDiv.textContent || tempDiv.innerText || '';
-      
-      if (suggestion.character_start !== undefined) {
-        // Insert at specific position (need to map from plain text position to HTML position)
-        const insertPosition = Math.min(suggestion.character_start, plainText.length);
-        // For now, append at the end to avoid complex HTML position mapping
-        newContent = newContent + '\n' + additionHtml;
-      } else {
-        // Append at the end
-        newContent = newContent + '\n' + additionHtml;
-      }
-      
-      console.log(`Applied inline add diff: "${newText}"`);
-      
-    } else if (changeType === 'remove') {
-      // For remove: show target text with strikethrough
-      if (newContent.includes(originalText)) {
-        const deletionHtml = `<span class="inline-diff-delete" data-comment-id="${commentData.id}" title="Click to accept/reject">${originalText}</span>`;
-        
-        newContent = newContent.replace(originalText, deletionHtml);
-        
-        console.log(`Applied inline remove diff: "${originalText}"`);
-      } else {
-        console.warn('Target text for removal not found in current content:', originalText);
-        addMessageToUI('system', `⚠️ Could not locate text to remove "${originalText}" in template.`);
-        return;
-      }
+    // Use the standardized createInlineDiff helper function
+    const diffSuccess = createInlineDiff({
+      targetElement: templateEditor,
+      commentId: commentData.id,
+      selectedText: originalText, // Use original text as selected text
+      parsedSuggestion: {
+        original_text: originalText,
+        new_text: newText,
+        suggested_change: newText,
+        change_type: changeType
+      },
+      documentId: activeDocumentId
+    });
+    
+    if (!diffSuccess) {
+      console.warn('Failed to create inline diff');
+      addMessageToUI('system', `⚠️ Could not create inline diff for suggestion. Please check manually.`);
+      return;
     }
     
-    // Update the template editor with the new content
-    templateEditor.innerHTML = newContent;
-    
-    // Add click handlers to the diff elements for accept/reject actions
-    // Pass the active document ID to scope the event listeners correctly
-    addInlineDiffEventListeners(commentData.id, activeDocumentId);
+    console.log(`Applied inline ${changeType} diff using helper function`);
     
     // Store the diff data for cleanup with precise information
     if (!window.currentInlineDiffs) {
@@ -395,7 +361,7 @@ async function showTemplateEditorDiffForSuggestion(suggestion, commentData) {
     commentData.inlineDiffState = {
       isActive: true,
       appliedHtml: templateEditor.innerHTML,
-      originalContent: newContent, // Store the content after applying this diff
+      originalContent: templateEditor.innerHTML, // Store the content after applying this diff
       originalText: originalText,
       newText: newText,
       changeType: changeType

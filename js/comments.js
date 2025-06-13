@@ -1105,7 +1105,8 @@ async function createPreviewInlineDiffFromParsed(selectedText, parsedSuggestion,
       parsedSuggestion,
       commentId,
       targetElement: previewElement,
-      escapeHtml: escapeHtml  // Pass escapeHtml for preview content security
+      escapeHtml: escapeHtml,  // Pass escapeHtml for preview content security
+      documentId: window.documentManager?.activeDocumentId || null
     });
     
     if (!success) {
@@ -1262,7 +1263,8 @@ async function createSourceInlineDiffFromParsed(selectedText, parsedSuggestion, 
       parsedSuggestion,
       commentId,
       targetElement: sourceElement,
-      escapeHtml: escapeHtml  // Pass escapeHtml for source content security
+      escapeHtml: escapeHtml,  // Pass escapeHtml for source content security
+      documentId: window.documentManager?.activeDocumentId || null
     });
     
     if (!success) {
