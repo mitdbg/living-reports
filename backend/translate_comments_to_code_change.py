@@ -35,7 +35,7 @@ class CommentAnalysis:
     context_relevance: float
 
 @dataclass
-class TemplateEditSuggestion:
+class AIEditSuggestion:
     """Suggested edit for template content"""
     original_comment: str
     selected_text: str
@@ -159,7 +159,7 @@ class CommentTranslationService:
         
         return actions.get(intent, "Analyze and suggest template improvements")
     
-    def translate_comment_to_template_edit(self, comment_context: CommentContext) -> TemplateEditSuggestion:
+    def translate_comment_to_template_edit(self, comment_context: CommentContext) -> AIEditSuggestion:
         """
         Main function to translate a user comment into a template edit suggestion
         """
@@ -208,7 +208,7 @@ class CommentTranslationService:
                 temperature=0.3,
             )
     
-    def _parse_llm_response(self, response_text: str, context: CommentContext, analysis: CommentAnalysis) -> TemplateEditSuggestion:
+    def _parse_llm_response(self, response_text: str, context: CommentContext, analysis: CommentAnalysis) -> AIEditSuggestion:
         """Parse the LLM response into a structured suggestion"""
         try:
             # Try to extract JSON from the response
@@ -224,7 +224,7 @@ class CommentTranslationService:
                     "confidence": 0.6
                 }
             
-            return TemplateEditSuggestion(
+            return AIEditSuggestion(
                 original_comment=context.comment_text,
                 selected_text=context.selected_text,
                 suggested_change=response_data.get("new_text", ""),
@@ -236,7 +236,7 @@ class CommentTranslationService:
             
         except json.JSONDecodeError:
             # Fallback for malformed JSON
-            return TemplateEditSuggestion(
+            return AIEditSuggestion(
                 original_comment=context.comment_text,
                 selected_text=context.selected_text,
                 suggested_change=response_text[:200],
@@ -245,7 +245,7 @@ class CommentTranslationService:
                 change_type="modify"
             )
     
-    def _fallback_suggestion(self, context: CommentContext, analysis: Optional[CommentAnalysis] = None) -> TemplateEditSuggestion:
+    def _fallback_suggestion(self, context: CommentContext, analysis: Optional[CommentAnalysis] = None) -> AIEditSuggestion:
         """Generate a fallback suggestion when LLM is not available"""
         if analysis:
             intent = analysis.intent
@@ -268,7 +268,7 @@ class CommentTranslationService:
             suggested_change = f"Review and modify template based on: '{context.comment_text}'"
             explanation = "The user has provided feedback on this section. Consider their comment when updating the template."
         
-        return TemplateEditSuggestion(
+        return AIEditSuggestion(
             original_comment=context.comment_text,
             selected_text=context.selected_text,
             suggested_change=suggested_change,

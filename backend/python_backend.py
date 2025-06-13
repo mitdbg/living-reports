@@ -409,6 +409,189 @@ def translate_comment():
             }
         }), 500
 
+@app.route('/api/ai-suggestion', methods=['POST'])
+def get_ai_suggestion():
+    """Get AI suggestion for content improvement in specific mode (preview, template, source)."""
+    try:
+        data = request.get_json()
+        
+        # Extract request data
+        full_content = data.get('full_content', '')
+        selected_text = data.get('selected_text', '')
+        user_request = data.get('user_request', '')
+        mode = data.get('mode', 'preview')  # 'preview', 'template', 'source'
+        session_id = data.get('session_id', 'default')
+        
+        # Validate required fields
+        if not full_content:
+            return jsonify({
+                'success': False,
+                'error': 'Full content is required'
+            }), 400
+            
+        if not selected_text:
+            return jsonify({
+                'success': False,
+                'error': 'Selected text is required'
+            }), 400
+            
+        if not user_request:
+            return jsonify({
+                'success': False,
+                'error': 'User request is required'
+            }), 400
+        
+        # Check if LLM client is available
+        if client is None:
+            return jsonify({
+                'success': False,
+                'error': 'AI service not available (API key not configured)',
+                'fallback_suggestion': {
+                    'change_type': 'manual_review',
+                    'original_text': selected_text,
+                    'new_text': f'Please review: {user_request}',
+                    'explanation': 'AI assistance is not available without an API key.',
+                    'confidence': 0.1
+                }
+            })
+        
+        # Create structured prompt for LLM
+        prompt = f"""You are an AI assistant helping to improve content based on user feedback.
+
+MODE: {mode}
+FULL CONTENT:
+{full_content}
+
+SELECTED TEXT: "{selected_text}"
+USER REQUEST: "{user_request}"
+
+Based on the user's request, please suggest a specific improvement to the selected text.
+
+IMPORTANT: Respond with ONLY a JSON object in this exact format:
+{{
+    "change_type": "replace|add|remove",
+    "original_text": "exact text from content to change",
+    "new_text": "suggested replacement/addition text",
+    "explanation": "brief explanation of the change",
+    "confidence": 0.85
+}}
+
+Requirements:
+1. "original_text" must be the exact text that exists in the content
+2. For "replace": provide both original_text and new_text
+3. For "add": original_text can be nearby context, new_text is what to add
+4. For "remove": only original_text is needed, new_text can be empty
+5. "confidence" should be between 0.0 and 1.0
+6. Return ONLY the JSON object, no other text
+
+JSON:"""
+        
+        try:
+            # Call LLM for suggestion
+            if hasattr(client, 'chat'):
+                # OpenAI client
+                response = client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.3,
+                    max_tokens=500
+                )
+                suggestion_text = response.choices[0].message.content.strip()
+            else:
+                # Together client
+                response = client.chat.completions.create(
+                    model="Qwen/Qwen2.5-Coder-32B-Instruct",
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.3,
+                    max_tokens=500
+                )
+                suggestion_text = response.choices[0].message.content.strip()
+            
+            print(f"AI Suggestion Raw Response: {suggestion_text}")
+            
+            # Parse LLM response
+            try:
+                # Try to extract JSON from the response
+                import json
+                import re
+                
+                # Clean up the response to extract JSON
+                json_match = re.search(r'\{[\s\S]*\}', suggestion_text)
+                if json_match:
+                    json_str = json_match.group()
+                    parsed_suggestion = json.loads(json_str)
+                else:
+                    raise ValueError("No JSON found in response")
+                
+                # Validate required fields
+                required_fields = ['change_type', 'original_text', 'explanation']
+                for field in required_fields:
+                    if field not in parsed_suggestion:
+                        raise ValueError(f"Missing required field: {field}")
+                
+                # Validate change_type
+                if parsed_suggestion['change_type'] not in ['replace', 'add', 'remove']:
+                    raise ValueError(f"Invalid change_type: {parsed_suggestion['change_type']}")
+                
+                # Set defaults
+                parsed_suggestion['confidence'] = parsed_suggestion.get('confidence', 0.7)
+                parsed_suggestion['new_text'] = parsed_suggestion.get('new_text', '')
+                
+                # Additional validation: check if original_text exists in full_content
+                if parsed_suggestion['original_text'] and parsed_suggestion['original_text'] not in full_content:
+                    print(f"Warning: original_text '{parsed_suggestion['original_text']}' not found in content")
+                    # Try to find similar text
+                    if selected_text in full_content:
+                        parsed_suggestion['original_text'] = selected_text
+                        print(f"Using selected_text as fallback: '{selected_text}'")
+                
+                return jsonify({
+                    'success': True,
+                    'suggestion': parsed_suggestion,
+                    'mode': mode,
+                    'raw_response': suggestion_text
+                })
+                
+            except (json.JSONDecodeError, ValueError) as parse_error:
+                print(f"Error parsing AI response: {parse_error}")
+                # Fallback: create a simple suggestion
+                fallback_suggestion = {
+                    'change_type': 'replace',
+                    'original_text': selected_text,
+                    'new_text': suggestion_text[:200],  # Use first part of response
+                    'explanation': f'AI suggested improvement: {suggestion_text[:100]}...',
+                    'confidence': 0.6
+                }
+                
+                return jsonify({
+                    'success': True,
+                    'suggestion': fallback_suggestion,
+                    'mode': mode,
+                    'raw_response': suggestion_text,
+                    'fallback': True
+                })
+                
+        except Exception as llm_error:
+            print(f"Error calling LLM: {llm_error}")
+            return jsonify({
+                'success': False,
+                'error': f'LLM error: {str(llm_error)}',
+                'fallback_suggestion': {
+                    'change_type': 'replace',
+                    'original_text': selected_text,
+                    'new_text': f'Consider: {user_request}',
+                    'explanation': f'Failed to get AI suggestion: {str(llm_error)}',
+                    'confidence': 0.3
+                }
+            }), 500
+        
+    except Exception as e:
+        print(f"Error in AI suggestion endpoint: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 @app.route('/api/compute-diff', methods=['POST'])
 def compute_diff():
     """Compute diff between current and suggested template/output."""

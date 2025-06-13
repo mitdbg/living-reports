@@ -4,6 +4,7 @@
 import { state, elements } from './state.js';
 import { addMessageToUI, addWaitingIndicator, removeWaitingIndicator } from './chat.js';
 import { getCurrentUser } from './auth.js';
+import { createInlineDiff, findConflictingDiffs, removeConflictingInlineDiffs, addInlineDiffEventListeners } from './inline_diff.js';
 
 /**
  * Translate a user comment into a template edit suggestion
@@ -199,7 +200,7 @@ async function getCurrentDocumentContext() {
  * @param {Object} suggestion - The AI-generated suggestion
  * @param {string} mode - The mode where the comment was made
  */
-export async function createTemplateEditSuggestionComment(originalComment, selectedText, suggestion, mode) {
+export async function createTemplateEditSuggestionComment(originalComment, selectedText, suggestion, mode, show_floating_annotation = true) {
   try {
     const { incrementCommentCounter } = await import('./state.js');
     const currentUser = getCurrentUser();
@@ -243,14 +244,15 @@ export async function createTemplateEditSuggestionComment(originalComment, selec
     await showTemplateEditorDiffForSuggestion(suggestion, commentData);
     
     // Create floating annotation window for the template suggestion
-    const { createTemplateSuggestionAnnotation } = await import('./annotations.js');
-    createTemplateSuggestionAnnotation(commentData);
-    
-    // Trigger auto-save
-    if (window.documentManager) {
-      window.documentManager.onCommentChange();
+    if (show_floating_annotation) {
+      const { createTemplateSuggestionAnnotation } = await import('./annotations.js');
+      createTemplateSuggestionAnnotation(commentData);
+      // Trigger auto-save
+      if (window.documentManager) {
+        window.documentManager.onCommentChange();
+      }
     }
-    
+
     return commentData;
     
   } catch (error) {
@@ -415,327 +417,7 @@ async function showTemplateEditorDiffForSuggestion(suggestion, commentData) {
   }
 }
 
-/**
- * Find conflicting inline diffs that target the same text
- * @param {string} targetText - The text that the new diff wants to target
- * @param {string} htmlContent - Current HTML content with existing diffs
- * @returns {Array} Array of comment IDs that have conflicting diffs
- */
-function findConflictingDiffs(targetText, htmlContent) {
-  const conflicts = [];
-  
-  // Look for existing diff elements that contain the target text
-  const tempDiv = document.createElement('div');
-  tempDiv.innerHTML = htmlContent;
-  
-  // Find all existing diff elements
-  const existingDiffElements = tempDiv.querySelectorAll('.inline-diff-delete, .inline-diff-add');
-  
-  existingDiffElements.forEach(element => {
-    const commentId = element.getAttribute('data-comment-id');
-    const elementText = element.textContent;
-    
-    // Check if this existing diff conflicts with the new target text
-    if (elementText === targetText || targetText.includes(elementText) || elementText.includes(targetText)) {
-      if (commentId && !conflicts.includes(commentId)) {
-        conflicts.push(commentId);
-      }
-    }
-  });
-  
-  return conflicts;
-}
 
-/**
- * Remove conflicting inline diffs from HTML content
- * @param {string} htmlContent - Current HTML content
- * @param {Array} conflictingCommentIds - Array of comment IDs to remove
- * @returns {string} HTML content with conflicting diffs removed
- */
-function removeConflictingInlineDiffs(htmlContent, conflictingCommentIds) {
-  let cleanedContent = htmlContent;
-  
-  conflictingCommentIds.forEach(commentId => {
-    // Create a temporary div to work with the HTML
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = cleanedContent;
-    
-    // Find and remove all diff elements for this comment ID
-    const diffElements = tempDiv.querySelectorAll(`[data-comment-id="${commentId}"]`);
-    
-    diffElements.forEach(element => {
-      if (element.classList.contains('inline-diff-delete')) {
-        // For delete elements, replace with the original text
-        const textNode = document.createTextNode(element.textContent);
-        element.parentNode.replaceChild(textNode, element);
-      } else if (element.classList.contains('inline-diff-add')) {
-        // For add elements, remove them completely
-        element.remove();
-      }
-    });
-    
-    cleanedContent = tempDiv.innerHTML;
-  });
-  
-  return cleanedContent;
-}
-
-// Inline diff helper functions
-/**
- * Add event listeners to inline diff elements
- * @param {string} commentId - The comment ID
- * @param {string} documentId - The document ID to scope the search (optional)
- * @param {boolean} forceReattach - Force reattachment even if attribute says listener exists (for restoration)
- */
-function addInlineDiffEventListeners(commentId, documentId = null, forceReattach = false) {
-  // If documentId is provided, search within that document container
-  // Otherwise, fall back to global search for backwards compatibility
-  let searchScope = document;
-  if (documentId) {
-    const container = document.getElementById(`document-${documentId}`);
-    if (container) {
-      searchScope = container;
-    }
-  }
-  
-  const diffElements = searchScope.querySelectorAll(`[data-comment-id="${commentId}"]`);
-  
-  diffElements.forEach(element => {
-    if (!element.hasAttribute('data-diff-listener-attached') || forceReattach) {
-      element.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        
-        // Show inline diff actions, passing the documentId for context
-        showInlineDiffActions(commentId, element, documentId);
-      });
-      element.setAttribute('data-diff-listener-attached', 'true');
-    }
-  });
-}
-
-// Export the function for use in document manager
-export { addInlineDiffEventListeners };
-
-/**
- * Show inline diff actions (accept/reject) near the clicked element
- * @param {string} commentId - The comment ID
- * @param {Element} element - The clicked diff element
- * @param {string} documentId - The document ID for context (optional)
- */
-function showInlineDiffActions(commentId, element, documentId = null) {
-  // Remove any existing action popup
-  const existingPopup = document.querySelector('.inline-diff-actions');
-  if (existingPopup) {
-    existingPopup.remove();
-  }
-  
-  // Create action popup
-  const popup = document.createElement('div');
-  popup.className = 'inline-diff-actions';
-  // Pass documentId to the global functions
-  popup.innerHTML = `
-    <button class="diff-action-btn accept" onclick="acceptInlineDiff('${commentId}', '${documentId || ''}')">✅ Accept</button>
-    <button class="diff-action-btn reject" onclick="rejectInlineDiff('${commentId}', '${documentId || ''}')">❌ Reject</button>
-  `;
-  
-  // Position popup near the element
-  const rect = element.getBoundingClientRect();
-  popup.style.position = 'absolute';
-  popup.style.top = `${rect.bottom + 5}px`;
-  popup.style.left = `${rect.left}px`;
-  popup.style.zIndex = '1000';
-  
-  document.body.appendChild(popup);
-  
-  // Auto-hide after 5 seconds
-  setTimeout(() => {
-    if (popup.parentNode) {
-      popup.remove();
-    }
-  }, 5000);
-}
-
-/**
- * Accept an inline diff change
- * @param {string} commentId - The comment ID
- * @param {string} documentId - The document ID (optional)
- */
-window.acceptInlineDiff = async function(commentId, documentId = null) {
-  try {
-    const diffData = window.currentInlineDiffs[commentId];
-    if (!diffData) {
-      console.warn('No diff data found for comment:', commentId);
-      return;
-    }
-    
-    // Get the correct template editor for the specific document
-    let templateEditor;
-    if (documentId && documentId !== '') {
-      const container = document.getElementById(`document-${documentId}`);
-      templateEditor = container?.querySelector('.template-editor');
-    } else if (window.documentManager?.activeDocumentId) {
-      // Fall back to active document
-      const container = document.getElementById(`document-${window.documentManager.activeDocumentId}`);
-      templateEditor = container?.querySelector('.template-editor');
-    } else {
-      // Final fallback to global elements
-      const { elements } = await import('./state.js');
-      templateEditor = elements.templateEditor;
-    }
-    
-    if (!templateEditor) {
-      console.error('Template editor not found for document:', documentId);
-      return;
-    }
-    
-    // Remove diff styling and apply the changes
-    const deleteElements = templateEditor.querySelectorAll(`.inline-diff-delete[data-comment-id="${commentId}"]`);
-    const addElements = templateEditor.querySelectorAll(`.inline-diff-add[data-comment-id="${commentId}"]`);
-    
-    // Remove delete elements (they represent text to be removed)
-    deleteElements.forEach(el => {
-      el.remove();
-    });
-    
-    // Convert add elements to plain text (they represent text to be kept)
-    addElements.forEach(el => {
-      const textNode = document.createTextNode(el.textContent);
-      el.parentNode.replaceChild(textNode, el);
-    });
-    
-    // Clean up
-    delete window.currentInlineDiffs[commentId];
-    removeInlineDiffActions();
-    
-    // Remove the comment/annotation
-    const annotation = document.getElementById(commentId);
-    if (annotation) {
-      annotation.remove();
-    }
-    
-    // Import state to clean up comments
-    const { state } = await import('./state.js');
-    delete state.comments[commentId];
-    
-    // Import addMessageToUI
-    const { addMessageToUI } = await import('./chat.js');
-    addMessageToUI('system', '✅ Template change accepted and applied.');
-    
-    // Trigger auto-save and template execution
-    if (window.documentManager) {
-      window.documentManager.onContentChange();
-    }
-    
-    // Execute template to see results
-    const executeTemplate = async () => {
-      try {
-        const { executeTemplate: execTemplate } = await import('./template-execution.js');
-        execTemplate(false, true);
-      } catch (error) {
-        console.warn('Could not auto-execute template:', error);
-      }
-    };
-    executeTemplate();
-    
-  } catch (error) {
-    console.error('Error accepting inline diff:', error);
-    // Import addMessageToUI dynamically
-    try {
-      const { addMessageToUI } = await import('./chat.js');
-      addMessageToUI('system', `❌ Failed to accept change: ${error.message}`);
-    } catch (importError) {
-      console.error('Failed to import addMessageToUI:', importError);
-    }
-  }
-};
-
-/**
- * Reject an inline diff change
- * @param {string} commentId - The comment ID
- * @param {string} documentId - The document ID (optional)
- */
-window.rejectInlineDiff = async function(commentId, documentId = null) {
-  try {
-    const diffData = window.currentInlineDiffs[commentId];
-    if (!diffData) {
-      console.warn('No diff data found for comment:', commentId);
-      return;
-    }
-    
-    // Get the correct template editor for the specific document
-    let templateEditor;
-    if (documentId && documentId !== '') {
-      const container = document.getElementById(`document-${documentId}`);
-      templateEditor = container?.querySelector('.template-editor');
-    } else if (window.documentManager?.activeDocumentId) {
-      // Fall back to active document
-      const container = document.getElementById(`document-${window.documentManager.activeDocumentId}`);
-      templateEditor = container?.querySelector('.template-editor');
-    } else {
-      // Final fallback to global elements
-      const { elements } = await import('./state.js');
-      templateEditor = elements.templateEditor;
-    }
-    
-    if (!templateEditor) {
-      console.error('Template editor not found for document:', documentId);
-      return;
-    }
-    
-    // Remove all diff elements and restore original content
-    const diffElements = templateEditor.querySelectorAll(`[data-comment-id="${commentId}"]`);
-    
-    diffElements.forEach(el => {
-      if (el.classList.contains('inline-diff-delete')) {
-        // For delete elements, convert back to plain text (restore original)
-        const textNode = document.createTextNode(el.textContent);
-        el.parentNode.replaceChild(textNode, el);
-      } else if (el.classList.contains('inline-diff-add')) {
-        // For add elements, remove them (they were proposed additions)
-        el.remove();
-      }
-    });
-    
-    // Clean up
-    delete window.currentInlineDiffs[commentId];
-    removeInlineDiffActions();
-    
-    // Remove the comment/annotation
-    const annotation = document.getElementById(commentId);
-    if (annotation) {
-      annotation.remove();
-    }
-    
-    // Import state to clean up comments
-    const { state } = await import('./state.js');
-    delete state.comments[commentId];
-    
-    // Import addMessageToUI
-    const { addMessageToUI } = await import('./chat.js');
-    addMessageToUI('system', '🚫 Template change rejected and removed.');
-    
-  } catch (error) {
-    console.error('Error rejecting inline diff:', error);
-    // Import addMessageToUI dynamically
-    try {
-      const { addMessageToUI } = await import('./chat.js');
-      addMessageToUI('system', `❌ Failed to reject change: ${error.message}`);
-    } catch (importError) {
-      console.error('Failed to import addMessageToUI:', importError);
-    }
-  }
-};
-
-/**
- * Remove inline diff action popup
- */
-function removeInlineDiffActions() {
-  const popup = document.querySelector('.inline-diff-actions');
-  if (popup) {
-    popup.remove();
-  }
-}
 
 /**
  * Parse structured LLM response for precise inline diff creation
@@ -744,7 +426,7 @@ function removeInlineDiffActions() {
  * @param {Object} variableInfo - Variable context information
  * @returns {Object|null} Parsed suggestion or null if parsing failed
  */
-function parseStructuredLLMResponse(suggestion, templateContent, variableInfo) {
+export function parseStructuredLLMResponse(suggestion, templateContent, variableInfo) {
   try {
     let parsedSuggestion;
     
@@ -866,16 +548,10 @@ function parseVariableFromSelectedText(selectedText) {
  * @param {string} mode - The current mode
  */
 export async function askAIWithCommentTranslation(selectedText, commentText, mode = 'preview') {
-  let waitingIndicatorAdded = false;
+  console.log('Starting comment translation for:', { selectedText: selectedText.substring(0, 50), commentText, mode });
   
   try {
-    addWaitingIndicator();
-    waitingIndicatorAdded = true;
-    
-    addMessageToUI('user', `💬 Comment: "${commentText}"\n📄 Context: "${selectedText.substring(0, 100)}${selectedText.length > 100 ? '...' : ''}"`);
-    addMessageToUI('system', '🔄 Analyzing comment with full template context...');
-    
-    // Get translation suggestion
+    // Get translation suggestion from LLM
     const translationResult = await translateCommentToTemplateEdit(commentText, selectedText, mode);
     
     if (translationResult.success && translationResult.suggestion) {
@@ -890,38 +566,26 @@ export async function askAIWithCommentTranslation(selectedText, commentText, mod
       // Show success message
       const suggestion = translationResult.suggestion;
       const confidencePercent = Math.round(suggestion.confidence * 100);
-      const varInfo = translationResult.variable_context;
       
-      let successMessage = `✅ Created template edit suggestion with ${confidencePercent}% confidence.`;
-      
-      if (varInfo && varInfo.isVariable) {
-        successMessage += ` Variable "${varInfo.varName}" (value: ${varInfo.currentValue}) → Target: "${suggestion.original_text}"`;
-      } else {
-        successMessage += ` Target: "${suggestion.original_text}"`;
-      }
-      
-      successMessage += ` | Change: ${suggestion.change_type}`;
+      let successMessage = `✅ Created template suggestion with ${confidencePercent}% confidence.`;
+      successMessage += ` Change: ${suggestion.change_type} | Target: "${suggestion.original_text.substring(0, 50)}${suggestion.original_text.length > 50 ? '...' : ''}"`;
       
       addMessageToUI('system', successMessage);
       
     } else {
-      // No valid template suggestion from LLM - don't create any comment
-      console.log('No valid template suggestion from LLM, skipping comment creation');
-      addMessageToUI('system', '🤖 LLM could not suggest template changes for this comment.');
+      // Fallback: If LLM translation fails, create a simple AI suggestion using sendToBackend
+      console.log('LLM translation failed, falling back to simple template suggestion');
+      
+      const { sendToBackend } = await import('./template-execution.js');
+      const message = `Preview Comment Context: "${selectedText}"\n\nUser Comment: "${commentText}"\n\nBased on this preview content and user comment, please suggest template improvements.`;
+      
+      addMessageToUI('system', '🔄 Generating AI template suggestions based on preview comment...');
+      await sendToBackend(message, true);
     }
     
   } catch (error) {
     console.error('Error in askAIWithCommentTranslation:', error);
     addMessageToUI('system', `❌ Failed to analyze comment for template changes: ${error.message}`);
-    // Don't create any comment when there's an error
-  } finally {
-    if (waitingIndicatorAdded) {
-      try {
-        removeWaitingIndicator();
-      } catch (indicatorError) {
-        console.warn('Error removing waiting indicator:', indicatorError);
-      }
-    }
   }
 }
 

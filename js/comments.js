@@ -745,52 +745,59 @@ export function initCommentButtons() {
     commentsData.currentCancelCommentBtn.removeEventListener('click', commentsData.cancelCommentHandler);
   }
   
-  // Ask AI button handler (restore original functionality)
+  // Ask AI button handler - simplified and mode-aware
   commentsData.askLLMHandler = async () => {
-    console.log(`[${windowId}] Ask AI clicked`);
+    console.log(`[${windowId}] Ask AI clicked - Mode: ${state.currentMode}`);
     const selectedText = elements.floatingComment.dataset.selectedText;
     const commentContent = elements.commentText.value.trim();
     
-    if (selectedText) {
-      let message;
-      if (commentContent) {
-        message = `Context: "${selectedText}"\n\nRequest: ${commentContent}\n\n`;
-      } else {
-        message = `Context: "${selectedText}"\n\nPlease provide suggestions for this code.`;
-      }
+    if (!selectedText) {
+      addMessageToUI('system', 'Please select some text first.');
+      return;
+    }
+
+    // Prepare user request message
+    let userRequest = commentContent || 'Please provide suggestions for this content.';
+    
+    let waitingIndicatorAdded = false;
+    
+    try {
+      // Add the message to chat UI first
+      addMessageToUI('user', `🤖 Ask AI: "${userRequest}"\n📄 Context: "${selectedText.substring(0, 100)}${selectedText.length > 100 ? '...' : ''}"`);
+
+      // Add a waiting indicator
+      addWaitingIndicator();
+      waitingIndicatorAdded = true;
+
+             if (state.currentMode === 'template') {
+         // 1.1 Template mode + AskAI: Send to LLM and display inline diff in template
+         await handleTemplateAskAI(selectedText, userRequest);
+       } else if (state.currentMode === 'preview') {
+         // 2.1 Preview mode + AskAI: Send to LLM and display inline diff in preview
+         await handlePreviewAskAI(selectedText, userRequest);
+       } else if (state.currentMode === 'source') {
+         // 3.1 Source mode + AskAI: Send to LLM and display inline diff in source
+         await handleSourceAskAI(selectedText, userRequest);
+       } else {
+         // For other modes, fallback to template mode behavior
+         await handleTemplateAskAI(selectedText, userRequest);
+       }
+
+      // Hide the floating comment window after sending
+      elements.floatingComment.style.display = 'none';
       
-      let waitingIndicatorAdded = false;
-      
-      try {
-        // Add the message to chat UI first
-        addMessageToUI('user', message);
-
-        // Add a waiting indicator
-        addWaitingIndicator();
-        waitingIndicatorAdded = true;
-
-        // Send to backend with suggest_template=true for template suggestions based on selected text
-        const { sendToBackend } = await import('./template-execution.js');
-        await sendToBackend(message, true);
-
-        // Hide the floating comment window after sending
-        elements.floatingComment.style.display = 'none';
-        
-      } catch (error) {
-        console.error('Error sending to AI:', error);
-        addMessageToUI('system', 'Error: Failed to send message to AI. Please try again.');
-      } finally {
-        // Always remove waiting indicator if it was added
-        if (waitingIndicatorAdded) {
-          try {
-            removeWaitingIndicator();
-          } catch (indicatorError) {
-            console.warn('Error removing waiting indicator:', indicatorError);
-          }
+    } catch (error) {
+      console.error('Error sending to AI:', error);
+      addMessageToUI('system', 'Error: Failed to send message to AI. Please try again.');
+    } finally {
+      // Always remove waiting indicator if it was added
+      if (waitingIndicatorAdded) {
+        try {
+          removeWaitingIndicator();
+        } catch (indicatorError) {
+          console.warn('Error removing waiting indicator:', indicatorError);
         }
       }
-    } else {
-      addMessageToUI('system', 'Please select some text first.');
     }
   };
   
@@ -807,37 +814,34 @@ export function initCommentButtons() {
     commentsData.currentAskLLMBtn = askLLMBtn;
   }
   
-  // Create new event handlers
+  // Add Comment button handler - simplified and mode-aware
   commentsData.addCommentHandler = async () => {
-    console.log(`[${windowId}] Add comment clicked`);
+    console.log(`[${windowId}] Add comment clicked - Mode: ${state.currentMode}`);
+    const selectedText = elements.floatingComment.dataset.selectedText;
+    const commentContent = elements.commentText.value.trim();
+    
+    if (!selectedText) {
+      addMessageToUI('system', 'Please select some text first.');
+      return;
+    }
+
     try {
-      const selectedText = elements.floatingComment.dataset.selectedText;
-      const commentContent = elements.commentText.value.trim();
-      
-      if (commentContent && selectedText) {
-        // First, create a regular comment for the selected content
-        createTextComment(selectedText, commentContent);
-        
-        // Then, generate template edit suggestions as follow-up actions
-        try {
-          const { askAIWithCommentTranslation } = await import('./comment-translation.js');
-          
-          // Add a system message indicating we're analyzing for template changes
-          addMessageToUI('system', '🔄 Analyzing comment for template edit suggestions...');
-          
-          // Use the comment translation service to generate template suggestions
-          await askAIWithCommentTranslation(selectedText, commentContent, state.currentMode);
-          
-        } catch (error) {
-          console.error('Error generating template suggestions:', error);
-          addMessageToUI('system', `⚠️ Comment created, but template analysis failed: ${error.message}`);
-        }
-      } else if (selectedText && !commentContent) {
-        // If no comment content, just create a regular comment with placeholder text
-        createTextComment(selectedText, 'Comment on selected text');
-      }
+             if (state.currentMode === 'template') {
+         // 1.2 Template mode + AddComment: Just add a regular comment
+         await handleTemplateAddComment(selectedText, commentContent);
+       } else if (state.currentMode === 'preview') {
+         // 2.2 Preview mode + AddComment: Create annotation in preview only
+         await handlePreviewAddComment(selectedText, commentContent);
+       } else if (state.currentMode === 'source') {
+         // 3.2 Source mode + AddComment: Just add a regular comment
+         await handleSourceAddComment(selectedText, commentContent);
+       } else {
+         // For other modes, fallback to template mode behavior
+         await handleTemplateAddComment(selectedText, commentContent);
+       }
     } catch (error) {
       console.error('Error processing comment:', error);
+      addMessageToUI('system', 'Error: Failed to process comment. Please try again.');
     }
     
     // Always hide the floating comment window, regardless of success/failure
@@ -862,6 +866,419 @@ export function initCommentButtons() {
   commentsData.commentButtonsInitialized = true;
   window[COMMENTS_KEY] = commentsData;
 }
+
+// Handler functions for different scenarios
+
+/**
+ * 1.1 Template mode + AskAI: Send to LLM and display inline diff in template
+ */
+async function handleTemplateAskAI(selectedText, userRequest) {
+  console.log('Handling Template + AskAI scenario');
+  
+  // Get current template content
+  const templateContent = elements.templateEditor ? elements.templateEditor.textContent : '';
+  
+  // Send request to new AI suggestion endpoint
+  try {
+    const response = await fetch('http://127.0.0.1:5000/api/ai-suggestion', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        full_content: templateContent,
+        selected_text: selectedText,
+        user_request: userRequest,
+        mode: 'template',
+        session_id: state.sessionId
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Backend responded with status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    // Check if we got a valid suggestion
+    if (data.success && data.suggestion) {
+      // Use existing parseStructuredLLMResponse function
+      const { parseStructuredLLMResponse } = await import('./comment-translation.js');
+      
+      // Parse the suggestion using existing logic
+      const parsedSuggestion = parseStructuredLLMResponse(
+        data.suggestion, 
+        templateContent, 
+        { isVariable: false, varName: null, currentValue: null, instance: null }
+      );
+      
+      if (parsedSuggestion) {
+        // Use existing template suggestion logic
+        const { createTemplateEditSuggestionComment } = await import('./comment-translation.js');
+        await createTemplateEditSuggestionComment(userRequest, selectedText, parsedSuggestion, 'template', false);
+        addMessageToUI('system', `✅ Template AI suggestion created`);
+      } else {
+        addMessageToUI('system', '🤖 AI provided feedback but no specific content changes suggested');
+      }
+    } else {
+      addMessageToUI('system', '🤖 AI provided feedback but no specific content changes suggested');
+    }
+    
+  } catch (error) {
+    console.error('Error getting template AI suggestion:', error);
+    // Fallback to existing approach
+    try {
+      const { sendToBackend } = await import('./template-execution.js');
+      await sendToBackend(`Context: "${selectedText}"\n\nRequest: ${userRequest}\n\nPlease suggest improvements to the template.`, true);
+      addMessageToUI('system', '🔄 Analyzing template for AI suggestions (fallback after error)...');
+    } catch (fallbackError) {
+      addMessageToUI('system', `❌ Failed to get AI suggestion for template: ${error.message}`);
+    }
+  }
+  
+  // SAFEGUARD: Re-enable text selection handling after AI processing
+  window.aiProcessingInProgress = false;
+}
+
+/**
+ * 2.1 Preview mode + AskAI: Send to LLM and display inline diff in preview
+ */
+async function handlePreviewAskAI(selectedText, userRequest) {
+  console.log('Handling Preview + AskAI scenario');
+
+  // Get current preview content
+  const previewContent = elements.previewContent ? elements.previewContent.innerHTML : '';
+  
+  // Send request to new AI suggestion endpoint
+  try {
+    const response = await fetch('http://127.0.0.1:5000/api/ai-suggestion', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        full_content: previewContent,
+        selected_text: selectedText,
+        user_request: userRequest,
+        mode: 'preview',
+        session_id: state.sessionId
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Backend responded with status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    // Check if we got a valid suggestion
+    if (data.success && data.suggestion) {
+      // Use existing parseStructuredLLMResponse function to validate and enhance the suggestion
+      const { parseStructuredLLMResponse } = await import('./comment-translation.js');
+      
+      // Parse the suggestion using existing logic
+      const parsedSuggestion = parseStructuredLLMResponse(
+        data.suggestion, 
+        previewContent, 
+        { isVariable: false, varName: null, currentValue: null, instance: null }
+      );
+      
+      if (parsedSuggestion) {
+        // Create AI suggestion comment with inline diff in preview using existing logic
+        await createPreviewAISuggestionFromParsed(selectedText, userRequest, parsedSuggestion);
+        addMessageToUI('system', `✅ AI suggestion created for preview content`);
+      } else {
+        addMessageToUI('system', '🤖 AI provided feedback but no specific content changes suggested');
+      } 
+    } else {
+      addMessageToUI('system', '🤖 AI provided feedback but no specific content changes suggested');
+    }
+  } catch (error) {
+    console.error('Error getting preview AI suggestion:', error);
+    addMessageToUI('system', `❌ Failed to get AI suggestion for preview: ${error.message}`);
+  }
+}
+
+/**
+ * 1.2 Template mode + AddComment: Just add a regular comment
+ */
+async function handleTemplateAddComment(selectedText, commentContent) {
+  console.log('Handling Template + AddComment scenario');
+  
+  const finalComment = commentContent || 'Comment on selected text';
+  
+  // Create a simple comment for the selected content
+  createTextComment(selectedText, finalComment);
+  
+  addMessageToUI('system', `📝 Comment added: "${finalComment}"`);
+}
+
+/**
+ * 2.2 Preview mode + AddComment: Create annotation in preview AND AI suggestion in template
+ */
+async function handlePreviewAddComment(selectedText, commentContent) {
+  console.log('Handling Preview + AddComment scenario');
+  
+  const finalComment = commentContent || 'Comment on selected text';
+  
+  // First, create a regular comment annotation in preview mode
+  createTextComment(selectedText, finalComment);
+  
+  // Then, use the existing comment translation service to generate template suggestions
+  try {
+    const { askAIWithCommentTranslation } = await import('./comment-translation.js');
+    
+    // Add a system message indicating we're analyzing for template changes
+    addMessageToUI('system', '🔄 Analyzing comment for template edit suggestions...');
+    
+    // Use the existing comment translation service (this is what was working before)
+    await askAIWithCommentTranslation(selectedText, finalComment, 'preview');
+    
+  } catch (error) {
+    console.error('Error generating template suggestions:', error);
+    addMessageToUI('system', `⚠️ Comment created, but template analysis failed: ${error.message}`);
+  }
+}
+
+
+
+/**
+ * Create AI suggestion with inline diff in preview based on parsed suggestion
+ */
+async function createPreviewAISuggestionFromParsed(selectedText, userRequest, parsedSuggestion) {
+  try {
+    const { incrementCommentCounter } = await import('./state.js');
+    const currentUser = getCurrentUser();
+    const commentId = `preview-ai-suggestion-${incrementCommentCounter()}`;
+    
+    // Create comment data for preview AI suggestion
+    const commentData = {
+      id: commentId,
+      selectedText: selectedText,
+      commentMessage: `🤖 AI Preview Suggestion\n📝 Request: "${userRequest}"\n🎯 Change: ${parsedSuggestion.explanation}`,
+      mode: 'preview',
+      author: 'ai-assistant',
+      authorName: `AI Assistant → ${currentUser?.name || 'User'}`,
+      authorEmoji: '🤖',
+      authorColor: '#007bff',
+      createdAt: new Date().toISOString(),
+      isResolved: false,
+      isActive: true,
+      isAISuggestion: true,
+      isPreviewSuggestion: true,
+      originalRequest: userRequest,
+      aiSuggestion: parsedSuggestion,
+      ui: { position: null, element: null, isVisible: true, isDragging: false }
+    };
+    
+    // Store in comments state
+    state.comments[commentId] = commentData;
+    
+    // Create inline diff in preview content using parsed suggestion
+    await createPreviewInlineDiffFromParsed(selectedText, parsedSuggestion, commentId);
+
+  } catch (error) {
+    console.error('Error creating preview AI suggestion from parsed data:', error);
+    addMessageToUI('system', `❌ Failed to create preview suggestion: ${error.message}`);
+  }
+}
+
+/**
+ * Create inline diff in preview content from parsed AI suggestion
+ */
+async function createPreviewInlineDiffFromParsed(selectedText, parsedSuggestion, commentId) {
+  try {
+    const previewElement = elements.previewContent;
+    if (!previewElement) {
+      console.warn('Preview element not found');
+      return;
+    }
+    
+    // Safeguard: Ensure we're working with the preview element, not template
+    if (previewElement.classList.contains('template-editor')) {
+      console.error('🚨 ERROR: previewElement is actually the template editor! Aborting to prevent data loss.');
+      addMessageToUI('system', '❌ Internal error: Preview element reference is incorrect');
+      return;
+    }
+    
+    // Use the generic createInlineDiff function from the library
+    const { createInlineDiff } = await import('./inline_diff.js');
+    
+    const success = createInlineDiff({
+      selectedText,
+      parsedSuggestion,
+      commentId,
+      targetElement: previewElement,
+      escapeHtml: escapeHtml  // Pass escapeHtml for preview content security
+    });
+    
+    if (!success) {
+      console.warn('Failed to create inline diff in preview content');
+      addMessageToUI('system', '❌ Failed to create preview diff');
+    }
+    
+  } catch (error) {
+    console.error('Error creating preview inline diff from parsed suggestion:', error);
+    addMessageToUI('system', `❌ Failed to create preview diff: ${error.message}`);
+  }
+}
+
+
+
+/**
+ * 3.1 Source mode + AskAI: Send to LLM and display inline diff in source
+ */
+async function handleSourceAskAI(selectedText, userRequest) {
+  console.log('Handling Source + AskAI scenario');
+  
+  // Get current source content
+  const sourceContent = elements.sourceEditor ? elements.sourceEditor.textContent : '';
+  
+  // Send request to new AI suggestion endpoint
+  try {
+    const response = await fetch('http://127.0.0.1:5000/api/ai-suggestion', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        full_content: sourceContent,
+        selected_text: selectedText,
+        user_request: userRequest,
+        mode: 'source',
+        session_id: state.sessionId
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Backend responded with status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    // Check if we got a valid suggestion
+    if (data.success && data.suggestion) {
+      // Use existing parseStructuredLLMResponse function
+      const { parseStructuredLLMResponse } = await import('./comment-translation.js');
+      
+      // Parse the suggestion using existing logic
+      const parsedSuggestion = parseStructuredLLMResponse(
+        data.suggestion, 
+        sourceContent, 
+        { isVariable: false, varName: null, currentValue: null, instance: null }
+      );
+      
+      if (parsedSuggestion) {
+        // Create AI suggestion comment with inline diff in source using existing logic
+        await createSourceAISuggestionFromParsed(selectedText, userRequest, parsedSuggestion);
+        addMessageToUI('system', `✅ AI suggestion created for source code`);
+      } else {
+        addMessageToUI('system', '🤖 AI provided feedback but no specific code changes suggested');
+      }
+    } else {
+      addMessageToUI('system', '🤖 AI provided feedback but no specific code changes suggested');
+    }
+    
+  } catch (error) {
+    console.error('Error getting source AI suggestion:', error);
+    addMessageToUI('system', `❌ Failed to get AI suggestion for source: ${error.message}`);
+  }
+}
+
+/**
+ * 3.2 Source mode + AddComment: Just add a regular comment
+ */
+async function handleSourceAddComment(selectedText, commentContent) {
+  console.log('Handling Source + AddComment scenario');
+  
+  const finalComment = commentContent || 'Comment on selected code';
+  
+  // Create a simple comment for the selected content
+  createTextComment(selectedText, finalComment);
+  
+  addMessageToUI('system', `📝 Source comment added: "${finalComment}"`);
+}
+
+/**
+ * Create AI suggestion with inline diff in source based on parsed suggestion
+ */
+async function createSourceAISuggestionFromParsed(selectedText, userRequest, parsedSuggestion) {
+  try {
+    const { incrementCommentCounter } = await import('./state.js');
+    const currentUser = getCurrentUser();
+    const commentId = `source-ai-suggestion-${incrementCommentCounter()}`;
+    
+    // Create comment data for source AI suggestion
+    const commentData = {
+      id: commentId,
+      selectedText: selectedText,
+      commentMessage: `🤖 AI Source Suggestion\n📝 Request: "${userRequest}"\n🎯 Change: ${parsedSuggestion.explanation}`,
+      mode: 'source',
+      author: 'ai-assistant',
+      authorName: `AI Assistant → ${currentUser?.name || 'User'}`,
+      authorEmoji: '🤖',
+      authorColor: '#007bff',
+      createdAt: new Date().toISOString(),
+      isResolved: false,
+      isActive: true,
+      isAISuggestion: true,
+      isSourceSuggestion: true,
+      originalRequest: userRequest,
+      aiSuggestion: parsedSuggestion,
+      ui: { position: null, element: null, isVisible: true, isDragging: false }
+    };
+    
+    // Store in comments state
+    state.comments[commentId] = commentData;
+    
+    // Create inline diff in source content using parsed suggestion
+    await createSourceInlineDiffFromParsed(selectedText, parsedSuggestion, commentId);
+    
+    // Create floating annotation for the source suggestion
+    const { createAISuggestionAnnotation } = await import('./annotations.js');
+    createAISuggestionAnnotation(commentData);
+    
+    // Trigger auto-save
+    if (window.documentManager) {
+      window.documentManager.onCommentChange();
+    }
+    
+  } catch (error) {
+    console.error('Error creating source AI suggestion from parsed data:', error);
+    addMessageToUI('system', `❌ Failed to create source suggestion: ${error.message}`);
+  }
+}
+
+/**
+ * Create inline diff in source content from parsed AI suggestion
+ */
+async function createSourceInlineDiffFromParsed(selectedText, parsedSuggestion, commentId) {
+  try {
+    const sourceElement = elements.sourceEditor;
+    if (!sourceElement) {
+      console.warn('Source element not found');
+      return;
+    }
+    
+    // Use the generic createInlineDiff function from the library
+    const { createInlineDiff } = await import('./inline_diff.js');
+    
+    const success = createInlineDiff({
+      selectedText,
+      parsedSuggestion,
+      commentId,
+      targetElement: sourceElement,
+      escapeHtml: escapeHtml  // Pass escapeHtml for source content security
+    });
+    
+    if (!success) {
+      console.warn('Failed to create inline diff in source content');
+      addMessageToUI('system', '❌ Failed to create source diff');
+    }
+    
+  } catch (error) {
+    console.error('Error creating source inline diff from parsed suggestion:', error);
+    addMessageToUI('system', `❌ Failed to create source diff: ${error.message}`);
+  }
+}
+
+
+
+
 
 // Functions to reset initialization flags (for DocumentManager)
 export function resetTextSelectionInitialization() {
