@@ -14,6 +14,8 @@ import { initSharing } from './sharing.js';
 import { initContentMapping } from './content-mapping.js';
 import { initVerification } from './verification.js';
 import { initDataLake } from './data-lake.js';
+import { initTools } from './tools.js';
+import { addSampleTools } from './sample-tools.js';
 
 let documentManager;
 
@@ -93,6 +95,10 @@ async function initializeCoreModules() {
     initContentMapping();
     initVerification();
     initDataLake(); // Initialize Data Lake functionality
+    initTools(); // Initialize Tools functionality
+    
+    // Add sample tools for demonstration (only if no tools exist)
+    addSampleTools();
     
     // Initialize comment translation module
     try {
