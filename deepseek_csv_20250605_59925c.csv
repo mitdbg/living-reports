@@ -4,48 +4,5 @@ Manufacture Year,Sale Year,Units Sold,Model,Region,Base Price (USD),Regional Mar
 2022,2024,215,Explorer,Asia,38000,1.12,0.03,8872360,Fleet,Dealership,New Model Launch
 2021,2022,93,Escape,North America,28000,1.02,0.12,2385264,Individual,Dealership,Loyalty Program
 2023,2024,178,Bronco,South America,45000,1.08,0.02,8589168,Individual,Direct,Off-Road Adventure
-2020,2023,105,Ranger,Europe,32000,1.15,0.10,3659040,Corporate,Online,Commercial Fleet
-2022,2023,142,Edge,Asia,36000,1.10,0.07,5321880,Individual,Dealership,Mid-Year Sale
-2021,2024,86,F-150,North America,35500,1.06,0.04,3264096,Fleet,Direct,Government Contract
-2023,2024,203,Expedition,Africa,52000,1.25,0.15,11446150,Government,Dealership,UN Aid Program
-2022,2022,67,Mustang,Oceania,42500,1.30,0.00,3709250,Individual,Online,None
-2020,2024,112,Explorer,Europe,38500,1.20,0.06,5381376,Corporate,Dealership,Executive Lease
-2021,2023,78,Escape,South America,28500,1.05,0.09,2309067,Individual,Dealership,City Commuter
-2023,2024,189,Bronco,Asia,45500,1.15,0.05,9401895,Fleet,Online,Adventure Tourism
-2022,2023,95,Ranger,North America,32500,1.03,0.11,2980188,Individual,Dealership,Trade-In Bonus
-2021,2022,116,Edge,Africa,36500,1.22,0.08,4770008,Corporate,Direct,Mining Consortium
-2020,2023,132,F-150,Oceania,34800,1.28,0.03,5835840,Fleet,Dealership,Construction Package
-2022,2024,88,Mustang,Europe,42800,1.17,0.04,4240128,Individual,Online,Summer Special
-2023,2024,164,Explorer,South America,38200,1.07,0.10,6047920,Individual,Dealership,Family Package
-2021,2023,101,Escape,Asia,29000,1.13,0.07,3093539,Corporate,Online,Ride-Sharing Program
-2022,2022,73,Bronco,North America,44000,1.04,0.14,2947392,Individual,Dealership,Early Adopter
-2020,2024,145,Ranger,Africa,31500,1.26,0.05,5476275,Government,Direct,Aid Organization
-2023,2023,122,Edge,Oceania,37000,1.29,0.02,5695456,Individual,Dealership,Coastal Edition
-2021,2022,59,F-150,Europe,35200,1.21,0.11,2245252,Corporate,Online,None
-2022,2024,198,Mustang,South America,43200,1.09,0.06,8680666,Individual,Dealership,Performance Pack
-2020,2023,107,Explorer,Asia,37500,1.14,0.04,4292820,Fleet,Direct,Taxi Upgrade
-2023,2024,83,Escape,North America,29500,1.01,0.13,2186039,Individual,Online,Hybrid Promotion
-2021,2023,176,Bronco,Africa,44800,1.27,0.03,10026496,Corporate,Dealership,Safari Edition
-2022,2022,91,Ranger,Oceania,31800,1.31,0.00,3791718,Individual,Direct,None
-2020,2024,134,Edge,Europe,36200,1.16,0.09,5059450,Corporate,Online,Executive Car
-2021,2022,68,F-150,South America,34600,1.08,0.15,2150272,Fleet,Dealership,Agriculture Package
-2023,2023,159,Mustang,Asia,43500,1.11,0.08,6746532,Individual,Dealership,GT Edition
-2022,2024,72,Explorer,North America,38500,1.05,0.05,2832480,Individual,Online,Winter Ready
-2020,2023,113,Escape,Africa,29200,1.24,0.10,3612966,Government,Direct,Health Service
-2021,2024,187,Bronco,Oceania,45200,1.33,0.01,11217677,Corporate,Dealership,Outback Package
-2023,2024,102,Ranger,Europe,32200,1.19,0.07,3664548,Individual,Online,Adventure Series
-2022,2022,126,Edge,South America,35800,1.06,0.12,4256842,Corporate,Dealership,Corporate Fleet
-2020,2023,79,F-150,Asia,34900,1.09,0.04,2946776,Fleet,Direct,Logistics Upgrade
-2021,2024,214,Mustang,North America,42500,1.02,0.03,9039030,Individual,Dealership,Anniversary Edition
-2023,2023,97,Explorer,Africa,39000,1.23,0.11,4144019,Government,Online,Diplomatic Corps
-2022,2024,138,Escape,Oceania,29700,1.32,0.06,5399381,Individual,Dealership,Eco Challenge
-2020,2022,63,Bronco,Europe,44200,1.20,0.13,3096744,Corporate,Online,Winter Sports
-2021,2023,182,Ranger,South America,31600,1.04,0.02,5832438,Fleet,Direct,Mining Operations
-2023,2024,89,Edge,Asia,36400,1.10,0.14,2864556,Individual,Online,Tech Package
-2022,2023,117,F-150,North America,35100,1.07,0.09,4021479,Corporate,Dealership,Contractor Special
-2020,2024,152,Mustang,Africa,43000,1.28,0.05,8293120,Individual,Direct,None
-2021,2022,71,Explorer,Oceania,37800,1.30,0.08,3224088,Corporate,Dealership,Family Vacation
-2023,2023,124,Escape,Europe,29300,1.18,0.10,3821584,Individual,Online,Urban Commute
-2022,2024,196,Bronco,South America,44700,1.03,0.04,8767849,Fleet,Dealership,Rental Fleet
-2020,2023,108,Ranger,Asia,31400,1.12,0.07,3516941,Government,Direct,Utility Service
-2021,2024,81,Edge,North America,36600,1.01,0.06,2929356,Individual,Online,All-Wheel Drive
+2020,2023,105,Ranger,Europe,32000,1.15,0.1,3659040,Corporate,Online,Commercial Fleet
+2022,2023,142,Edge,Asia,36000,1.1,0.07,5321880,Individual,Dealership,Mid-Year Sale
