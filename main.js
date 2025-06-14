@@ -213,6 +213,7 @@ ipcMain.handle('open-file-dialog', async () => {
       { name: 'Text Files', extensions: ['txt', 'md', 'js', 'css', 'json'] },
       { name: 'Excel Files', extensions: ['xlsx', 'xls'] },
       { name: 'PDF Files', extensions: ['pdf'] },
+      { name: 'PowerPoint Files', extensions: ['pptx', 'ppt'] },
       { name: 'Web Files', extensions: ['html', 'htm'] }
     ]
   });
@@ -228,7 +229,7 @@ ipcMain.handle('open-file-dialog', async () => {
   try {
     // Determine if file should be read as binary
     const binaryExtensions = [
-      '.xlsx', '.xls', '.pdf',
+      '.xlsx', '.xls', '.pdf', '.pptx', '.ppt',
       '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp', '.svg',
       '.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm', '.mkv',
       '.mp3', '.wav', '.ogg', '.m4a', '.flac',

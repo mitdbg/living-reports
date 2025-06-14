@@ -136,7 +136,9 @@ function getFileIcon(fileExt) {
     'pdf': '📄',
     'xml': '📄',
     'xlsx': '📊',
-    'xls': '📊'
+    'xls': '📊',
+    'pptx': '📽️',
+    'ppt': '📽️'
   };
   
   return iconMap[fileExt] || '📄';
@@ -206,13 +208,14 @@ async function loadContextFile() {
     
     addMessageToUI('system', `Context file loaded: ${file.name}`);
     
-    // Check if file needs backend processing (Excel, PDF, HTML)
+    // Check if file needs backend processing (Excel, PDF, HTML - but not PowerPoint)
     const fileExt = file.name.split('.').pop().toLowerCase();
-    const needsProcessing = ['xlsx', 'xls', 'pdf', 'html', 'htm'].includes(fileExt);
+    const needsBackendProcessing = ['xlsx', 'xls', 'pdf', 'html', 'htm'].includes(fileExt);
+    const isPowerPoint = ['pptx', 'ppt'].includes(fileExt);
     
     let processedFile = file;
     
-    if (needsProcessing) {
+    if (needsBackendProcessing) {
       try {
         addMessageToUI('system', `Processing ${fileExt.toUpperCase()} file...`);
         
@@ -251,6 +254,10 @@ async function loadContextFile() {
         addMessageToUI('system', `Warning: Could not process file on backend (${error.message}). Using raw content.`);
         // Continue with original file content
       }
+    } else if (isPowerPoint) {
+      // For PowerPoint files, we'll process them client-side
+      addMessageToUI('system', `PowerPoint file will be processed client-side for better visual fidelity.`);
+      // Keep the original file with base64 content for client-side processing
     }
     
     // Add file to context display immediately
@@ -397,6 +404,10 @@ function displayContextInPreview(file) {
     case 'json':
       renderedContent = renderJSON(file.content);
       break;
+    case 'pptx':
+    case 'ppt':
+      renderedContent = renderPowerPoint(file);
+      break;
     default:
       renderedContent = renderPlainText(file.content);
   }
@@ -514,6 +525,287 @@ function renderJSON(content) {
   } catch (error) {
     return `<div class="json-content"><p>Error parsing JSON: ${error.message}</p><pre>${escapeHtml(content)}</pre></div>`;
   }
+}
+
+// Client-side PPTX processing using PPTX2HTML
+function processPPTXClientSide(file, callback) {
+  // Create a worker to process the PPTX file
+  const worker = new Worker('./js/pptx2html/worker.js');
+  
+  let htmlContent = '';
+  let isProcessingComplete = false;
+  
+  worker.addEventListener('message', function(e) {
+    const msg = e.data;
+    
+    switch(msg.type) {
+      case "slide":
+        htmlContent += msg.data;
+        break;
+      case "globalCSS":
+        htmlContent += "<style>" + msg.data + "</style>";
+        break;
+      case "ExecutionTime":
+        isProcessingComplete = true;
+        // Processing complete, return the HTML content
+        callback({
+          success: true,
+          content: htmlContent,
+          processingTime: msg.data
+        });
+        worker.terminate();
+        break;
+      case "ERROR":
+        console.error('PPTX Worker Error:', msg.data);
+        callback({
+          success: false,
+          error: msg.data
+        });
+        worker.terminate();
+        break;
+      case "WARN":
+        console.warn('PPTX Worker Warning:', msg.data);
+        break;
+      case "DEBUG":
+        console.debug('PPTX Worker Debug:', msg.data);
+        break;
+      default:
+        console.info('PPTX Worker Info:', msg.data);
+    }
+  }, false);
+  
+  // Convert base64 to ArrayBuffer
+  const binaryString = atob(file.content);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  
+  // Send the file to the worker for processing
+  worker.postMessage({
+    "type": "processPPTX",
+    "data": bytes.buffer
+  });
+}
+
+function renderPowerPoint(file) {
+  // Check if this is a PowerPoint file that needs client-side processing
+  const fileExt = file.name.split('.').pop().toLowerCase();
+  const isPowerPoint = ['pptx', 'ppt'].includes(fileExt);
+  
+  if (isPowerPoint && (file.content.includes('client-side processing') || file.content.includes('PPTX file ready') || file.content.startsWith('UEsD'))) {
+    // Show loading message
+    const loadingContent = `
+      <div class="powerpoint-loading">
+        <div class="loading-spinner">⏳</div>
+        <h3>Processing PowerPoint File</h3>
+        <p>Converting ${file.name} to HTML format...</p>
+        <div class="loading-progress">
+          <div class="progress-bar" id="pptx-progress-bar"></div>
+        </div>
+      </div>
+    `;
+    
+    // Return loading content first
+    setTimeout(() => {
+      // Process the PPTX file client-side
+      processPPTXClientSide(file, (result) => {
+        if (result.success) {
+          // Update the preview with the processed content
+          const processedContent = `
+            <div class="pptx-presentation-wrapper">
+              <div class="pptx-header">
+                <h2>📽️ ${file.name}</h2>
+                <p class="processing-info">Processed in ${result.processingTime}ms using PPTX2HTML</p>
+              </div>
+              <div class="pptx-content">
+                ${result.content}
+              </div>
+            </div>
+          `;
+          
+          // Update the preview content
+          if (elements.previewContent) {
+            const contextHeader = elements.previewContent.querySelector('.context-file-header');
+            const contextContent = elements.previewContent.querySelector('.context-file-content');
+            if (contextContent) {
+              contextContent.innerHTML = processedContent;
+            }
+          }
+        } else {
+          // Show error message
+          const errorContent = `
+            <div class="powerpoint-error">
+              <h3>❌ Error Processing PowerPoint</h3>
+              <p>Failed to process ${file.name}: ${result.error}</p>
+              <p>The file may be corrupted or in an unsupported format.</p>
+            </div>
+          `;
+          
+          if (elements.previewContent) {
+            const contextContent = elements.previewContent.querySelector('.context-file-content');
+            if (contextContent) {
+              contextContent.innerHTML = errorContent;
+            }
+          }
+        }
+      });
+    }, 100);
+    
+    return loadingContent;
+  }
+  
+  // Check if content is already HTML (from new backend processing)
+  if (file.content.includes('<div class="pptx-presentation">') || file.content.includes('<div class="pptx-presentation-wrapper">')) {
+    // New rich HTML format (either custom or pptx2html) - display as-is
+    return file.content;
+  }
+  
+  // Fallback for old plain text format
+  let formattedContent = file.content
+    .replace(/^(Slide \d+:)$/gm, '<h2 class="slide-title">$1</h2>')
+    .replace(/^(=+)$/gm, '<hr class="slide-separator">')
+    .replace(/^(Layout: .+)$/gm, '<p class="layout-info"><em>$1</em></p>')
+    .replace(/^(Text Box \d+:)$/gm, '<h3 class="text-box-title">$1</h3>')
+    .replace(/^(Table \d+:)$/gm, '<h3 class="table-title">$1</h3>')
+    .replace(/^(Image \d+:)$/gm, '<h3 class="image-title">$1</h3>')
+    .replace(/^(-+)$/gm, '<hr class="section-separator">')
+    .replace(/^(  Paragraph \d+.+)$/gm, '<p class="paragraph-info">$1</p>')
+    .replace(/^(    \[.+\]: .+)$/gm, '<p class="formatting-info">$1</p>')
+    .replace(/^(  Row \d+: .+)$/gm, '<p class="table-row">$1</p>')
+    .replace(/^(SLIDE NOTES:)$/gm, '<h2 class="notes-title">$1</h2>')
+    .replace(/\n/g, '<br>');
+  
+  return `
+    <div class="powerpoint-content">
+      <style>
+        .powerpoint-loading {
+          text-align: center;
+          padding: 40px;
+          font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .loading-spinner {
+          font-size: 2em;
+          margin-bottom: 20px;
+          animation: spin 2s linear infinite;
+        }
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+        .loading-progress {
+          width: 100%;
+          height: 4px;
+          background: #e0e0e0;
+          border-radius: 2px;
+          margin-top: 20px;
+          overflow: hidden;
+        }
+        .progress-bar {
+          height: 100%;
+          background: linear-gradient(90deg, #4CAF50, #45a049);
+          width: 0%;
+          animation: progress 3s ease-in-out infinite;
+        }
+        @keyframes progress {
+          0% { width: 0%; }
+          50% { width: 70%; }
+          100% { width: 100%; }
+        }
+        .powerpoint-error {
+          text-align: center;
+          padding: 40px;
+          color: #d32f2f;
+          font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .pptx-presentation-wrapper {
+          font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .pptx-header {
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          color: white;
+          padding: 20px;
+          border-radius: 8px 8px 0 0;
+          margin-bottom: 20px;
+        }
+        .pptx-header h2 {
+          margin: 0 0 10px 0;
+        }
+        .processing-info {
+          margin: 0;
+          opacity: 0.9;
+          font-size: 0.9em;
+        }
+        .powerpoint-content {
+          font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+          line-height: 1.6;
+          color: #333;
+        }
+        .slide-title {
+          color: #2c5282;
+          border-bottom: 2px solid #2c5282;
+          padding-bottom: 5px;
+          margin-top: 30px;
+          margin-bottom: 15px;
+        }
+        .slide-separator {
+          border: none;
+          height: 2px;
+          background: linear-gradient(to right, #2c5282, transparent);
+          margin: 20px 0;
+        }
+        .layout-info {
+          color: #666;
+          font-style: italic;
+          margin-bottom: 15px;
+        }
+        .text-box-title {
+          color: #1a202c;
+          margin-top: 20px;
+          margin-bottom: 10px;
+          font-size: 1.1em;
+        }
+        .table-title, .image-title {
+          color: #2d3748;
+          margin-top: 20px;
+          margin-bottom: 10px;
+          font-size: 1.1em;
+        }
+        .section-separator {
+          border: none;
+          height: 1px;
+          background: #e2e8f0;
+          margin: 15px 0;
+        }
+        .paragraph-info {
+          margin-left: 20px;
+          color: #4a5568;
+          font-weight: 500;
+        }
+        .formatting-info {
+          margin-left: 40px;
+          color: #718096;
+          font-size: 0.9em;
+          font-style: italic;
+        }
+        .table-row {
+          margin-left: 20px;
+          font-family: monospace;
+          background: #f7fafc;
+          padding: 5px;
+          border-radius: 3px;
+        }
+        .notes-title {
+          color: #805ad5;
+          border-bottom: 2px solid #805ad5;
+          padding-bottom: 5px;
+          margin-top: 40px;
+          margin-bottom: 20px;
+        }
+      </style>
+      ${formattedContent}
+    </div>
+  `;
 }
 
 function renderPlainText(content) {

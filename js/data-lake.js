@@ -536,7 +536,9 @@ function getFileIcon(fileType) {
     'pdf': '📄',
     'xml': '📄',
     'xlsx': '📊',
-    'xls': '📊'
+    'xls': '📊',
+    'pptx': '📽️',
+    'ppt': '📽️'
   };
   
   return iconMap[fileType] || '📄';

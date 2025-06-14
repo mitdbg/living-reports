@@ -29,6 +29,9 @@ import openpyxl
 from pathlib import Path
 import io
 import base64
+from PIL import Image
+import tempfile
+import os
 
 # Add parent directory to path for imports
 import sys
@@ -889,6 +892,27 @@ def process_html_file(file_content, file_name):
     except Exception as e:
         return f"Error processing HTML file: {str(e)}"
 
+def process_pptx_file(file_path):
+    """
+    PPTX files are now processed client-side using PPTX2HTML JavaScript library.
+    This function returns a message indicating the file should be processed in the browser.
+    """
+    try:
+        # Get basic file info
+        file_size = os.path.getsize(file_path)
+        
+        return {
+            'success': True,
+            'content': f'PPTX file ready for client-side processing. File size: {file_size} bytes. This file will be processed using the PPTX2HTML JavaScript library in your browser for better visual fidelity.',
+            'file_type': 'pptx',
+            'processing_method': 'client-side'
+        }
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'Error accessing PPTX file: {str(e)}'
+        }
+
 @app.route('/api/process-file', methods=['POST'])
 def process_file():
     """Process uploaded files (Excel, PDF, HTML) and return extracted content."""
@@ -908,6 +932,8 @@ def process_file():
             processed_content = process_pdf_file(file_content, file_name)
         elif file_ext in ['.html', '.htm']:
             processed_content = process_html_file(file_content, file_name)
+        elif file_ext in ['.pptx', '.ppt']:
+            processed_content = process_pptx_file(file_path)
         else:
             # For other file types, return as-is (assuming text)
             processed_content = file_content

@@ -23,5 +23,8 @@
   "devDependencies": {
     "concurrently": "^8.2.2",
     "electron": "^35.1.5"
+  },
+  "dependencies": {
+    "pptx2html": "^0.3.4"
   }
 }

@@ -72,7 +72,7 @@ class OperatorManager {
   }
 
   createInstance(options) {
-    const instance = new operator(options);
+    const instance = new Operator(options);
     this.instances.set(instance.id, instance);
     this.saveInstances();
     
