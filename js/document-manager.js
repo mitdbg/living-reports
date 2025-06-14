@@ -1138,7 +1138,7 @@ export class DocumentManager {
               const currentCodeContent = getTextContentWithLineBreaks(templateEditor);
               if (currentCodeContent !== freshDoc.template_content) {
                 console.log('Template content changed, updating...');
-                templateEditor.textContent = freshDoc.template_content;
+                templateEditor.innerHTML = freshDoc.template_content;
                 
                 // Restore highlights for code mode after content replacement
                 await this.restoreHighlightsForMode('template');
@@ -1445,8 +1445,16 @@ export class DocumentManager {
       console.log('Fallback: cleaned diff HTML to get content:', cleanedContent);
       return cleanedContent;
     } else {
-      // No inline diffs, get content normally
-      return getTextContentWithLineBreaks(templateEditor);
+      // No inline diffs, check if content contains HTML formatting
+      const hasHTMLContent = templateEditor.innerHTML !== templateEditor.textContent;
+      
+      if (hasHTMLContent) {
+        // Preserve HTML content for rich formatting (like PPTX content)
+        return templateEditor.innerHTML;
+      } else {
+        // Plain text content, use text extraction
+        return getTextContentWithLineBreaks(templateEditor);
+      }
     }
   }
 
@@ -1795,7 +1803,7 @@ export class DocumentManager {
         templateEditor.innerHTML = '';
         
         // Set the content
-        templateEditor.textContent = freshDoc.template_content;
+        templateEditor.innerHTML = freshDoc.template_content;
         
         // Wait for DOM to update
         await this.delay(100);

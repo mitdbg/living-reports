@@ -424,12 +424,25 @@ function displayContextInPreview(file) {
     </div>
   `;
   
+  // Load all file types into both preview and template panels
+  console.log('🔍 DEBUG: About to load to template, file:', file.name, 'renderedContent length:', renderedContent.length);
+  loadContentToTemplate(file, renderedContent);
+  addMessageToUI('system', `Content loaded into both preview and template panels: ${file.name}`);
+  
   // Re-attach event listeners to highlighted text after content update
   refreshHighlightEventListeners();
   
   // Switch to preview mode
   switchToPreview();
-  addMessageToUI('system', `Context file displayed in preview: ${file.name}`);
+}
+
+function loadContentToTemplate(file, renderedContent) {
+  // Load content into template panel
+  console.log('🔍 DEBUG: Loading to template, elements.templateEditor:', elements.templateEditor);
+  if (elements.templateEditor) {
+    // Load only the raw content without any headers or processing info
+    elements.templateEditor.innerHTML = renderedContent;
+  }
 }
 
 // Format renderers
@@ -611,27 +624,34 @@ function renderPowerPoint(file) {
       // Process the PPTX file client-side
       processPPTXClientSide(file, (result) => {
         if (result.success) {
-          // Update the preview with the processed content
-          const processedContent = `
-            <div class="pptx-presentation-wrapper">
-              <div class="pptx-header">
-                <h2>📽️ ${file.name}</h2>
-                <p class="processing-info">Processed in ${result.processingTime}ms using PPTX2HTML</p>
-              </div>
-              <div class="pptx-content">
-                ${result.content}
-              </div>
-            </div>
-          `;
+                     // Update the preview with the processed content
+           const processedContentForPreview = `
+             <div class="pptx-presentation-wrapper">
+               <div class="pptx-header">
+                 <h2>📽️ ${file.name}</h2>
+                 <p class="processing-info">Processed in ${result.processingTime}ms using PPTX2HTML</p>
+               </div>
+               <div class="pptx-content">
+                 ${result.content}
+               </div>
+             </div>
+           `;
+           
+           // Raw content for template (without headers)
+           const rawContent = result.content;
           
-          // Update the preview content
-          if (elements.previewContent) {
-            const contextHeader = elements.previewContent.querySelector('.context-file-header');
-            const contextContent = elements.previewContent.querySelector('.context-file-content');
-            if (contextContent) {
-              contextContent.innerHTML = processedContent;
-            }
-          }
+                     // Update both preview and template content
+           if (elements.previewContent) {
+             const contextContent = elements.previewContent.querySelector('.context-file-content');
+             if (contextContent) {
+               contextContent.innerHTML = processedContentForPreview;
+             }
+           }
+           
+           // Also load into template panel (raw content only)
+           if (elements.templateEditor) {
+             elements.templateEditor.innerHTML = rawContent;
+           }
         } else {
           // Show error message
           const errorContent = `
