@@ -164,6 +164,82 @@ def calculate():
     </div>
   </div>
 
+  <!-- Code Instances Dialog -->
+  <div class="code-instances-dialog" id="code-instances-dialog" style="display: none;">
+    <div class="dialog-overlay">
+      <div class="dialog-content instances-content">
+        <div class="dialog-header">
+          <h3>🔧 Code Instances</h3>
+          <button class="close-btn" id="close-instances-btn">✕</button>
+        </div>
+        
+
+        
+        <div class="instances-content-area">
+          <div class="instances-items" id="instances-items">
+            <div class="no-instances-message" id="no-instances-message">
+              <p>No code instances yet.</p>
+              <p>Click "Add Instance" to create your first instance.</p>
+            </div>
+          </div>
+        </div>
+        
+        <div class="dialog-actions">
+          <button class="btn-primary add-instance-btn">➕ Add Instance</button>
+          <button class="btn-secondary" id="close-instances-bottom-btn">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Instance Dialog -->
+  <div class="add-instance-dialog" id="add-instance-dialog" style="display: none;">
+    <div class="dialog-overlay">
+      <div class="dialog-content add-instance-content">
+        <div class="dialog-header">
+          <h3>🔧 Configure Code Instance</h3>
+          <button class="close-btn" id="close-add-instance-btn">✕</button>
+        </div>
+        
+        <div class="add-instance-form">
+          <div class="form-group">
+            <label for="instance-name">Instance Name:</label>
+            <input type="text" id="instance-name" placeholder="Enter instance name..." />
+          </div>
+          
+          <div class="form-group">
+            <label for="instance-tool">Tool:</label>
+            <select id="instance-tool">
+              <option value="">Select a tool...</option>
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label>Input Datasets:</label>
+            <div class="available-datasets" id="available-datasets">
+              <p class="no-datasets">Loading datasets...</p>
+            </div>
+          </div>
+          
+          <div class="form-group">
+            <label>Parameters:</label>
+            <div class="parameters-container">
+              <div class="instance-parameters" id="instance-parameters">
+                <!-- Parameters will be added here -->
+              </div>
+              <button type="button" class="btn-secondary add-parameter-btn">➕ Add Parameter</button>
+            </div>
+          </div>
+        </div>
+        
+        <div class="dialog-actions">
+          <button class="btn-primary" id="save-instance-btn">Save Instance</button>
+          <button class="btn-secondary" id="cancel-add-instance-btn">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Autocomplete Widget -->
   <div class="autocomplete-widget" id="autocomplete-widget" style="display: none;">
     <div class="autocomplete-header">
@@ -182,11 +258,12 @@ def calculate():
           <h3 id="content-title">Source Code Editor</h3>
           <div class="action-buttons">
             <button class="share-btn mode-toggle">📤 Share</button>
-            <button class="clear-comments-btn mode-toggle">Clear Comments</button>
+            <button class="clear-comments-btn mode-toggle" style="display: none;">Clear Comments</button>
             <button class="data-lake-btn mode-toggle">🗄️ Data Lake</button>
             <button class="tools-btn mode-toggle">🛠️ Tools</button>
+            <button class="code-instances-btn mode-toggle">🔧 Operators</button>
             <div class="mode-buttons">
-              <button class="mode-btn source-mode-btn" data-mode="source" title="Source Code">💻</button>
+              <button class="mode-btn source-mode-btn" data-mode="source" title="Source Code" style="display: none;">💻</button>
               <button class="mode-btn template-mode-btn active" data-mode="template" title="Template">📝</button>
               <button class="mode-btn preview-mode-btn" data-mode="preview" title="Preview">👁️</button>
             </div>
@@ -195,14 +272,8 @@ def calculate():
         
         <div class="content-area">
           <!-- Source Code editing mode -->
-          <div class="source-panel">
-            <div class="source-editor" contenteditable="true" data-placeholder="# Source code to generate data for templates
-# Example: Data analysis, API calls, calculations
-
-import math
-a = 16
-b = math.sqrt(16)
-c = [1,2,3,4]"></div>
+          <div class="source-panel" style="display: none;">
+            <div class="source-editor" contenteditable="true"></div>
             <div class="source-controls">
               <button class="execute-source-btn">Execute Source Code</button>
               <span class="source-execution-status"></span>

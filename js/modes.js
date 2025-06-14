@@ -85,20 +85,20 @@ function updateModeButtonStates(activeMode) {
   const templateModeBtn = container.querySelector('.template-mode-btn');
   const previewModeBtn = container.querySelector('.preview-mode-btn');
   
-  if (!sourceModeBtn || !templateModeBtn || !previewModeBtn) {
+  if (!templateModeBtn || !previewModeBtn) {
     return;
   }
   
   // Remove active class from all buttons
-  sourceModeBtn.classList.remove('active');
+  // sourceModeBtn.classList.remove('active');
   templateModeBtn.classList.remove('active');
   previewModeBtn.classList.remove('active');
   
   // Add active class to current mode button
   switch (activeMode) {
-    case 'source':
-      sourceModeBtn.classList.add('active');
-      break;
+    // case 'source':
+    //   sourceModeBtn.classList.add('active');
+    //   break;
     case 'template':
       templateModeBtn.classList.add('active');
       break;
@@ -329,13 +329,13 @@ export function initModes() {
   // Simple fix: wait a moment for the tab to become visible
   setTimeout(() => {
     // Check if buttons exist
-    if (!elements.sourceModeBtn || !elements.templateModeBtn || !elements.previewModeBtn) {
+    if (!elements.templateModeBtn || !elements.previewModeBtn) {
       console.log(`[${windowId}] Mode buttons not found, they might be in different document tabs`);
       return;
     }
     
     // Check if buttons are actually visible and have dimensions
-    const buttonRect = elements.sourceModeBtn.getBoundingClientRect();
+    const buttonRect = elements.templateModeBtn.getBoundingClientRect();
     if (buttonRect.width === 0 || buttonRect.height === 0) {
       console.log(`[${windowId}] Mode buttons not visible yet, but event delegation is set up`);
       return;

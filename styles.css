@@ -5373,6 +5373,32 @@ p {
   margin: 0 2px;
 }
 
+/* Code Instance reference styles */
+.instance-reference {
+  display: inline-block;
+  background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+  color: white;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  margin: 0 2px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+}
+
+.instance-reference:hover {
+  background: linear-gradient(135deg, #218838 0%, #1e9e86 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(40, 167, 69, 0.3);
+  border-color: #155724;
+}
+
+.instance-reference:active {
+  transform: translateY(0);
+}
+
 /* Autocomplete Widget */
 
 /* Preview Diff Styles */
@@ -5533,5 +5559,383 @@ p {
 
 .source-diff-actions .diff-action-btn.reject:hover {
   background-color: #da190b;
+}
+
+/* Code Instances Dialog */
+.code-instances-dialog {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+}
+
+.instances-content {
+  width: 90%;
+  max-width: 1000px;
+  max-height: 90vh;
+  background: white;
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+
+
+.instances-content-area {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  min-height: 300px;
+  border-top: 1px solid #eee;
+}
+
+.instances-items {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.no-instances-message {
+  text-align: center;
+  color: #666;
+  padding: 40px 20px;
+}
+
+.no-instances-message p {
+  margin: 10px 0;
+}
+
+.instance-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  background: #f9f9f9;
+}
+
+.instance-item:hover {
+  border-color: #667eea;
+  background: #f8f9ff;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.1);
+}
+
+.instance-item.status-idle {
+  border-color: #e0e0e0;
+  background: #f9f9f9;
+}
+
+.instance-item.status-running {
+  border-color: #ffa500;
+  background: #fff7e6;
+  animation: instancePulse 2s infinite;
+}
+
+.instance-item.status-completed {
+  border-color: #28a745;
+  background: #f8fff9;
+}
+
+.instance-item.status-error {
+  border-color: #dc3545;
+  background: #fff5f5;
+}
+
+.instance-item-info {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  flex: 1;
+}
+
+.instance-item-icon {
+  font-size: 24px;
+  width: 40px;
+  text-align: center;
+}
+
+.instance-item-details {
+  flex: 1;
+}
+
+.instance-item-name {
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 5px;
+  font-size: 16px;
+}
+
+.instance-item-tool {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 3px;
+}
+
+.instance-item-datasets {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 5px;
+}
+
+.instance-item-meta {
+  font-size: 12px;
+  color: #999;
+  display: flex;
+  gap: 15px;
+}
+
+.instance-error {
+  color: #dc3545;
+  font-size: 12px;
+  margin-top: 5px;
+  font-weight: 500;
+}
+
+.instance-item-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.instance-item-btn {
+  background: none;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s ease;
+  font-weight: 500;
+}
+
+.instance-item-btn:hover {
+  background: #f5f5f5;
+}
+
+.instance-item-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.instance-execute-btn {
+  background: #28a745;
+  color: white;
+  border-color: #28a745;
+}
+
+.instance-insert-btn {
+  background: #17a2b8;
+  color: white;
+  border-color: #17a2b8;
+}
+
+.instance-insert-btn:hover {
+  background: #138496;
+}
+
+.instance-execute-btn:hover:not(:disabled) {
+  background: #218838;
+}
+
+.instance-edit-btn {
+  background: #007bff;
+  color: white;
+  border-color: #007bff;
+}
+
+.instance-edit-btn:hover {
+  background: #0056b3;
+}
+
+.instance-delete-btn {
+  color: #dc3545;
+  border-color: #dc3545;
+}
+
+.instance-delete-btn:hover {
+  background: #dc3545;
+  color: white;
+}
+
+/* Add Instance Dialog */
+.add-instance-dialog {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10001;
+}
+
+.add-instance-content {
+  width: 90%;
+  max-width: 800px;
+  max-height: 90vh;
+  background: white;
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.add-instance-form {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+}
+
+.add-instance-form .form-group {
+  margin-bottom: 20px;
+}
+
+.add-instance-form label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 500;
+  color: #333;
+}
+
+.add-instance-form input,
+.add-instance-form select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 14px;
+  outline: none;
+}
+
+.add-instance-form input:focus,
+.add-instance-form select:focus {
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.available-datasets {
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 10px;
+  background: #f9f9f9;
+}
+
+.dataset-checkbox {
+  margin-bottom: 10px;
+}
+
+.dataset-checkbox label {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  font-weight: normal;
+  margin-bottom: 0;
+}
+
+.dataset-checkbox input[type="checkbox"] {
+  width: auto;
+  margin-right: 10px;
+}
+
+.dataset-info {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.dataset-name {
+  font-weight: 500;
+  color: #333;
+}
+
+.dataset-type {
+  font-size: 12px;
+  color: #666;
+  text-transform: uppercase;
+}
+
+.no-datasets {
+  text-align: center;
+  color: #666;
+  font-style: italic;
+}
+
+.parameters-container {
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 15px;
+  background: #f9f9f9;
+}
+
+.instance-parameters {
+  margin-bottom: 15px;
+}
+
+.parameter-field {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.parameter-field .param-key,
+.parameter-field .param-value {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+.remove-param-btn {
+  background: #dc3545;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s ease;
+}
+
+.remove-param-btn:hover {
+  background: #c82333;
+}
+
+.add-parameter-btn {
+  background: #6c757d;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s ease;
+}
+
+.add-parameter-btn:hover {
+  background: #5a6268;
+}
+
+@keyframes instancePulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 165, 0, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(255, 165, 0, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 165, 0, 0);
+  }
 }
 

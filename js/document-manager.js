@@ -421,11 +421,12 @@ export class DocumentManager {
       }
       
       // Ensure the document is visible and in source mode by default
-      if (elements.sourcePanel && elements.templatePanel && elements.previewPanel) {
-        elements.sourcePanel.classList.add('active');
+      if (elements.templatePanel && elements.previewPanel) {
+        elements.sourcePanel.classList.remove('active');
         elements.templatePanel.classList.remove('active');
         elements.previewPanel.classList.remove('active');
-        state.currentMode = 'source';
+        elements.templatePanel.classList.add('active');
+        state.currentMode = 'template';
       }
       
     }).catch(error => {

@@ -76,7 +76,7 @@ export function initDOMElements() {
 // Application state - make window-specific
 if (!window[STATE_KEY]) {
   window[STATE_KEY] = {
-    currentMode: 'source', // 'source', 'template', 'preview', 'diff'
+    currentMode: 'template', // 'source', 'template', 'preview', 'diff'
     sessionId: Math.random().toString(36).substring(7),
     currentTemplate: '',
     currentSourceCode: '',
@@ -88,7 +88,7 @@ if (!window[STATE_KEY]) {
     activeLineChanges: [],
     isEditingTemplate: false,
     debouncedExecuteTimer: null,
-    
+
     // Display modes and variable references
     currentDisplayMode: 'output_only', // 'output_only' or 'output_and_variables'
     variablesInfo: null,
