@@ -16,7 +16,7 @@ import { initVerification } from './verification.js';
 import { initDataLake } from './data-lake.js';
 import { initTools } from './tools.js';
 import { addSampleTools } from './sample-tools.js';
-import { initCodeInstances } from './code-instances.js';
+import { initOperators } from './code-instances.js';
 
 let documentManager;
 
@@ -97,7 +97,7 @@ async function initializeCoreModules() {
     initVerification();
     initDataLake(); // Initialize Data Lake functionality
     initTools(); // Initialize Tools functionality
-    initCodeInstances(); // Initialize Code Instances functionality
+    initOperators(); // Initialize Operators functionality
     
     // Add sample tools for demonstration (only if no tools exist)
     addSampleTools();

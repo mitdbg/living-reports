@@ -1,10 +1,10 @@
-// Code Instances Module
+// operators Module
 import { elements, state, updateState, windowId } from './state.js';
 import { addMessageToUI } from './chat.js';
 import { getCurrentUser } from './auth.js';
 
 // Create window-specific storage
-const CODE_INSTANCES_KEY = `codeInstances_${windowId}`;
+const CODE_INSTANCES_KEY = `operators_${windowId}`;
 if (!window[CODE_INSTANCES_KEY]) {
   window[CODE_INSTANCES_KEY] = {
     instances: new Map(),
@@ -13,10 +13,10 @@ if (!window[CODE_INSTANCES_KEY]) {
   };
 }
 
-const codeInstancesData = window[CODE_INSTANCES_KEY];
+const operatorsData = window[CODE_INSTANCES_KEY];
 
-// Code Instance Class
-class CodeInstance {
+// operator Class
+class Operator {
   constructor(options) {
     this.id = options.id || this.generateId();
     this.name = options.name || 'Untitled Instance';
@@ -60,24 +60,24 @@ class CodeInstance {
   }
 
   static fromJSON(data) {
-    return new CodeInstance(data);
+    return new Operator(data);
   }
 }
 
-// Code Instance Manager
-class CodeInstanceManager {
+// operator Manager
+class OperatorManager {
   constructor() {
-    this.instances = codeInstancesData.instances;
+    this.instances = operatorsData.instances;
     this.loadInstances();
   }
 
   createInstance(options) {
-    const instance = new CodeInstance(options);
+    const instance = new operator(options);
     this.instances.set(instance.id, instance);
     this.saveInstances();
     
-    console.log(`[${windowId}] Created code instance: ${instance.name}`);
-    addMessageToUI('system', `Created code instance: ${instance.name}`);
+    console.log(`[${windowId}] Created operator: ${instance.name}`);
+    addMessageToUI('system', `Created operator: ${instance.name}`);
     
     return instance;
   }
@@ -105,8 +105,8 @@ class CodeInstanceManager {
     this.instances.delete(instanceId);
     this.saveInstances();
     
-    console.log(`[${windowId}] Deleted code instance: ${instance.name}`);
-    addMessageToUI('system', `Deleted code instance: ${instance.name}`);
+    console.log(`[${windowId}] Deleted operator: ${instance.name}`);
+    addMessageToUI('system', `Deleted operator: ${instance.name}`);
   }
 
   getInstance(instanceId) {
@@ -136,7 +136,7 @@ class CodeInstanceManager {
       throw new Error('Instance not found');
     }
 
-    console.log(`[${windowId}] Executing code instance: ${instance.name}`);
+    console.log(`[${windowId}] Executing operator: ${instance.name}`);
     
     try {
       // Update status
@@ -166,13 +166,13 @@ class CodeInstanceManager {
       this.saveInstances();
       this.notifyInstanceUpdate(instance);
 
-      console.log(`[${windowId}] Code instance executed successfully: ${instance.name}`);
-      addMessageToUI('system', `✅ Code instance executed: ${instance.name}`);
+      console.log(`[${windowId}] operator executed successfully: ${instance.name}`);
+      addMessageToUI('system', `✅ operator executed: ${instance.name}`);
 
       return result;
 
     } catch (error) {
-      console.error(`[${windowId}] Error executing code instance:`, error);
+      console.error(`[${windowId}] Error executing operator:`, error);
       
       instance.status = 'error';
       instance.error = error.message;
@@ -309,7 +309,7 @@ class CodeInstanceManager {
 
   notifyInstanceUpdate(instance) {
     // Trigger UI updates
-    const event = new CustomEvent('codeInstanceUpdated', {
+    const event = new CustomEvent('operatorUpdated', {
       detail: { instance: instance }
     });
     document.dispatchEvent(event);
@@ -323,7 +323,7 @@ class CodeInstanceManager {
       }
       localStorage.setItem(`code_instances_${windowId}`, JSON.stringify(instancesData));
     } catch (error) {
-      console.error('Error saving code instances:', error);
+      console.error('Error saving operators:', error);
     }
   }
 
@@ -333,34 +333,34 @@ class CodeInstanceManager {
       if (saved) {
         const instancesData = JSON.parse(saved);
         for (const [id, data] of Object.entries(instancesData)) {
-          const instance = CodeInstance.fromJSON(data);
+          const instance = Operator.fromJSON(data);
           this.instances.set(id, instance);
         }
-        console.log(`[${windowId}] Loaded ${this.instances.size} code instances`);
+        console.log(`[${windowId}] Loaded ${this.instances.size} operators`);
       }
     } catch (error) {
-      console.error('Error loading code instances:', error);
+      console.error('Error loading operators:', error);
     }
   }
 }
 
 // Global instance manager
-let codeInstanceManager = null;
+let operatorManager = null;
 
-// Initialize Code Instances
-export function initCodeInstances() {
-  console.log(`[${windowId}] Initializing Code Instances`);
+// Initialize operators
+export function initOperators() {
+  console.log(`[${windowId}] Initializing operators`);
   
-  if (!codeInstanceManager) {
-    codeInstanceManager = new CodeInstanceManager();
+  if (!operatorManager) {
+    operatorManager = new OperatorManager();
   }
   
-  setupCodeInstanceEventListeners();
+  setupOperatorEventListeners();
   
   // Set up auto-styling for template editors
   setupAutoStyling();
   
-  console.log(`[${windowId}] Code Instances initialized`);
+  console.log(`[${windowId}] operators initialized`);
 }
 
 // Setup automatic styling for instance references
@@ -390,12 +390,12 @@ function setupAutoStyling() {
 }
 
 // Setup event listeners
-function setupCodeInstanceEventListeners() {
-  // Listen for Code Instance buttons
+function setupOperatorEventListeners() {
+  // Listen for operator buttons
   document.addEventListener('click', (event) => {
     if (event.target.matches('.code-instances-btn') || event.target.closest('.code-instances-btn')) {
-      console.log(`[${windowId}] Code Instances button clicked`);
-      showCodeInstancesDialog();
+      console.log(`[${windowId}] operators button clicked`);
+      showOperatorsDialog();
     }
     
     // Listen for clicks on instance references
@@ -409,7 +409,7 @@ function setupCodeInstanceEventListeners() {
     }
     
     if (event.target.id === 'close-instances-btn' || event.target.id === 'close-instances-bottom-btn') {
-      hideCodeInstancesDialog();
+      hideOperatorsDialog();
     }
     
     if (event.target.id === 'close-add-instance-btn' || event.target.id === 'cancel-add-instance-btn') {
@@ -447,7 +447,7 @@ function setupCodeInstanceEventListeners() {
 }
 
 // UI Functions
-function showCodeInstancesDialog() {
+function showOperatorsDialog() {
   const dialog = document.getElementById('code-instances-dialog');
   if (dialog) {
     dialog.style.display = 'block';
@@ -455,7 +455,7 @@ function showCodeInstancesDialog() {
   }
 }
 
-function hideCodeInstancesDialog() {
+function hideOperatorsDialog() {
   const dialog = document.getElementById('code-instances-dialog');
   if (dialog) {
     dialog.style.display = 'none';
@@ -466,6 +466,10 @@ function showAddInstanceDialog(instanceId = null) {
   const dialog = document.getElementById('add-instance-dialog');
   if (!dialog) return;
 
+  // Populate tools dropdown and datasets FIRST
+  populateToolsDropdown();
+  populateAvailableDatasets();
+
   // Reset form
   document.getElementById('instance-name').value = '';
   document.getElementById('instance-tool').value = '';
@@ -474,22 +478,24 @@ function showAddInstanceDialog(instanceId = null) {
 
   if (instanceId) {
     // Edit mode
-    const instance = codeInstanceManager.getInstance(instanceId);
+    const instance = operatorManager.getInstance(instanceId);
     if (instance) {
+      console.log(`[${windowId}] Editing instance:`, instance);
       document.getElementById('instance-name').value = instance.name;
       document.getElementById('instance-tool').value = instance.toolId;
-      populateDatasetSelection(instance.inputDatasets);
-      populateParametersForm(instance.parameters);
-      codeInstancesData.currentEditingInstance = instance;
+      
+      // Need to wait a moment for the DOM to update with new options/checkboxes
+      setTimeout(() => {
+        populateDatasetSelection(instance.inputDatasets);
+        populateParametersForm(instance.parameters);
+      }, 10);
+      
+      operatorsData.currentEditingInstance = instance;
     }
   } else {
     // Create mode
-    codeInstancesData.currentEditingInstance = null;
+    operatorsData.currentEditingInstance = null;
   }
-
-  // Populate tools dropdown
-  populateToolsDropdown();
-  populateAvailableDatasets();
 
   dialog.style.display = 'block';
 }
@@ -498,7 +504,7 @@ function hideAddInstanceDialog() {
   const dialog = document.getElementById('add-instance-dialog');
   if (dialog) {
     dialog.style.display = 'none';
-    codeInstancesData.currentEditingInstance = null;
+    operatorsData.currentEditingInstance = null;
   }
 }
 
@@ -667,14 +673,14 @@ function saveInstance() {
   };
 
   try {
-    if (codeInstancesData.currentEditingInstance) {
+    if (operatorsData.currentEditingInstance) {
       // Update existing instance
-      codeInstanceManager.updateInstance(codeInstancesData.currentEditingInstance.id, instanceData);
-      addMessageToUI('system', `Code instance "${name}" updated successfully.`);
+      operatorManager.updateInstance(operatorsData.currentEditingInstance.id, instanceData);
+      addMessageToUI('system', `operator "${name}" updated successfully.`);
     } else {
       // Create new instance
-      codeInstanceManager.createInstance(instanceData);
-      addMessageToUI('system', `Code instance "${name}" created successfully.`);
+      operatorManager.createInstance(instanceData);
+      addMessageToUI('system', `operator "${name}" created successfully.`);
     }
 
     hideAddInstanceDialog();
@@ -689,13 +695,13 @@ function refreshInstancesList() {
   const container = document.getElementById('instances-items');
   if (!container) return;
 
-  const instances = codeInstanceManager.getAllInstances();
+  const instances = operatorManager.getAllInstances();
 
   if (instances.length === 0) {
     container.innerHTML = `
       <div class="no-instances-message">
-        <p>No code instances yet.</p>
-        <p>Click "Add Instance" to create your first instance.</p>
+        <p>No Operators yet.</p>
+        <p>Click "Add Operator" to create your first operator.</p>
       </div>
     `;
     return;
@@ -745,7 +751,7 @@ function createInstanceElement(instance) {
 
 // Insert instance reference into template
 function insertInstanceReference(instanceId) {
-  const instance = codeInstanceManager.getInstance(instanceId);
+  const instance = operatorManager.getInstance(instanceId);
   if (!instance) {
     addMessageToUI('system', 'Instance not found');
     return;
@@ -811,7 +817,7 @@ function insertInstanceReference(instanceId) {
   addMessageToUI('system', `Inserted instance reference: ${instanceReference}`);
   
   // Close instances dialog
-  hideCodeInstancesDialog();
+  hideOperatorsDialog();
 }
 
 // Open instance details from a clicked reference
@@ -819,7 +825,7 @@ function openInstanceFromReference(instanceName) {
   console.log(`[${windowId}] Opening instance from reference: ${instanceName}`);
   
   // Find the instance by name
-  const instance = codeInstanceManager.getInstanceByName(instanceName);
+  const instance = operatorManager.getInstanceByName(instanceName);
   
   if (!instance) {
     addMessageToUI('system', `Instance "${instanceName}" not found. It may have been deleted.`);
@@ -911,7 +917,7 @@ function styleInstanceReferences(templateEditor) {
 // Action Functions
 async function executeInstanceById(instanceId) {
   try {
-    await codeInstanceManager.executeInstance(instanceId);
+    await operatorManager.executeInstance(instanceId);
     refreshInstancesList();
   } catch (error) {
     console.error('Error executing instance:', error);
@@ -923,12 +929,12 @@ function editInstance(instanceId) {
 }
 
 function deleteInstance(instanceId) {
-  const instance = codeInstanceManager.getInstance(instanceId);
+  const instance = operatorManager.getInstance(instanceId);
   if (!instance) return;
 
-  if (confirm(`Are you sure you want to delete the code instance "${instance.name}"? This action cannot be undone.`)) {
+  if (confirm(`Are you sure you want to delete the operator "${instance.name}"? This action cannot be undone.`)) {
     try {
-      codeInstanceManager.deleteInstance(instanceId);
+      operatorManager.deleteInstance(instanceId);
       refreshInstancesList();
     } catch (error) {
       console.error('Error deleting instance:', error);
@@ -945,17 +951,16 @@ function escapeHtml(text) {
 
 // Export functions
 export { 
-  CodeInstance, 
-  CodeInstanceManager, 
-  codeInstanceManager,
-  showCodeInstancesDialog,
+  Operator, 
+  OperatorManager, 
+  showOperatorsDialog,
   showAddInstanceDialog,
   addParameterField
 };
 
 // Make functions globally available
-window.codeInstancesModule = {
-  showCodeInstancesDialog,
+window.operatorsModule = {
+  showOperatorsDialog,
   showAddInstanceDialog,
   executeInstanceById,
   editInstance,
