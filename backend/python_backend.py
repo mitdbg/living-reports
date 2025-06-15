@@ -183,6 +183,38 @@ def save_data_lake(data_lake):
 # Initialize data lake storage
 data_lake_storage = load_data_lake()
 
+# Persistent storage for Variables
+VARIABLES_FILE = os.path.join(DATABASE_DIR, 'vars.json')
+
+def load_variables():
+    """Load all variables from file"""
+    try:
+        ensure_database_dir()
+        if os.path.exists(VARIABLES_FILE):
+            with open(VARIABLES_FILE, 'r') as f:
+                variables = json.load(f)
+                logger.info(f"📊 Loaded variables for {len(variables)} documents from {VARIABLES_FILE}")
+                return variables
+        else:
+            logger.info("📊 No existing variables file found. Starting fresh.")
+            return {}
+    except Exception as e:
+        logger.error(f"❌ Error loading variables: {e}")
+        return {}
+
+def save_variables(variables):
+    """Save all variables to file"""
+    try:
+        ensure_database_dir()
+        with open(VARIABLES_FILE, 'w') as f:
+            json.dump(variables, f, indent=2)
+        logger.info(f"💾 Saved variables for {len(variables)} documents to {VARIABLES_FILE}")
+    except Exception as e:
+        logger.error(f"❌ Error saving variables: {e}")
+
+# Initialize variables storage
+variables_storage = load_variables()
+
 @app.before_request
 def log_request():
     """Log all incoming requests for debugging."""
@@ -1256,9 +1288,9 @@ def save_data_lake_endpoint():
         logger.error(f"Error saving data lake: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
-@app.route('/api/data-lake', methods=['DELETE'])
-def clear_data_lake_endpoint():
-    """Clear data lake items for a specific document."""
+@app.route('/api/variables', methods=['GET'])
+def get_variables():
+    """Get variables for a specific document."""
     try:
         document_id = request.args.get('documentId')
         window_id = request.args.get('windowId', 'default')
@@ -1270,30 +1302,278 @@ def clear_data_lake_endpoint():
                 'error': 'Missing documentId parameter'
             }), 400
         
-        # Clear data lake items for this document
-        if document_id in data_lake_storage:
-            del data_lake_storage[document_id]
-            
-            # Persist changes
-            save_data_lake(data_lake_storage)
-            
-            logger.info(f"🗂️ Cleared data lake for document {document_id}")
-            
+        # Get variables for this document
+        document_variables = variables_storage.get(document_id, {})
+        
+        logger.info(f"📊 Returning {len(document_variables)} variables for document {document_id}")
+        
+        return jsonify({
+            'success': True,
+            'variables': document_variables,
+            'documentId': document_id,
+            'count': len(document_variables)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting variables: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/variables', methods=['POST'])
+def save_variables_endpoint():
+    """Save variables for a specific document."""
+    try:
+        data = request.get_json()
+        
+        document_id = data.get('documentId')
+        window_id = data.get('windowId', 'default')
+        session_id = data.get('session_id', 'default')
+        variables_data = data.get('variables', {})
+        
+        if not document_id:
             return jsonify({
-                'success': True,
-                'message': f'Data lake cleared for document {document_id}',
-                'documentId': document_id
+                'success': False,
+                'error': 'Missing documentId in request'
+            }), 400
+        
+        # Store variables for this document
+        variables_storage[document_id] = variables_data
+        
+        # Persist to file
+        save_variables(variables_storage)
+        
+        logger.info(f"📊 Saved {len(variables_data)} variables for document {document_id}")
+        
+        return jsonify({
+            'success': True,
+            'message': f'Variables saved for document {document_id}',
+            'documentId': document_id,
+            'count': len(variables_data)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error saving variables: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/suggest-variable', methods=['POST'])
+def suggest_variable():
+    """Get LLM-powered variable suggestions based on selected text and template context."""
+    try:
+        data = request.get_json()
+        
+        # Extract request data
+        template_content = data.get('template_content', '')
+        selected_text = data.get('selected_text', '')
+        existing_variables = data.get('existing_variables', {})
+        document_id = data.get('document_id', 'default')
+        
+        # Validate required fields
+        if not selected_text:
+            return jsonify({
+                'success': False,
+                'error': 'Selected text is required'
+            }), 400
+        
+        # Check if LLM client is available
+        if client is None:
+            return jsonify({
+                'success': False,
+                'error': 'AI service not available (API key not configured)',
+                'fallback_suggestion': {
+                    'name': 'manual_variable',
+                    'description': 'Please manually configure this variable',
+                    'type': 'text',
+                    'format': '',
+                    'confidence': 0.1,
+                    'value_to_replace': selected_text,
+                    'static_prefix': '',
+                    'static_suffix': ''
+                }
             })
-        else:
+        
+        # Create structured prompt for LLM
+        existing_vars_text = ""
+        if existing_variables:
+            existing_vars_text = f"\nExisting variables in template:\n"
+            for var_name, var_info in existing_variables.items():
+                existing_vars_text += f"- {var_name}: {var_info.get('description', 'No description')} ({var_info.get('type', 'unknown')})\n"
+        
+        prompt = f"""You are an AI assistant helping to create template variables. Based on the selected text and template context, suggest appropriate variable information.
+
+TEMPLATE CONTENT:
+{template_content}
+
+SELECTED TEXT: "{selected_text}"
+{existing_vars_text}
+
+IMPORTANT: The user selected the entire text "{selected_text}", but they likely want to keep descriptive labels and only replace the actual data values with variables.
+
+Your task:
+1. Analyze the selected text to identify what part should become a variable (usually numbers, amounts, dates, etc.)
+2. Identify what parts should remain as static text (usually labels, descriptions, prefixes)
+3. Suggest appropriate variable information
+
+Consider:
+- The context within the template
+- The format and content of the selected text
+- Avoid naming conflicts with existing variables
+- Use meaningful, business-friendly names
+- Detect data types from patterns ($ for currency, % for percentage, etc.)
+
+IMPORTANT: Respond with ONLY a JSON object in this exact format:
+{{
+    "name": "suggested_variable_name",
+    "description": "Clear description of what this variable represents",
+    "type": "currency|number|percentage|date|text",
+    "format": "format_string_if_applicable",
+    "confidence": 0.95,
+    "reasoning": "Brief explanation of why these suggestions were made",
+    "value_to_replace": "the exact part that should become the variable",
+    "static_prefix": "text that should remain before the variable (can be empty)",
+    "static_suffix": "text that should remain after the variable (can be empty)"
+}}
+
+Requirements:
+1. "name" must be valid variable name (letters, numbers, underscores only, start with letter)
+2. "description" should be business-friendly and clear
+3. "type" must be one of: currency, number, percentage, date, text
+4. "format" should be appropriate for the type (can be empty)
+5. "confidence" should be between 0.0 and 1.0
+6. "value_to_replace" should be the exact substring that will become the variable
+7. "static_prefix" + "value_to_replace" + "static_suffix" should equal the original selected text
+8. Return ONLY the JSON object, no other text
+
+JSON:"""
+        
+        try:
+            # Call LLM for suggestion
+            if hasattr(client, 'chat'):
+                # OpenAI client
+                response = client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.3,
+                    max_tokens=400
+                )
+                suggestion_text = response.choices[0].message.content.strip()
+            else:
+                # Together client
+                response = client.chat.completions.create(
+                    model="Qwen/Qwen2.5-Coder-32B-Instruct",
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.3,
+                    max_tokens=400
+                )
+                suggestion_text = response.choices[0].message.content.strip()
+            
+            print(f"Variable Suggestion Raw Response: {suggestion_text}")
+            
+            # Parse LLM response
+            try:
+                import json
+                import re
+                
+                # Clean up the response to extract JSON
+                json_match = re.search(r'\{[\s\S]*\}', suggestion_text)
+                if json_match:
+                    json_str = json_match.group()
+                    suggestion = json.loads(json_str)
+                    
+                    # Validate suggestion structure
+                    required_fields = ['name', 'description', 'type', 'value_to_replace']
+                    if all(field in suggestion for field in required_fields):
+                        # Ensure name is valid
+                        import re
+                        if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', suggestion['name']):
+                            suggestion['name'] = re.sub(r'[^a-zA-Z0-9_]', '_', suggestion['name'])
+                            if not suggestion['name'][0].isalpha() and suggestion['name'][0] != '_':
+                                suggestion['name'] = 'var_' + suggestion['name']
+                        
+                        # Ensure type is valid
+                        valid_types = ['currency', 'number', 'percentage', 'date', 'text']
+                        if suggestion['type'] not in valid_types:
+                            suggestion['type'] = 'text'
+                        
+                        # Set default values for optional fields
+                        suggestion.setdefault('format', '')
+                        suggestion.setdefault('confidence', 0.8)
+                        suggestion.setdefault('reasoning', 'AI-generated suggestion')
+                        suggestion.setdefault('static_prefix', '')
+                        suggestion.setdefault('static_suffix', '')
+                        
+                        # Validate that the parts add up to the original text
+                        reconstructed = suggestion['static_prefix'] + suggestion['value_to_replace'] + suggestion['static_suffix']
+                        
+                        # Normalize whitespace for comparison (handle non-breaking spaces, etc.)
+                        def normalize_whitespace(text):
+                            return re.sub(r'\s+', ' ', text.replace('\xa0', ' ').replace('\u00a0', ' '))
+                        
+                        original_normalized = normalize_whitespace(selected_text)
+                        reconstructed_normalized = normalize_whitespace(reconstructed)
+                        
+                        if reconstructed_normalized != original_normalized:
+                            print(f"Warning: Reconstructed text doesn't match original after normalization.")
+                            print(f"  Original: '{selected_text}' (normalized: '{original_normalized}')")
+                            print(f"  Reconstructed: '{reconstructed}' (normalized: '{reconstructed_normalized}')")
+                            # Fallback: treat entire text as variable
+                            suggestion['value_to_replace'] = selected_text
+                            suggestion['static_prefix'] = ''
+                            suggestion['static_suffix'] = ''
+                        else:
+                            print(f"✓ Text reconstruction successful: '{original_normalized}'")
+                        
+                        logger.info(f"Generated variable suggestion for '{selected_text}': {suggestion['name']} (replacing '{suggestion['value_to_replace']}')")
+                        
+                        return jsonify({
+                            'success': True,
+                            'suggestion': suggestion,
+                            'analysis': {
+                                'selected_text_length': len(selected_text),
+                                'template_length': len(template_content),
+                                'existing_variables_count': len(existing_variables),
+                                'document_id': document_id
+                            }
+                        })
+                    else:
+                        raise ValueError("Missing required fields in LLM response")
+                else:
+                    raise ValueError("No valid JSON found in LLM response")
+                    
+            except (json.JSONDecodeError, ValueError) as parse_error:
+                print(f"Error parsing LLM response: {parse_error}")
+                print(f"Raw response: {suggestion_text}")
+                
+                return jsonify({
+                    'success': False,
+                    'warning': 'Used fallback suggestion due to LLM parsing error'
+                })
+                
+        except Exception as llm_error:
+            print(f"Error calling LLM: {llm_error}")
+
             return jsonify({
                 'success': True,
-                'message': f'No data lake found for document {document_id} (already empty)',
-                'documentId': document_id
+                'suggestion': {},
+                'warning': 'Used fallback suggestion due to LLM error'
             })
         
     except Exception as e:
-        logger.error(f"Error clearing data lake: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"Error in suggest_variable: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'fallback_suggestion': {
+                'name': 'error_variable',
+                'description': 'Error occurred while generating suggestion',
+                'type': 'text',
+                'format': '',
+                'confidence': 0.1,
+                'value_to_replace': selected_text if 'selected_text' in locals() else '',
+                'static_prefix': '',
+                'static_suffix': ''
+            }
+        }), 500
+
 
 if __name__ == '__main__':
     print("Starting Python backend server...")

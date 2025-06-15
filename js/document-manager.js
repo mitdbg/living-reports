@@ -8,6 +8,7 @@ import { initTextSelection, initCommentButtons, resetTextSelectionInitialization
 import { initFileOperations, resetFileOperationsInitialization } from './file-operations.js';
 import { initSharing, resetSharingInitialization } from './sharing.js';
 import { initContentMapping, resetContentMappingInitialization } from './content-mapping.js';
+import { variablesManager } from './variables.js';
 import { hideAllAnnotations, clearAnnotationsForDocument, updateAnnotationsVisibility, refreshAnnotationElements } from './annotations.js';
 import { clearAllComments } from './comments.js';
 import { addMessageToUI } from './chat.js';
@@ -403,6 +404,7 @@ export class DocumentManager {
         resetFileOperationsInitialization();
         resetSharingInitialization();
         resetContentMappingInitialization();
+
         
         // Now initialize all modules
         initModes();
@@ -415,6 +417,11 @@ export class DocumentManager {
         initFileOperations();
         initSharing();
         initContentMapping();
+        
+        // Initialize variables manager once if not already initialized
+        if (variablesManager && !variablesManager.initialized) {
+          variablesManager.init();
+        }
         
       } catch (error) {
         console.error(`Error initializing document functionality:`, error);
@@ -1835,6 +1842,15 @@ export class DocumentManager {
           console.warn('Could not load verification status:', error);
         }
         
+        // Load variables for this document
+        try {
+          const { variablesManager } = await import('./variables.js');
+          await variablesManager.loadVariables();
+          console.log(`✅ Variables loaded for document ${documentId}`);
+        } catch (error) {
+          console.warn('Could not load variables:', error);
+        }
+        
         return true; // Success, exit retry loop
         
       } else {
@@ -1848,6 +1864,15 @@ export class DocumentManager {
           console.log(`✅ Verification status loaded for document ${documentId}`);
         } catch (error) {
           console.warn('Could not load verification status:', error);
+        }
+        
+        // Load variables for this document
+        try {
+          const { variablesManager } = await import('./variables.js');
+          await variablesManager.loadVariables();
+          console.log(`✅ Variables loaded for document ${documentId}`);
+        } catch (error) {
+          console.warn('Could not load variables:', error);
         }
         
         return true;

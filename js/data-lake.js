@@ -117,10 +117,6 @@ function setupDataLakeEventListeners() {
       hideDataLakeDialog();
     }
     
-    if (event.target.id === 'clear-data-lake-btn') {
-      clearDataLake();
-    }
-    
     if (event.target.matches('.data-item-btn.insert-btn')) {
       const referenceName = event.target.getAttribute('data-reference-name');
       insertDataReference(referenceName);
@@ -146,7 +142,6 @@ function initDataLakeUI() {
   const dataLakeDialog = document.getElementById('data-lake-dialog');
   const closeDataLakeBtn = document.getElementById('close-data-lake-btn');
   const closeDataLakeBottomBtn = document.getElementById('close-data-lake-bottom-btn');
-  const clearDataLakeBtn = document.getElementById('clear-data-lake-btn');
   const dataLakeSearch = document.getElementById('data-lake-search');
   
   if (dataLakeBtn) {
@@ -159,10 +154,6 @@ function initDataLakeUI() {
   
   if (closeDataLakeBottomBtn) {
     closeDataLakeBottomBtn.addEventListener('click', closeDataLakeDialog);
-  }
-  
-  if (clearDataLakeBtn) {
-    clearDataLakeBtn.addEventListener('click', clearDataLake);
   }
   
   if (dataLakeSearch) {
@@ -232,41 +223,6 @@ async function removeDataItem(itemId) {
     console.log(`[${windowId}] Removed from Data Lake: ${removedItem.name}`);
     await saveDataLake(); // Save updated data lake to backend
     refreshDataLakeDialog();
-  }
-}
-
-// Clear entire Data Lake for current document
-async function clearDataLake() {
-  if (confirm('Are you sure you want to clear all data sources for this document?')) {
-    if (!currentDocumentId) {
-      console.warn(`[${windowId}] Cannot clear data lake: no current document set`);
-      return;
-    }
-    
-    // Clear local data first
-    dataLake = [];
-    
-    try {
-      // Clear from backend
-      const response = await fetch(`http://127.0.0.1:5000/api/data-lake?documentId=${currentDocumentId}&windowId=${windowId}&session_id=${state.sessionId || windowId}`, {
-        method: 'DELETE'
-      });
-
-      if (!response.ok) {
-        throw new Error(`Backend responded with status: ${response.status}`);
-      }
-
-      const result = await response.json();
-      console.log(`[${windowId}] ✅ Cleared Data Lake from backend for document ${currentDocumentId}`);
-      console.log(`[${windowId}] Backend response:`, result.message);
-      
-    } catch (error) {
-      console.error(`[${windowId}] ❌ Error clearing data lake from backend:`, error);
-    }
-    
-    // Refresh UI
-    refreshDataLakeDialog();
-    console.log(`[${windowId}] Cleared Data Lake for document ${currentDocumentId}`);
   }
 }
 

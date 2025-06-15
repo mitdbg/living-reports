@@ -109,7 +109,11 @@ export const state = window[STATE_KEY];
 
 // State update helpers
 export function updateState(updates) {
-  Object.assign(state, updates);
+  if (window.updateState) {
+    window.updateState(updates);
+  } else {
+    Object.assign(state, updates);
+  }
   // Update the window-specific state
   window[STATE_KEY] = state;
 }
