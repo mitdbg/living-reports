@@ -2488,7 +2488,7 @@ export class DocumentManager {
           };
           
           // Reattach event listeners for accept/reject actions using the specific documentId
-          const { addInlineDiffEventListeners } = await import('./comment-translation.js');
+          const { addInlineDiffEventListeners } = await import('./inline_diff.js');
           addInlineDiffEventListeners(commentId, documentId, true); // Force reattach during restoration
           
           console.log(`Successfully restored inline diff for template suggestion: ${commentId}`);
@@ -2528,7 +2528,7 @@ export class DocumentManager {
               };
               
               // Reattach event listeners using the specific documentId
-              const { addInlineDiffEventListeners } = await import('./comment-translation.js');
+              const { addInlineDiffEventListeners } = await import('./inline_diff.js');
               addInlineDiffEventListeners(commentId, documentId, true); // Force reattach during restoration
               
               console.log(`Successfully recreated inline diff for: ${commentId}`);

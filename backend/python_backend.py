@@ -1409,8 +1409,8 @@ SELECTED TEXT: "{selected_text}"
 IMPORTANT: The user selected the entire text "{selected_text}", but they likely want to keep descriptive labels and only replace the actual data values with variables.
 
 Your task:
-1. Analyze the selected text to identify what part should become a variable (usually numbers, amounts, dates, etc.)
-2. Identify what parts should remain as static text (usually labels, descriptions, prefixes)
+1. Analyze the selected text to identify what part should become a variable (like names, numbers, amounts, dates, etc.)
+2. Identify what parts should remain as static text (like labels, descriptions, prefixes, etc.)
 3. Suggest appropriate variable information
 
 Consider:

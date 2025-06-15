@@ -28,7 +28,21 @@ export function executeTemplate(clearCache = false, isLiveUpdate = false) {
     return;
   }
   
-  const templateText = getTextContentWithLineBreaks(elements.templateEditor);
+  // Check if the template editor contains rich HTML content that should be preserved
+  const hasRichHTML = elements.templateEditor.innerHTML && 
+                      elements.templateEditor.innerHTML !== elements.templateEditor.textContent &&
+                      isRichHTMLContent(elements.templateEditor.innerHTML);
+  
+  let templateText;
+  if (hasRichHTML) {
+    // Preserve rich HTML content (like PPTX2HTML)
+    templateText = elements.templateEditor.innerHTML;
+    console.log('Detected rich HTML content, preserving HTML structure');
+  } else {
+    // Convert to plain text for simple content
+    templateText = getTextContentWithLineBreaks(elements.templateEditor);
+  }
+  
   if (!templateText.trim()) {
     setExecutionStatus('Please enter a template first', 'error');
     return;
@@ -100,10 +114,18 @@ async function executeTemplateRequest(templateText, clearCache = false, isLiveUp
   }
 }
 
-function escapeAndFormatOutput(text) {
+export function escapeAndFormatOutput(text) {
   if (!text) return 'No output generated';
   
-  // Check if the text contains HTML content from data sources or variable references
+  // Check if the text contains rich HTML content (like PPTX2HTML output)
+  const hasRichHTML = isRichHTMLContent(text);
+  
+  if (hasRichHTML) {
+    // For rich HTML content, preserve the structure and only format line breaks carefully
+    return preserveRichHTML(text);
+  }
+  
+  // For simple content, check if it contains basic HTML elements
   const containsHTML = /<(img|video|span)[^>]*>/.test(text);
   
   if (containsHTML) {
@@ -115,6 +137,36 @@ function escapeAndFormatOutput(text) {
     div.textContent = text;
     return div.innerHTML.replace(/\n/g, '<br>');
   }
+}
+
+function isRichHTMLContent(text) {
+  // Check for indicators of rich HTML content that should be preserved
+  const richHTMLIndicators = [
+    // PPTX2HTML output markers
+    /<section[^>]*style=/i,
+    /<svg[^>]*class="drawing"/i,
+    /<div[^>]*class="block content"/i,
+    /<style>[^<]*\._css_/i,
+    
+    // Other rich HTML structures
+    /<div[^>]*style="[^"]*position:\s*absolute/i,
+    /<div[^>]*style="[^"]*width:\s*\d+px[^"]*height:\s*\d+px/i,
+    
+    // Complex nested structures
+    /(<div[^>]*>[^<]*<div[^>]*>[^<]*<\/div>[^<]*<\/div>)/i,
+    /(<section[^>]*>[\s\S]*<\/section>)/i
+  ];
+  
+  return richHTMLIndicators.some(pattern => pattern.test(text));
+}
+
+function preserveRichHTML(text) {
+  // For rich HTML content, we want to preserve the structure exactly
+  // Only convert single line breaks that are not part of HTML structure to <br>
+  
+  // Don't modify content that already has proper HTML structure
+  // Just ensure that standalone newlines (not part of HTML tags) become <br>
+  return text.replace(/\n(?![^<]*>)(?![\s]*<)/g, '<br>');
 }
 
 function setExecutionStatus(message, type) {
