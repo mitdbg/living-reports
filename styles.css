@@ -6194,6 +6194,45 @@ p {
   margin-bottom: 8px;
 }
 
+.variable-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.edit-variable-btn,
+.remove-variable-btn {
+  background: none;
+  border: none;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.edit-variable-btn {
+  background: #f8f9fa;
+  color: #495057;
+}
+
+.edit-variable-btn:hover {
+  background: #e9ecef;
+  transform: translateY(-1px);
+}
+
+.remove-variable-btn {
+  background: #f8f9fa;
+  color: #dc3545;
+}
+
+.remove-variable-btn:hover {
+  background: #f5c6cb;
+  transform: translateY(-1px);
+}
+
 .variable-name {
   font-weight: 600;
   color: #333;

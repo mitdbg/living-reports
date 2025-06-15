@@ -378,15 +378,7 @@ def translate_comment():
         if comment_translation_service is None:
             return jsonify({
                 'success': False,
-                'error': 'Comment translation service not available (API key not configured)',
-                'fallback_suggestion': {
-                    'original_comment': comment_text,
-                    'selected_text': selected_text,
-                    'suggested_change': f"Review and address the comment: '{comment_text}'",
-                    'explanation': "Please manually review this comment and update the template accordingly. AI assistance is not available without an API key.",
-                    'confidence': 0.5,
-                    'change_type': 'manual_review'
-                }
+                'error': 'Comment translation service not available (API key not configured)'
             })
         
         # Create comment context
@@ -433,15 +425,7 @@ def translate_comment():
         logger.error(f"Error translating comment: {e}")
         return jsonify({
             'success': False,
-            'error': str(e),
-            'fallback_suggestion': {
-                'original_comment': comment_text if 'comment_text' in locals() else '',
-                'selected_text': selected_text if 'selected_text' in locals() else '',
-                'suggested_change': f"Error occurred while processing comment. Please review manually.",
-                'explanation': f"An error occurred: {str(e)}",
-                'confidence': 0.1,
-                'change_type': 'error'
-            }
+            'error': str(e)
         }), 500
 
 @app.route('/api/ai-suggestion', methods=['POST'])
@@ -480,14 +464,7 @@ def get_ai_suggestion():
         if client is None:
             return jsonify({
                 'success': False,
-                'error': 'AI service not available (API key not configured)',
-                'fallback_suggestion': {
-                    'change_type': 'manual_review',
-                    'original_text': selected_text,
-                    'new_text': f'Please review: {user_request}',
-                    'explanation': 'AI assistance is not available without an API key.',
-                    'confidence': 0.1
-                }
+                'error': 'AI service not available (API key not configured)'
             })
         
         # Create structured prompt for LLM
@@ -589,35 +566,18 @@ JSON:"""
                 
             except (json.JSONDecodeError, ValueError) as parse_error:
                 print(f"Error parsing AI response: {parse_error}")
-                # Fallback: create a simple suggestion
-                fallback_suggestion = {
-                    'change_type': 'replace',
-                    'original_text': selected_text,
-                    'new_text': suggestion_text[:200],  # Use first part of response
-                    'explanation': f'AI suggested improvement: {suggestion_text[:100]}...',
-                    'confidence': 0.6
-                }
                 
                 return jsonify({
-                    'success': True,
-                    'suggestion': fallback_suggestion,
+                    'success': False,
                     'mode': mode,
                     'raw_response': suggestion_text,
-                    'fallback': True
                 })
                 
         except Exception as llm_error:
             print(f"Error calling LLM: {llm_error}")
             return jsonify({
                 'success': False,
-                'error': f'LLM error: {str(llm_error)}',
-                'fallback_suggestion': {
-                    'change_type': 'replace',
-                    'original_text': selected_text,
-                    'new_text': f'Consider: {user_request}',
-                    'explanation': f'Failed to get AI suggestion: {str(llm_error)}',
-                    'confidence': 0.3
-                }
+                'error': f'LLM error: {str(llm_error)}'
             }), 500
         
     except Exception as e:
@@ -1378,17 +1338,7 @@ def suggest_variable():
         if client is None:
             return jsonify({
                 'success': False,
-                'error': 'AI service not available (API key not configured)',
-                'fallback_suggestion': {
-                    'name': 'manual_variable',
-                    'description': 'Please manually configure this variable',
-                    'type': 'text',
-                    'format': '',
-                    'confidence': 0.1,
-                    'value_to_replace': selected_text,
-                    'static_prefix': '',
-                    'static_suffix': ''
-                }
+                'error': 'AI service not available (API key not configured)'
             })
         
         # Create structured prompt for LLM
@@ -1561,17 +1511,7 @@ JSON:"""
         logger.error(f"Error in suggest_variable: {e}")
         return jsonify({
             'success': False,
-            'error': str(e),
-            'fallback_suggestion': {
-                'name': 'error_variable',
-                'description': 'Error occurred while generating suggestion',
-                'type': 'text',
-                'format': '',
-                'confidence': 0.1,
-                'value_to_replace': selected_text if 'selected_text' in locals() else '',
-                'static_prefix': '',
-                'static_suffix': ''
-            }
+            'error': str(e)
         }), 500
 
 

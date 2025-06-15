@@ -57,15 +57,9 @@ function createInlineDiff(options) {
     targetElement.innerHTML = content;
     
   } else {
-    console.warn('Could not apply diff - fallback to simple addition');
-    // Fallback: show as contextual addition
-    const fallbackHtml = `
-      <div class="inline-diff-addition" data-comment-id="${commentId}">
-        <span class="inline-diff-add" data-comment-id="${commentId}" title="AI suggestion - click to accept/reject">${safeNewText}</span>
-      </div>
-    `;
-
-    targetElement.innerHTML = fallbackHtml;
+    console.warn('Could not apply diff');
+    const { addMessageToUI } = import('./chat.js');
+    addMessageToUI('system', parsedSuggestion.new_text);
   }
 
   const containers = targetElement.querySelectorAll(`.inline-diff-container[data-comment-id="${commentId}"]`);
