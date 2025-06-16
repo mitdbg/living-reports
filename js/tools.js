@@ -1,5 +1,6 @@
 // Tools Management Module
 import { addMessageToUI } from './chat.js';
+import { getTextContentWithLineBreaks } from './utils.js';
 
 class ToolsManager {
   constructor() {
@@ -119,11 +120,12 @@ class ToolsManager {
       const descriptionInput = document.getElementById('tool-description');
       const codeInput = document.getElementById('tool-code');
       
-      if (editTool) {
-        this.currentEditingTool = editTool;
-        nameInput.value = editTool.name;
-        descriptionInput.value = editTool.description || '';
-        codeInput.value = editTool.code;
+          if (editTool) {
+      this.currentEditingTool = editTool;
+      nameInput.value = editTool.name;
+      descriptionInput.value = editTool.description || '';
+      // Properly set content with line breaks for contenteditable div
+      this.setCodeEditorContent(codeInput, editTool.code);
         
         // Update dialog title
         const title = dialog.querySelector('.dialog-header h3');
@@ -132,7 +134,7 @@ class ToolsManager {
         this.currentEditingTool = null;
         nameInput.value = '';
         descriptionInput.value = '';
-        codeInput.value = '';
+        this.setCodeEditorContent(codeInput, '');
         
         // Update dialog title
         const title = dialog.querySelector('.dialog-header h3');
@@ -159,7 +161,8 @@ class ToolsManager {
     
     const name = nameInput.value.trim();
     const description = descriptionInput.value.trim();
-    const code = codeInput.value.trim();
+    // Preserve formatting for source code - use proper line break extraction
+    const code = getTextContentWithLineBreaks(codeInput);
     
     // Validation
     if (!name) {
@@ -168,7 +171,8 @@ class ToolsManager {
       return;
     }
     
-    if (!code) {
+    // Check if code has any meaningful content (not just whitespace)
+    if (!code.trim()) {
       addMessageToUI('system', 'Please enter source code for the tool.');
       codeInput.focus();
       return;
@@ -336,6 +340,22 @@ class ToolsManager {
 
   generateId() {
     return 'tool_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+  }
+
+  /**
+   * Properly set content in a contenteditable div while preserving line breaks
+   * @param {HTMLElement} codeInput - The contenteditable div
+   * @param {string} content - The content to set
+   */
+  setCodeEditorContent(codeInput, content) {
+    if (!content) {
+      codeInput.innerHTML = '';
+      return;
+    }
+    
+    // Convert newlines to <br> tags for proper display in contenteditable div
+    const htmlContent = content.replace(/\n/g, '<br>');
+    codeInput.innerHTML = htmlContent;
   }
 
   escapeHtml(text) {

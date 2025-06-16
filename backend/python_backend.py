@@ -270,22 +270,76 @@ def execute_template():
         template_text = data.get('template_text', '')
         session_id = data.get('session_id', 'default')
         document_id = data.get('document_id', None)
+
+        print(f"📊 Document ID: {document_id}")
+        print(f"📊 Session ID: {session_id}")
+        print(f"📊 Template Text: {template_text}")
         
-        # Create or get the view for this session
+        # **FIRST: Load and merge variables from multiple sources**
+        merged_variables = {}
+        if document_id:
+            # Load template variables from vars.json
+            template_variables = variables_storage.get(document_id, {})
+            
+            # Load operator output variables from document
+            document_variables = {}
+            if document_id in documents:
+                doc_vars = documents[document_id].get('variables', {})
+                # Convert operator outputs to template variable format
+                for var_name, var_data in doc_vars.items():
+                    if isinstance(var_data, dict) and 'value' in var_data:
+                        document_variables[var_name] = {
+                            'value': str(var_data['value']),
+                            'prompt': None  # Operator outputs don't have prompts
+                        }
+            
+            # Merge variables (document variables take precedence for real-time updates)
+            merged_variables.update(template_variables)
+            merged_variables.update(document_variables)
+            
+            logger.info(f"📊 Merged variables for {document_id}: {len(template_variables)} template + {len(document_variables)} operator = {len(merged_variables)} total")
+
+        # Create or get the view for this session with pre-loaded variables
         if session_id not in view_registry:
             template = Template(template_text, document_id)
-            execution_result = ExecutionResult()
+            execution_result = ExecutionResult(variables=merged_variables)
             view_registry[session_id] = SimpleView(template, execution_result, client)
+        else:
+            # Update existing view with merged variables
+            view = view_registry[session_id]
+            view.execution_result.variables = merged_variables
         
-        # Update the template and execute it
+        # Update the template and execute it (now with all variables available)
         view = view_registry[session_id]
         view.update_from_editor(template_text, document_id)
         
-        # Get the rendered output
-        output_data = view.render_output()
-        template_data = view.render_template()
+
+        for var_name, var_data in merged_variables.items():
+            print(f"📊 Variable {var_name}: {var_data}")
+
+        # Get the rendered output with error handling
+        try:
+            output_data = view.render_output()
+            print(f"✅ render_output() completed")
+        except Exception as e:
+            print(f"❌ Error in render_output(): {e}")
+            raise e
+            
+        try:
+            template_data = view.render_template()
+            print(f"✅ render_template() completed")
+        except Exception as e:
+            print(f"❌ Error in render_template(): {e}")
+            raise e
         
-        print(output_data, flush=True)
+        # Safe debug print
+        try:
+            print(f"📊 Output data type: {type(output_data)}")
+            if isinstance(output_data, dict):
+                print(f"📊 Output data keys: {list(output_data.keys())}")
+        except Exception as e:
+            print(f"⚠️ Could not print output_data debug info: {e}")
+            
         return jsonify({
             'success': True,
             'template_text': template_data.get('template_text', template_text),

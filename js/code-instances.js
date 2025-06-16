@@ -24,6 +24,8 @@ class Operator {
     this.toolName = options.toolName || '';
     this.inputDatasets = options.inputDatasets || []; // Array of dataset references
     this.parameters = options.parameters || {};
+    this.outputConfig = options.outputConfig || ''; // Output configuration (e.g., output.name)
+    this.outputVariable = options.outputVariable || ''; // Variable name to store output
     this.outputFormat = options.outputFormat || ['result'];
     this.lastExecuted = options.lastExecuted || null;
     this.output = options.output || null;
@@ -47,6 +49,9 @@ class Operator {
       toolName: this.toolName,
       inputDatasets: this.inputDatasets,
       parameters: this.parameters,
+      outputs: this.outputs || [],
+      outputConfig: this.outputConfig,
+      outputVariable: this.outputVariable,
       outputFormat: this.outputFormat,
       lastExecuted: this.lastExecuted,
       output: this.output,
@@ -157,11 +162,49 @@ class OperatorManager {
       // Execute the tool with datasets and parameters
       const result = await this.executeToolWithData(tool, datasets, instance.parameters);
 
+      console.log(`[${windowId}] Result:`, result);
+      
       // Update instance with results
       instance.output = result;
       instance.status = 'completed';
       instance.lastExecuted = new Date().toISOString();
       instance.error = null;
+
+      // Store outputs in variables if specified
+      const outputsToProcess = instance.outputs && instance.outputs.length > 0 
+        ? instance.outputs 
+        : (instance.outputVariable ? [{ config: instance.outputConfig || '', variable: instance.outputVariable }] : []);
+      
+      // Only process outputs if execution was successful (result has data, not error)
+      if (result && typeof result === 'object' && !result.error && result.status !== 'error') {
+        for (const output of outputsToProcess) {
+          if (output.variable && output.variable.trim()) {
+            try {
+              // Extract the value using the output configuration
+              let valueToStore = result;
+              
+              if (output.config && output.config.trim()) {
+                valueToStore = this.extractValueFromOutput(result, output.config);
+                console.log(`[${windowId}] Extracted value using config "${output.config}":`, valueToStore);
+              }
+              
+              // Import variables manager and store the result
+              const { variablesManager } = await import('./variables.js');
+              if (variablesManager) {
+                await variablesManager.setVariableValue(output.variable, valueToStore);
+                console.log(`[${windowId}] Stored output in variable: ${output.variable}`);
+                addMessageToUI('system', `📊 Output stored in variable: \${${output.variable}} = ${JSON.stringify(valueToStore)}`);
+              }
+            } catch (error) {
+              console.warn(`[${windowId}] Failed to store output in variable ${output.variable}:`, error);
+              addMessageToUI('system', `⚠️ Warning: Could not store output in variable ${output.variable}: ${error.message}`);
+            }
+          }
+        }
+      } else {
+        console.log(`[${windowId}] Skipping output processing due to execution error or invalid result`);
+        addMessageToUI('system', `⚠️ Skipping variable assignment due to execution error`);
+      }
 
       this.saveInstances();
       this.notifyInstanceUpdate(instance);
@@ -174,14 +217,29 @@ class OperatorManager {
     } catch (error) {
       console.error(`[${windowId}] Error executing operator:`, error);
       
+      // Simplify error message for display (max 200 chars)
+      let errorMessage = error.message || 'Unknown error occurred';
+      if (errorMessage.length > 200) {
+        // Try to extract meaningful error info
+        if (errorMessage.includes('External execution failed')) {
+          const statusMatch = errorMessage.match(/failed \((\d+)\)/);
+          const status = statusMatch ? statusMatch[1] : 'unknown';
+          errorMessage = `External execution failed (${status}). Check endpoint connectivity.`;
+        } else if (errorMessage.includes('<!DOCTYPE html>')) {
+          errorMessage = 'External endpoint returned HTML error page. Check endpoint URL and status.';
+        } else {
+          errorMessage = errorMessage.substring(0, 200) + '...';
+        }
+      }
+      
       instance.status = 'error';
-      instance.error = error.message;
+      instance.error = errorMessage;
       instance.lastExecuted = new Date().toISOString();
       
       this.saveInstances();
       this.notifyInstanceUpdate(instance);
 
-      addMessageToUI('system', `❌ Error executing ${instance.name}: ${error.message}`);
+      addMessageToUI('system', `❌ Error executing ${instance.name}: ${errorMessage}`);
       throw error;
     }
   }
@@ -235,75 +293,209 @@ class OperatorManager {
   }
 
   async executeToolWithData(tool, datasets, parameters) {
-    // Create a safe execution context
-    const context = {
-      datasets: {},
-      parameters: parameters || {},
-      console: {
-        log: (...args) => console.log(`[Instance ${tool.name}]:`, ...args)
-      },
-      Math: Math,
-      Date: Date,
-      JSON: JSON
-    };
-
-    // Add datasets to context
-    datasets.forEach(dataset => {
-      context.datasets[dataset.name] = dataset.data;
-      context[dataset.name] = dataset.data; // Also make available directly
-    });
-
     try {
-      // Create function from tool code
-      const toolFunction = new Function(
-        'context', 
-        'datasets', 
-        'parameters', 
-        'console',
-        'Math',
-        'Date',
-        'JSON',
-        `
-        with(context) {
-          ${tool.code}
-          
-          // If there's a main function, call it
-          if (typeof main === 'function') {
-            return main(datasets, parameters);
+      // Process parameters to separate datasets from literal values
+      const processedParameters = {};
+      const datasetsFromParams = {};
+
+      for (const [key, paramData] of Object.entries(parameters || {})) {
+        if (typeof paramData === 'object' && paramData.type && paramData.value !== undefined) {
+          // New format: { type: 'dataset|literal', value: '...' }
+          if (paramData.type === 'dataset') {
+            // Load dataset from data lake
+            const dataset = window.dataLakeModule?.getDataSource(paramData.value);
+            if (dataset) {
+              datasetsFromParams[key] = dataset;
+            } else {
+              console.warn(`Dataset not found: ${paramData.value}`);
+              processedParameters[key] = null; // Dataset not found
+            }
+          } else {
+            // Literal value - try to parse JSON, numbers, booleans
+            processedParameters[key] = this.parseParameterValue(paramData.value);
           }
-          
-          // If there's an execute function, call it
-          if (typeof execute === 'function') {
-            return execute(datasets, parameters);
-          }
-          
-          // Otherwise return the last expression or undefined
-          return undefined;
+        } else {
+          // Legacy format: assume literal value
+          processedParameters[key] = this.parseParameterValue(paramData);
         }
-        `
-      );
-
-      // Execute the tool
-      const result = toolFunction(
-        context,
-        context.datasets,
-        context.parameters,
-        context.console,
-        context.Math,
-        context.Date,
-        context.JSON
-      );
-
-      // Handle async results
-      if (result && typeof result.then === 'function') {
-        return await result;
       }
 
-      return result;
+      // Prepare the execution payload
+      const executionPayload = {
+        code: tool.code,
+        datasets: datasetsFromParams, // Datasets from parameters
+        parameters: processedParameters // Literal values
+      };
+
+      // Add legacy datasets to payload (for backward compatibility)
+      datasets.forEach(dataset => {
+        executionPayload.datasets[dataset.name] = dataset.data;
+      });
+
+      console.log(`[${windowId}] Executing operator "${tool.name}" via external endpoint...`);
+      console.log(`[${windowId}] Datasets:`, Object.keys(executionPayload.datasets));
+      console.log(`[${windowId}] Parameters:`, processedParameters);
+      
+      // Use external API endpoint for execution
+      const BASE_URL = 'https://6bd2-89-213-179-161.ngrok-free.app';
+      
+      const response = await fetch(`${BASE_URL}/execute_code`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true' // Skip ngrok warning page
+        },
+        body: JSON.stringify({
+          code: tool.code,
+          parameters: executionPayload.parameters
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`External execution failed (${response.status}): ${errorText}`);
+      }
+
+      const result = await response.json();
+      
+      // Handle error responses from server
+      if (result.status === 'error' || result.error) {
+        const errorMsg = result.error || result.message || 'External execution failed';
+        throw new Error(`Server execution error: ${errorMsg}`);
+      }
+      
+      // Handle different response formats
+      if (result.success === false) {
+        throw new Error(result.error || 'External execution failed');
+      }
+      
+      // Parse the nested response structure from your server
+      // Success: {'result': {'parameters': {...}, 'output': {...}, ...}, 'status': 'success'}
+      // Error: {'error': 'invalid syntax...', 'type': 'SyntaxError', 'status': 'error'}
+      let executionResult;
+      
+      if (result.result && result.result.output) {
+        // Use the 'output' field from the nested result as the main result
+        executionResult = result.result.output;
+        console.log(`[${windowId}] Using result.result.output as execution result:`, executionResult);
+      } else if (result.result) {
+        // Fallback to the entire result.result object
+        executionResult = result.result;
+        console.log(`[${windowId}] Using result.result as execution result:`, executionResult);
+      } else {
+        // Fallback to the entire result
+        executionResult = result;
+        console.log(`[${windowId}] Using entire result as execution result:`, executionResult);
+      }
+      
+      console.log(`[${windowId}] External execution completed for "${tool.name}":`, executionResult);
+      
+      return executionResult;
 
     } catch (error) {
-      console.error('Tool execution error:', error);
-      throw new Error(`Tool execution failed: ${error.message}`);
+      console.error(`[${windowId}] External execution error:`, error);
+      
+      // If external execution fails, provide helpful error message
+      if (error.message.includes('fetch')) {
+        throw new Error(`Cannot connect to external execution service: ${error.message}`);
+      } else {
+        throw new Error(`External execution failed: ${error.message}`);
+      }
+    }
+  }
+
+  parseParameterValue(value) {
+    // Try to parse the parameter value as appropriate type
+    if (typeof value !== 'string') {
+      return value; // Already parsed
+    }
+
+    const trimmed = value.trim();
+    
+    // Boolean values
+    if (trimmed === 'true') return true;
+    if (trimmed === 'false') return false;
+    
+    // Null/undefined
+    if (trimmed === 'null') return null;
+    if (trimmed === 'undefined') return undefined;
+    
+    // Numbers
+    if (/^-?\d+$/.test(trimmed)) {
+      return parseInt(trimmed, 10);
+    }
+    if (/^-?\d*\.\d+$/.test(trimmed)) {
+      return parseFloat(trimmed);
+    }
+    
+    // JSON objects/arrays
+    if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || 
+        (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+      try {
+        return JSON.parse(trimmed);
+      } catch (e) {
+        // If JSON parsing fails, treat as string
+      }
+    }
+    
+    // Remove quotes if the value is quoted
+    if ((trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+        (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+      return trimmed.slice(1, -1);
+    }
+    
+    // Return as string
+    return trimmed;
+  }
+
+  extractValueFromOutput(result, outputConfig) {
+    if (!outputConfig || !outputConfig.trim()) {
+      return result;
+    }
+
+    try {
+      const config = outputConfig.trim();
+      
+      // Handle special case: "output" refers to the main result
+      if (config === 'output') {
+        return result;
+      }
+      
+      // Handle "output.field" pattern
+      if (config.startsWith('output.')) {
+        const fieldPath = config.substring(7); // Remove "output." prefix
+        const path = fieldPath.split('.');
+        let value = result;
+
+        // Navigate through the object path starting from the main result
+        for (const key of path) {
+          if (value && typeof value === 'object' && key in value) {
+            value = value[key];
+          } else {
+            throw new Error(`Property "${key}" not found in output`);
+          }
+        }
+
+        return value;
+      }
+      
+      // Handle direct field access (legacy support)
+      const path = config.split('.');
+      let value = result;
+
+      // Navigate through the object path
+      for (const key of path) {
+        if (value && typeof value === 'object' && key in value) {
+          value = value[key];
+        } else {
+          throw new Error(`Property "${key}" not found in output`);
+        }
+      }
+
+      return value;
+    } catch (error) {
+      console.error(`Error extracting value with config "${outputConfig}":`, error);
+      throw new Error(`Failed to extract value using "${outputConfig}": ${error.message}`);
     }
   }
 
@@ -401,7 +593,9 @@ function setupOperatorEventListeners() {
     // Listen for clicks on instance references
     if (event.target.matches('.instance-reference')) {
       const instanceName = event.target.textContent.replace('$$', '').replace(/_/g, ' ');
-      openInstanceFromReference(instanceName);
+      openInstanceFromReference(instanceName).catch(error => {
+        console.error('Error opening instance from reference:', error);
+      });
     }
     
     if (event.target.matches('.add-instance-btn') || event.target.closest('.add-instance-btn')) {
@@ -427,7 +621,9 @@ function setupOperatorEventListeners() {
     
     if (event.target.matches('.instance-edit-btn')) {
       const instanceId = event.target.getAttribute('data-instance-id');
-      editInstance(instanceId);
+      editInstance(instanceId).catch(error => {
+        console.error('Error editing instance:', error);
+      });
     }
     
     if (event.target.matches('.instance-delete-btn')) {
@@ -437,6 +633,10 @@ function setupOperatorEventListeners() {
 
     if (event.target.matches('.add-parameter-btn')) {
       addParameterField();
+    }
+    
+    if (event.target.matches('.add-output-btn')) {
+      addOutputField();
     }
     
     if (event.target.matches('.instance-insert-btn')) {
@@ -462,19 +662,21 @@ function hideOperatorsDialog() {
   }
 }
 
-function showAddInstanceDialog(instanceId = null) {
+async function showAddInstanceDialog(instanceId = null) {
   const dialog = document.getElementById('add-instance-dialog');
   if (!dialog) return;
 
-  // Populate tools dropdown and datasets FIRST
+  // Populate tools dropdown
   populateToolsDropdown();
-  populateAvailableDatasets();
 
-  // Reset form
-  document.getElementById('instance-name').value = '';
-  document.getElementById('instance-tool').value = '';
-  clearDatasetSelection();
-  clearParametersForm();
+      // Reset form
+    document.getElementById('instance-name').value = '';
+    document.getElementById('instance-tool').value = '';
+    clearParametersForm();
+    clearOutputsForm();
+
+  // Populate variables list (async) and wait for completion
+  await populateVariablesList();
 
   if (instanceId) {
     // Edit mode
@@ -484,16 +686,15 @@ function showAddInstanceDialog(instanceId = null) {
       document.getElementById('instance-name').value = instance.name;
       document.getElementById('instance-tool').value = instance.toolId;
       
-      // Need to wait a moment for the DOM to update with new options/checkboxes
-      setTimeout(() => {
-        populateDatasetSelection(instance.inputDatasets);
-        populateParametersForm(instance.parameters);
-      }, 10);
+      // Populate form fields
+      populateParametersForm(instance.parameters);
+      await populateOutputsForm(instance);
       
       operatorsData.currentEditingInstance = instance;
     }
   } else {
-    // Create mode
+    // Create mode - add one empty output field
+    await addOutputField();
     operatorsData.currentEditingInstance = null;
   }
 
@@ -540,49 +741,7 @@ function populateToolsDropdown() {
   });
 }
 
-function populateAvailableDatasets() {
-  const container = document.getElementById('available-datasets');
-  if (!container) return;
 
-  container.innerHTML = '';
-
-  // Get available datasets from data lake
-  const datasets = window.dataLakeModule?.getAllDataSources() || [];
-
-  if (datasets.length === 0) {
-    container.innerHTML = '<p class="no-datasets">No datasets available. Add data to your Data Lake first.</p>';
-    return;
-  }
-
-  datasets.forEach(dataset => {
-    const checkbox = document.createElement('div');
-    checkbox.className = 'dataset-checkbox';
-    checkbox.innerHTML = `
-      <label>
-        <input type="checkbox" name="dataset" value="${dataset.name}" data-name="${dataset.name}">
-        <span class="dataset-info">
-          <span class="dataset-name">${dataset.name}</span>
-          <span class="dataset-type">${dataset.type || 'unknown'}</span>
-        </span>
-      </label>
-    `;
-    container.appendChild(checkbox);
-  });
-}
-
-function populateDatasetSelection(selectedDatasets) {
-  const checkboxes = document.querySelectorAll('input[name="dataset"]');
-  checkboxes.forEach(checkbox => {
-    checkbox.checked = selectedDatasets.includes(checkbox.value);
-  });
-}
-
-function clearDatasetSelection() {
-  const checkboxes = document.querySelectorAll('input[name="dataset"]');
-  checkboxes.forEach(checkbox => {
-    checkbox.checked = false;
-  });
-}
 
 function populateParametersForm(parameters) {
   const container = document.getElementById('instance-parameters');
@@ -590,8 +749,15 @@ function populateParametersForm(parameters) {
 
   container.innerHTML = '';
 
-  Object.entries(parameters).forEach(([key, value]) => {
-    addParameterField(key, value);
+  Object.entries(parameters).forEach(([key, paramData]) => {
+    // Check if this is a new format parameter or legacy format
+    if (typeof paramData === 'object' && paramData.type && paramData.value !== undefined) {
+      // New format: { type: 'dataset|literal', value: '...' }
+      addParameterField(key, paramData.value, paramData.type);
+    } else {
+      // Legacy format: just a string value (assume literal)
+      addParameterField(key, paramData, 'literal');
+    }
   });
 }
 
@@ -602,17 +768,197 @@ function clearParametersForm() {
   }
 }
 
-function addParameterField(key = '', value = '') {
+function clearOutputsForm() {
+  const container = document.getElementById('instance-outputs');
+  if (container) {
+    container.innerHTML = '';
+  }
+}
+
+async function populateOutputsForm(instance) {
+  // Handle backward compatibility - convert single output to array format
+  let outputs = [];
+  
+  if (instance.outputs && Array.isArray(instance.outputs)) {
+    // New format: array of output assignments
+    outputs = instance.outputs;
+  } else if (instance.outputConfig || instance.outputVariable) {
+    // Old format: single output assignment
+    outputs = [{
+      config: instance.outputConfig || '',
+      variable: instance.outputVariable || ''
+    }];
+  }
+  
+  // Add output fields for each assignment
+  for (const output of outputs) {
+    await addOutputField(output.config, output.variable);
+  }
+  
+  // If no outputs exist, add one empty field
+  if (outputs.length === 0) {
+    await addOutputField();
+  }
+}
+
+async function populateVariablesDropdown(select) {
+  if (!select) {
+    console.error('Variable select element not provided');
+    return;
+  }
+
+  console.log('🔄 Populating variables dropdown...');
+
+  // Clear existing options except the first one
+  select.innerHTML = '<option value="">Select a variable...</option>';
+
+  try {
+    // Try to get variables from the variables manager
+    if (window.variablesManager && window.variablesManager.variables) {
+      const variables = window.variablesManager.variables;
+      console.log(`📊 Found ${variables.size} variables in variables manager`);
+      
+      variables.forEach((variable, name) => {
+        const option = document.createElement('option');
+        option.value = name;
+        option.textContent = `${name} (${variable.type || 'text'})`;
+        select.appendChild(option);
+        console.log(`  ✓ Added variable: ${name}`);
+      });
+      
+      if (variables.size > 0) {
+        console.log(`✅ Populated ${variables.size} variables from variables manager`);
+      }
+    } else {
+      console.log('⚠️ Variables manager not available or no variables');
+    }
+
+    // Also try to load from backend vars.json if available
+    try {
+      const varsFromBackend = await loadVariablesFromBackend();
+      console.log('📡 Backend variables response:', varsFromBackend);
+      
+      if (varsFromBackend && Object.keys(varsFromBackend).length > 0) {
+        let addedCount = 0;
+        Object.entries(varsFromBackend).forEach(([name, variable]) => {
+          // Check if this variable is already in the list
+          const existingOption = select.querySelector(`option[value="${name}"]`);
+          if (!existingOption) {
+            const option = document.createElement('option');
+            option.value = name;
+            option.textContent = `${name} (${variable.type || 'text'})`;
+            select.appendChild(option);
+            addedCount++;
+            console.log(`  ✓ Added backend variable: ${name}`);
+          }
+        });
+        console.log(`✅ Added ${addedCount} variables from backend`);
+      } else {
+        console.log('⚠️ No backend variables found');
+      }
+    } catch (error) {
+      console.error('❌ Error loading backend variables:', error);
+    }
+
+  } catch (error) {
+    console.error('Error populating variables dropdown:', error);
+  }
+}
+
+async function populateVariablesList() {
+  // This function is kept for backward compatibility
+  // It now populates all existing dropdowns
+  const allSelects = document.querySelectorAll('.output-variable-select');
+  for (const select of allSelects) {
+    await populateVariablesDropdown(select);
+  }
+}
+
+async function loadVariablesFromBackend() {
+  try {
+    // Get the current document ID to load document-specific variables
+    const documentId = window.documentManager?.activeDocumentId;
+    if (!documentId) {
+      console.log('⚠️ No active document ID for loading variables');
+      return {};
+    }
+
+    console.log(`📡 Loading variables for document: ${documentId}`);
+
+    const response = await fetch(`http://127.0.0.1:5000/api/variables?documentId=${encodeURIComponent(documentId)}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      }
+    });
+    
+    console.log(`📡 Backend response status: ${response.status}`);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const result = await response.json();
+    console.log('📡 Backend response data:', result);
+    
+    if (result.success && result.variables) {
+      // The backend returns variables directly for the document
+      const documentVariables = result.variables || {};
+      console.log(`✅ Loaded ${Object.keys(documentVariables).length} variables for document ${documentId}:`, documentVariables);
+      return documentVariables;
+    } else {
+      console.log('⚠️ Backend response indicates no variables or failure:', result);
+    }
+    
+    return {};
+  } catch (error) {
+    console.error('❌ Could not load variables from backend:', error);
+    return {};
+  }
+}
+
+function addParameterField(key = '', value = '', valueType = 'literal') {
   const container = document.getElementById('instance-parameters');
   if (!container) return;
+
+  // Get available datasets for the dropdown
+  const datasets = window.dataLakeModule?.getAllDataSources() || [];
+  const datasetOptions = datasets.map(dataset => 
+    `<option value="${dataset.name}" ${valueType === 'dataset' && value === dataset.name ? 'selected' : ''}>${dataset.name} (${dataset.type || 'dataset'})</option>`
+  ).join('');
 
   const field = document.createElement('div');
   field.className = 'parameter-field';
   field.innerHTML = `
     <input type="text" class="param-key" placeholder="Parameter name" value="${key}">
-    <input type="text" class="param-value" placeholder="Parameter value" value="${value}">
+    <div class="param-value-container">
+      <select class="param-type-select">
+        <option value="literal" ${valueType === 'literal' ? 'selected' : ''}>Literal Value</option>
+        <option value="dataset" ${valueType === 'dataset' ? 'selected' : ''}>Dataset</option>
+      </select>
+      <input type="text" class="param-value param-literal" placeholder="e.g., false, 123, 'text'" value="${valueType === 'literal' ? value : ''}" ${valueType === 'dataset' ? 'style="display: none;"' : ''}>
+      <select class="param-value param-dataset" ${valueType === 'literal' ? 'style="display: none;"' : ''}>
+        <option value="">Select dataset...</option>
+        ${datasetOptions}
+      </select>
+    </div>
     <button type="button" class="remove-param-btn">✕</button>
   `;
+  
+  // Add event listener to toggle between literal and dataset
+  const typeSelect = field.querySelector('.param-type-select');
+  const literalInput = field.querySelector('.param-literal');
+  const datasetSelect = field.querySelector('.param-dataset');
+  
+  typeSelect.addEventListener('change', () => {
+    if (typeSelect.value === 'literal') {
+      literalInput.style.display = '';
+      datasetSelect.style.display = 'none';
+    } else {
+      literalInput.style.display = 'none';
+      datasetSelect.style.display = '';
+    }
+  });
 
   // Add remove functionality
   field.querySelector('.remove-param-btn').addEventListener('click', () => {
@@ -620,6 +966,37 @@ function addParameterField(key = '', value = '') {
   });
 
   container.appendChild(field);
+}
+
+async function addOutputField(outputConfig = '', outputVariable = '') {
+  const container = document.getElementById('instance-outputs');
+  if (!container) return;
+
+  const field = document.createElement('div');
+  field.className = 'output-config-field';
+  field.innerHTML = `
+    <input type="text" class="output-config-input" placeholder="e.g., output, output.name, output.data.value" value="${outputConfig}">
+    <select class="output-variable-select">
+      <option value="">Select a variable...</option>
+    </select>
+    <button type="button" class="remove-output-btn">✕</button>
+  `;
+
+  // Add remove functionality
+  field.querySelector('.remove-output-btn').addEventListener('click', () => {
+    field.remove();
+  });
+
+  container.appendChild(field);
+
+  // Populate the variables dropdown for this field
+  const select = field.querySelector('.output-variable-select');
+  await populateVariablesDropdown(select);
+  
+  // Set the selected value if provided
+  if (outputVariable) {
+    select.value = outputVariable;
+  }
 }
 
 function saveInstance() {
@@ -642,21 +1019,56 @@ function saveInstance() {
     return;
   }
 
-  // Get selected datasets
-  const selectedDatasets = [];
-  const checkboxes = document.querySelectorAll('input[name="dataset"]:checked');
-  checkboxes.forEach(checkbox => {
-    selectedDatasets.push(checkbox.value);
-  });
+  // Get output assignments
+  const outputs = [];
+  const outputFields = document.querySelectorAll('.output-config-field');
+  
+  // Validate output fields
+  for (const field of outputFields) {
+    const configInput = field.querySelector('.output-config-input');
+    const variableSelect = field.querySelector('.output-variable-select');
+    
+    const config = configInput.value.trim();
+    const variable = variableSelect.value;
+    
+    // Only add if both config and variable are provided
+    if (config && variable) {
+      outputs.push({
+        config: config,
+        variable: variable
+      });
+    } else if (config && !variable) {
+      addMessageToUI('system', 'Please select a variable for output configuration: ' + config);
+      variableSelect.focus();
+      return;
+    } else if (!config && variable) {
+      addMessageToUI('system', 'Please specify output configuration for variable: ' + variable);
+      configInput.focus();
+      return;
+    }
+    // If both are empty, that's fine - just skip this field
+  }
 
-  // Get parameters
+  // Get parameters (including datasets as parameters)
   const parameters = {};
   const paramFields = document.querySelectorAll('.parameter-field');
   paramFields.forEach(field => {
     const key = field.querySelector('.param-key').value.trim();
-    const value = field.querySelector('.param-value').value.trim();
-    if (key) {
-      parameters[key] = value;
+    const typeSelect = field.querySelector('.param-type-select');
+    const paramType = typeSelect.value;
+    
+    let value = '';
+    if (paramType === 'literal') {
+      value = field.querySelector('.param-literal').value.trim();
+    } else if (paramType === 'dataset') {
+      value = field.querySelector('.param-dataset').value;
+    }
+    
+    if (key && value) {
+      parameters[key] = {
+        type: paramType,
+        value: value
+      };
     }
   });
 
@@ -668,8 +1080,12 @@ function saveInstance() {
     name: name,
     toolId: toolId,
     toolName: toolName,
-    inputDatasets: selectedDatasets,
-    parameters: parameters
+    inputDatasets: [], // Legacy field - now all datasets go through parameters
+    parameters: parameters,
+    outputs: outputs,
+    // Keep backward compatibility fields for existing instances
+    outputConfig: outputs.length > 0 ? outputs[0].config : '',
+    outputVariable: outputs.length > 0 ? outputs[0].variable : ''
   };
 
   try {
@@ -722,6 +1138,19 @@ function createInstanceElement(instance) {
     ? instance.inputDatasets.join(', ')
     : 'No datasets';
 
+  // Handle multiple outputs display
+  let outputText = 'No output assignment';
+  
+  if (instance.outputs && instance.outputs.length > 0) {
+    const outputDescriptions = instance.outputs.map(output => 
+      `${output.config || 'result'} → \${${output.variable}}`
+    );
+    outputText = `Output: ${outputDescriptions.join(', ')}`;
+  } else if (instance.outputVariable) {
+    // Backward compatibility
+    outputText = `Output: ${instance.outputConfig || 'result'} → \${${instance.outputVariable}}`;
+  }
+
   return `
     <div class="instance-item ${statusClass}" data-instance-id="${instance.id}">
       <div class="instance-item-info">
@@ -730,6 +1159,7 @@ function createInstanceElement(instance) {
           <div class="instance-item-name">${escapeHtml(instance.name)}</div>
           <div class="instance-item-tool">Tool: ${escapeHtml(instance.toolName || instance.toolId)}</div>
           <div class="instance-item-datasets">Datasets: ${escapeHtml(datasetsText)}</div>
+          <div class="instance-item-output">${escapeHtml(outputText)}</div>
           <div class="instance-item-meta">
             <span>Status: ${statusText}</span>
             <span>Last run: ${lastExecuted}</span>
@@ -821,7 +1251,7 @@ function insertInstanceReference(instanceId) {
 }
 
 // Open instance details from a clicked reference
-function openInstanceFromReference(instanceName) {
+async function openInstanceFromReference(instanceName) {
   console.log(`[${windowId}] Opening instance from reference: ${instanceName}`);
   
   // Find the instance by name
@@ -833,7 +1263,7 @@ function openInstanceFromReference(instanceName) {
   }
   
   // Open the edit dialog for this instance
-  showAddInstanceDialog(instance.id);
+  await showAddInstanceDialog(instance.id);
   addMessageToUI('system', `Opened instance details for: ${instanceName}`);
 }
 
@@ -924,8 +1354,8 @@ async function executeInstanceById(instanceId) {
   }
 }
 
-function editInstance(instanceId) {
-  showAddInstanceDialog(instanceId);
+async function editInstance(instanceId) {
+  await showAddInstanceDialog(instanceId);
 }
 
 function deleteInstance(instanceId) {
@@ -955,7 +1385,8 @@ export {
   OperatorManager, 
   showOperatorsDialog,
   showAddInstanceDialog,
-  addParameterField
+  addParameterField,
+  addOutputField
 };
 
 // Make functions globally available
@@ -966,6 +1397,7 @@ window.operatorsModule = {
   editInstance,
   deleteInstance,
   addParameterField,
+  addOutputField,
   insertInstanceReference,
   openInstanceFromReference,
   styleInstanceReferences

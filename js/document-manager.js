@@ -326,6 +326,47 @@ export class DocumentManager {
     container.setAttribute('data-document-id', documentId);
   }
 
+  /**
+   * Configure role-based UI visibility for the current document
+   * Hide Tools and Operators buttons for non-Engineers
+   */
+  configureRoleBasedUI(container) {
+    const currentUser = getCurrentUser();
+    if (!currentUser) {
+      console.warn('No current user found, cannot configure role-based UI');
+      return;
+    }
+
+    console.log(`Configuring role-based UI for user: ${currentUser.name} (${currentUser.role})`);
+
+    // Get Tools and Operators buttons
+    const toolsBtn = container.querySelector('.tools-btn');
+    const operatorsBtn = container.querySelector('.code-instances-btn');
+
+    // Only show Tools and Operators buttons to Data Engineers (charlie)
+    const isEngineer = currentUser.role === 'Data Engineer' || currentUser.id === 'charlie';
+
+    if (toolsBtn) {
+      if (isEngineer) {
+        toolsBtn.style.display = '';
+        console.log('✅ Tools button visible for Engineer');
+      } else {
+        toolsBtn.style.display = 'none';
+        console.log('🚫 Tools button hidden for non-Engineer');
+      }
+    }
+
+    if (operatorsBtn) {
+      if (isEngineer) {
+        operatorsBtn.style.display = '';
+        console.log('✅ Operators button visible for Engineer');
+      } else {
+        operatorsBtn.style.display = 'none';
+        console.log('🚫 Operators button hidden for non-Engineer');
+      }
+    }
+  }
+
   initializeDocumentFunctionality(documentId) {
     const doc = this.documents.get(documentId);
     if (!doc) return;
@@ -422,6 +463,9 @@ export class DocumentManager {
         if (variablesManager && !variablesManager.initialized) {
           variablesManager.init();
         }
+
+        // Configure role-based UI after all modules are initialized
+        this.configureRoleBasedUI(container);
         
       } catch (error) {
         console.error(`Error initializing document functionality:`, error);
@@ -1208,7 +1252,7 @@ export class DocumentManager {
     // Refresh every 1 second for discovering new shared documents
     setInterval(() => {
       this.loadSharedDocuments();
-    }, 10000);
+    }, 1000);
     
     // Refresh currently open document every 1 second for real-time collaboration
     setInterval(() => {
@@ -1842,14 +1886,17 @@ export class DocumentManager {
           console.warn('Could not load verification status:', error);
         }
         
-        // Load variables for this document
+        // Load variables for this document (includes operator outputs)
         try {
           const { variablesManager } = await import('./variables.js');
-          await variablesManager.loadVariables();
+          await variablesManager.loadVariablesForDocument();
           console.log(`✅ Variables loaded for document ${documentId}`);
         } catch (error) {
           console.warn('Could not load variables:', error);
         }
+
+        // Configure role-based UI for loaded document
+        this.configureRoleBasedUI(container);
         
         return true; // Success, exit retry loop
         
@@ -1866,14 +1913,17 @@ export class DocumentManager {
           console.warn('Could not load verification status:', error);
         }
         
-        // Load variables for this document
+        // Load variables for this document (includes operator outputs)
         try {
           const { variablesManager } = await import('./variables.js');
-          await variablesManager.loadVariables();
+          await variablesManager.loadVariablesForDocument();
           console.log(`✅ Variables loaded for document ${documentId}`);
         } catch (error) {
           console.warn('Could not load variables:', error);
         }
+
+        // Configure role-based UI for loaded document  
+        this.configureRoleBasedUI(container);
         
         return true;
       }

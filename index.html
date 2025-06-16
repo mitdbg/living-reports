@@ -148,11 +148,11 @@
           
           <div class="form-group">
             <label for="tool-code">Source Code:</label>
-            <textarea id="tool-code" placeholder="# Enter your source code here...
+            <div id="tool-code" class="source-editor" contenteditable="true" data-placeholder="# Enter your source code here...
 import math
 
 def calculate():
-    return 42"></textarea>
+    return 42"></div>
           </div>
         </div>
         
@@ -169,7 +169,7 @@ def calculate():
     <div class="dialog-overlay">
       <div class="dialog-content instances-content">
         <div class="dialog-header">
-          <h3>🔧 Operators</h3>
+          <h3>🔧 Data Pipelines</h3>
           <button class="close-btn" id="close-instances-btn">✕</button>
         </div>
         
@@ -178,8 +178,8 @@ def calculate():
         <div class="instances-content-area">
           <div class="instances-items" id="instances-items">
             <div class="no-instances-message" id="no-instances-message">
-              <p>No operators yet.</p>
-              <p>Click "Add Operator" to create your first operator.</p>
+              <p>No Data Pipelines yet.</p>
+              <p>Click "Add Data Pipelines" to create.</p>
             </div>
           </div>
         </div>
@@ -215,19 +215,28 @@ def calculate():
           </div>
           
           <div class="form-group">
-            <label>Input Datasets:</label>
-            <div class="available-datasets" id="available-datasets">
-              <p class="no-datasets">Loading datasets...</p>
-            </div>
-          </div>
-          
-          <div class="form-group">
             <label>Parameters:</label>
             <div class="parameters-container">
               <div class="instance-parameters" id="instance-parameters">
                 <!-- Parameters will be added here -->
               </div>
               <button type="button" class="btn-secondary add-parameter-btn">➕ Add Parameter</button>
+              <small style="color: #666; font-size: 12px; margin-top: 5px; display: block;">
+                Each parameter can be a dataset from Data Lake or a literal value (e.g., false, 123, "text")
+              </small>
+            </div>
+          </div>
+          
+          <div class="form-group">
+            <label>Output Configuration:</label>
+            <div class="output-config-container">
+              <div class="instance-outputs" id="instance-outputs">
+                <!-- Output assignments will be added here -->
+              </div>
+              <button type="button" class="btn-secondary add-output-btn">➕ Add Output Assignment</button>
+              <small style="color: #666; font-size: 12px; margin-top: 5px; display: block;">
+                Use "output" for the full result, or "output.field" to access specific fields from dictionary outputs
+              </small>
             </div>
           </div>
         </div>
@@ -262,7 +271,7 @@ def calculate():
             <button class="data-lake-btn mode-toggle">🗄️ Data Lake</button>
             <button class="variables-btn mode-toggle">📊 Vars</button>
             <button class="tools-btn mode-toggle">🛠️ Tools</button>
-            <button class="code-instances-btn mode-toggle">🔧 Operators</button>
+            <button class="code-instances-btn mode-toggle">🔧 Data Pipelines</button>
             <div class="mode-buttons">
               <button class="mode-btn source-mode-btn" data-mode="source" title="Source Code" style="display: none;">💻</button>
               <button class="mode-btn template-mode-btn active" data-mode="template" title="Template">📝</button>
