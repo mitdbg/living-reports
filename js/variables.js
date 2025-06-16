@@ -311,6 +311,9 @@ class VariablesManager {
         this.hideVariableDialog();
       } else if (action === 'add-variable') {
         this.createVariable();
+      } else if (action === 'update-variable') {
+        const variableName = e.target.getAttribute('data-variable-name');
+        this.updateVariable(variableName);
       }
     });
   }
@@ -369,6 +372,18 @@ class VariablesManager {
       if (e.target.classList.contains('dialog-overlay') || 
           e.target.getAttribute('data-action') === 'close-panel') {
         this.hideVariablesPanel();
+      }
+      
+      // Handle edit variable button
+      if (e.target.classList.contains('edit-variable-btn')) {
+        const variableName = e.target.getAttribute('data-variable-name');
+        this.editVariable(variableName);
+      }
+      
+      // Handle remove variable button
+      if (e.target.classList.contains('remove-variable-btn')) {
+        const variableName = e.target.getAttribute('data-variable-name');
+        this.removeVariable(variableName);
       }
     });
 
@@ -609,8 +624,8 @@ class VariablesManager {
   /**
    * Show/hide dialogs
    */
-  showVariableDialog() {
-    console.log('showVariableDialog called for text:', this.selectedText);
+  showVariableDialog(isEditing = false) {
+    console.log('showVariableDialog called for text:', this.selectedText, 'isEditing:', isEditing);
     if (!this.variableDialog) {
       console.error('Variable dialog not found!');
       return;
@@ -626,13 +641,20 @@ class VariablesManager {
     this.hideFloatingButton();
     console.log('Variable dialog should now be visible');
     
-    // Now call LLM suggestions when dialog opens
-    this.populateVariableSuggestions();
+    // Only call LLM suggestions when creating a new variable, not when editing
+    if (!isEditing) {
+      console.log('Calling AI suggestions for new variable');
+      this.populateVariableSuggestions();
+    } else {
+      console.log('Skipping AI suggestions - editing existing variable');
+    }
   }
 
   hideVariableDialog() {
     if (this.variableDialog) {
       this.variableDialog.style.display = 'none';
+      // Reset dialog to create mode when closed
+      this.resetDialogToCreateMode();
     }
   }
 
@@ -709,15 +731,24 @@ class VariablesManager {
     };
   }
 
-  validateVariableForm(formData) {
+  validateVariableForm(formData, isUpdate = false, originalVariableName = null) {
     if (!formData.name) {
       alert('Variable name is required');
       return false;
     }
     
-    if (this.variables.has(formData.name)) {
-      alert('Variable name already exists');
-      return false;
+    // For updates, only check for duplicate names if the name has changed
+    if (isUpdate) {
+      if (formData.name !== originalVariableName && this.variables.has(formData.name)) {
+        alert('Variable name already exists');
+        return false;
+      }
+    } else {
+      // For new variables, always check for duplicates
+      if (this.variables.has(formData.name)) {
+        alert('Variable name already exists');
+        return false;
+      }
     }
     
     if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(formData.name)) {
@@ -769,6 +800,9 @@ class VariablesManager {
           console.log(`  Static prefix: "${variable.static_prefix || '(none)'}"`);
           console.log(`  Variable part: "${variable.value_to_replace}" -> "${variable.placeholder}"`);
           console.log(`  Static suffix: "${variable.static_suffix || '(none)'}"`);
+          
+          // Trigger change detection for document auto-save
+          this.triggerTemplateChangeDetection();
           return;
         } else {
           console.warn(`Smart replacement failed - text mismatch after normalization.`);
@@ -785,8 +819,22 @@ class VariablesManager {
       window.getSelection().removeAllRanges();
       
       console.log(`Simple replacement: "${variable.originalText}" with "${variable.placeholder}"`);
+      
+      // Trigger change detection for document auto-save
+      this.triggerTemplateChangeDetection();
     } catch (error) {
       console.error('Error replacing text with placeholder:', error);
+    }
+  }
+
+  /**
+   * Trigger template change detection for auto-save
+   */
+  triggerTemplateChangeDetection() {
+    // Notify document manager that template content has changed
+    if (window.documentManager) {
+      window.documentManager.onContentChange();
+      console.log('Template change detected - auto-save triggered');
     }
   }
 
@@ -804,6 +852,8 @@ class VariablesManager {
       return;
     }
     
+    variablesList.innerHTML = '';
+
     if (this.variables.size === 0) {
       console.log('No variables to display, showing empty message');
       if (noVariablesMsg) noVariablesMsg.style.display = 'block';
@@ -813,8 +863,6 @@ class VariablesManager {
     console.log('Displaying', this.variables.size, 'variables');
     if (noVariablesMsg) noVariablesMsg.style.display = 'none';
     
-    variablesList.innerHTML = '';
-    
     this.variables.forEach((variable, name) => {
       console.log('Adding variable to list:', name, variable);
       const variableItem = document.createElement('div');
@@ -823,6 +871,10 @@ class VariablesManager {
         <div class="variable-header">
           <span class="variable-name">${variable.name}</span>
           <span class="variable-type">${variable.type}</span>
+          <div class="variable-actions">
+            <button class="edit-variable-btn" data-variable-name="${name}" title="Edit Variable">✏️</button>
+            <button class="remove-variable-btn" data-variable-name="${name}" title="Remove Variable">🗑️</button>
+          </div>
         </div>
         <div class="variable-description">${variable.description}</div>
         <div class="variable-details">
@@ -950,6 +1002,166 @@ class VariablesManager {
   }
 
   /**
+   * Edit an existing variable
+   */
+  editVariable(variableName) {
+    console.log('Editing variable:', variableName);
+    const variable = this.variables.get(variableName);
+    
+    if (!variable) {
+      console.error('Variable not found for editing:', variableName);
+      return;
+    }
+    
+    // Set up the dialog for editing
+    this.selectedText = variable.originalText;
+    this.currentSuggestion = variable;
+    
+    // Fill the dialog with existing variable data
+    if (this.variableDialog) {
+      const nameInput = this.variableDialog.querySelector('#variable-name');
+      const descInput = this.variableDialog.querySelector('#variable-description');
+      const typeSelect = this.variableDialog.querySelector('#variable-type');
+      const formatInput = this.variableDialog.querySelector('#variable-format');
+      const requiredCheckbox = this.variableDialog.querySelector('#variable-required');
+      
+      if (nameInput) nameInput.value = variable.name || '';
+      if (descInput) descInput.value = variable.description || '';
+      if (typeSelect) typeSelect.value = variable.type || 'text';
+      if (formatInput) formatInput.value = variable.format || '';
+      if (requiredCheckbox) requiredCheckbox.checked = variable.required !== false;
+      
+      // Update the selected text display
+      const textDisplay = this.variableDialog.querySelector('.selected-text-display');
+      if (textDisplay) {
+        textDisplay.textContent = `"${variable.originalText}"`;
+      }
+      
+      // Change dialog title and button text for editing
+      const dialogTitle = this.variableDialog.querySelector('h3');
+      const addButton = this.variableDialog.querySelector('[data-action="add-variable"]');
+      
+      if (dialogTitle) dialogTitle.textContent = '✏️ Edit Variable';
+      if (addButton) {
+        addButton.textContent = 'Update Variable';
+        addButton.setAttribute('data-action', 'update-variable');
+        addButton.setAttribute('data-variable-name', variableName);
+      }
+    }
+    
+    // Hide variables panel and show edit dialog
+    this.hideVariablesPanel();
+    this.showVariableDialog(true); // Pass true to indicate this is editing mode
+  }
+
+     /**
+    * Remove a variable
+    */
+   removeVariable(variableName) {
+     console.log('Removing variable:', variableName);
+     
+     // Show confirmation dialog
+     if (confirm(`Are you sure you want to remove the variable "${variableName}"?`)) {
+       // Remove from variables map
+       this.variables.delete(variableName);
+       
+       // Update the UI
+       this.updateVariablesList();
+       this.updateVariablesUI();
+       
+       // Save changes to backend
+       this.saveVariables();
+       
+       console.log(`Variable "${variableName}" removed successfully`);
+     }
+   }
+
+   /**
+    * Update an existing variable
+    */
+   updateVariable(variableName) {
+     console.log('Updating variable:', variableName);
+     
+     // Validate form data with update context
+     const formData = this.getVariableFormData();
+     const isValid = this.validateVariableForm(formData, true, variableName);
+     
+     if (!isValid) {
+       return;
+     }
+     
+     // Get the original variable
+     const originalVariable = this.variables.get(variableName);
+     if (!originalVariable) {
+       console.error('Original variable not found for update:', variableName);
+       return;
+     }
+     
+     // Create updated variable object, preserving original text and other properties
+     const updatedVariable = {
+       ...originalVariable,
+       name: formData.name,
+       description: formData.description,
+       type: formData.type,
+       format: formData.format,
+       required: formData.required,
+       placeholder: `{{${formData.name}}}`
+     };
+     
+     // If name changed, remove old entry and add new one
+     if (formData.name !== variableName) {
+       this.variables.delete(variableName);
+       this.variables.set(formData.name, updatedVariable);
+     } else {
+       // Just update the existing entry
+       this.variables.set(variableName, updatedVariable);
+     }
+     
+     // Update UI
+     this.updateVariablesList();
+     this.updateVariablesUI();
+     
+     // Save to backend
+     this.saveVariables();
+     
+     // Close dialog and reset to create mode
+     this.hideVariableDialog();
+     this.resetDialogToCreateMode();
+     
+     console.log(`Variable "${variableName}" updated successfully`);
+   }
+
+   /**
+    * Reset dialog back to create mode
+    */
+   resetDialogToCreateMode() {
+     if (this.variableDialog) {
+       const dialogTitle = this.variableDialog.querySelector('h3');
+       const addButton = this.variableDialog.querySelector('[data-action="update-variable"]');
+       
+       if (dialogTitle) dialogTitle.textContent = '✨ Create Variable';
+       if (addButton) {
+         addButton.textContent = 'Add Variable';
+         addButton.setAttribute('data-action', 'add-variable');
+         addButton.removeAttribute('data-variable-name');
+       }
+       
+       // Clear form fields
+       const nameInput = this.variableDialog.querySelector('#variable-name');
+       const descInput = this.variableDialog.querySelector('#variable-description');
+       const typeSelect = this.variableDialog.querySelector('#variable-type');
+       const formatInput = this.variableDialog.querySelector('#variable-format');
+       const requiredCheckbox = this.variableDialog.querySelector('#variable-required');
+       
+       if (nameInput) nameInput.value = '';
+       if (descInput) descInput.value = '';
+       if (typeSelect) typeSelect.value = 'text';
+       if (formatInput) formatInput.value = '';
+       if (requiredCheckbox) requiredCheckbox.checked = true;
+     }
+   }
+
+  /**
    * Get all variables as object
    */
   getVariables() {
@@ -965,6 +1177,272 @@ class VariablesManager {
       this.variables.set(name, variable);
     });
     this.updateVariablesUI();
+  }
+
+  /**
+   * Set a variable value programmatically (for operator outputs)
+   */
+  async setVariableValue(variableName, value) {
+    if (!variableName || !variableName.trim()) {
+      throw new Error('Variable name is required');
+    }
+
+    // Validate variable name format
+    if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(variableName)) {
+      throw new Error('Variable name must be a valid identifier (letters, numbers, underscore, starting with letter or underscore)');
+    }
+
+    // Create or update the variable
+    const variable = {
+      id: `var_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      name: variableName,
+      description: `Operator output variable`,
+      type: this.inferTypeFromValue(value),
+      format: this.getDefaultFormatForType(this.inferTypeFromValue(value)),
+      required: false,
+      originalText: String(value),
+      placeholder: `{{${variableName}}}`,
+      createdAt: new Date().toISOString(),
+      value: value, // Store the actual value
+      isOperatorOutput: true // Mark as operator-generated
+    };
+
+    // If variable already exists, update it; otherwise create new
+    if (this.variables.has(variableName)) {
+      const existingVariable = this.variables.get(variableName);
+      variable.id = existingVariable.id; // Keep original ID
+      variable.createdAt = existingVariable.createdAt; // Keep original creation time
+      variable.description = existingVariable.description || variable.description; // Keep custom description if set
+    }
+
+    this.variables.set(variableName, variable);
+    this.updateVariablesUI();
+
+    // **NEW: Real-time template update**
+    await this.updateDocumentVariables(variableName, value);
+    await this.triggerTemplateRefresh();
+
+    // Save to vars.json for persistence (operator outputs are also saved via document auto-save)
+    await this.saveVariables();
+
+    console.log(`Variable ${variableName} set to:`, value);
+  }
+
+  /**
+   * Update the active document's variables and trigger auto-save
+   */
+  async updateDocumentVariables(variableName, value) {
+    try {
+      // Get current active document
+      const documentManager = window.documentManager;
+      if (!documentManager || !documentManager.activeDocumentId) {
+        console.warn('No active document to update variables');
+        return;
+      }
+
+      const activeDoc = documentManager.getActiveDocument();
+      if (!activeDoc) {
+        console.warn('Active document not found');
+        return;
+      }
+
+      // Update document's variables object
+      if (!activeDoc.variables) {
+        activeDoc.variables = {};
+      }
+
+      // Store in simplified format for document persistence
+      activeDoc.variables[variableName] = {
+        value: value,
+        type: this.inferTypeFromValue(value),
+        isOperatorOutput: true,
+        lastUpdated: new Date().toISOString()
+      };
+
+      // Update document's last modified time
+      activeDoc.lastModified = new Date().toISOString();
+
+      // Trigger auto-save (this will save to backend)
+      documentManager.hasUnsavedChanges = true;
+      
+      console.log(`✅ Updated document variables: ${variableName} = ${value}`);
+
+    } catch (error) {
+      console.error('Error updating document variables:', error);
+    }
+  }
+
+  /**
+   * Trigger template refresh when variables change
+   */
+  async triggerTemplateRefresh() {
+    try {
+      // Import template execution module
+      const { executeTemplate } = await import('./template-execution.js');
+      
+      // Check if we're in template mode and have template content
+      const { state, elements } = await import('./state.js');
+      
+      if (state.currentMode === 'template' && elements.templateEditor) {
+        const templateContent = elements.templateEditor.textContent || elements.templateEditor.innerHTML;
+        
+        if (templateContent.trim()) {
+          console.log('🔄 Auto-refreshing template with new variable values...');
+          
+          // Execute template with live update flag (no status messages)
+          executeTemplate(false, true);
+          
+          // Show a brief notification
+          this.showVariableUpdateNotification();
+        }
+      }
+
+    } catch (error) {
+      console.warn('Could not trigger template refresh:', error);
+    }
+  }
+
+  /**
+   * Show a brief notification when variables are updated
+   */
+  showVariableUpdateNotification() {
+    // Create or update notification element
+    let notification = document.getElementById('variable-update-notification');
+    
+    if (!notification) {
+      notification = document.createElement('div');
+      notification.id = 'variable-update-notification';
+      notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: #4CAF50;
+        color: white;
+        padding: 10px 15px;
+        border-radius: 5px;
+        font-size: 14px;
+        z-index: 10000;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      `;
+      document.body.appendChild(notification);
+    }
+
+    notification.textContent = '✅ Variable updated - Template refreshed';
+    notification.style.opacity = '1';
+
+    // Hide after 2 seconds
+    setTimeout(() => {
+      notification.style.opacity = '0';
+      setTimeout(() => {
+        if (notification.parentNode) {
+          notification.parentNode.removeChild(notification);
+        }
+      }, 300);
+    }, 2000);
+  }
+
+  /**
+   * Load variables for active document and merge with operator outputs
+   */
+  async loadVariablesForDocument() {
+    try {
+      const documentManager = window.documentManager;
+      if (!documentManager || !documentManager.activeDocumentId) {
+        return;
+      }
+
+      const activeDoc = documentManager.getActiveDocument();
+      if (!activeDoc) {
+        return;
+      }
+
+      // Load from backend API first
+      await this.loadVariables();
+
+      // Merge with document-specific variables (operator outputs)
+      if (activeDoc.variables) {
+        for (const [varName, varData] of Object.entries(activeDoc.variables)) {
+          if (!this.variables.has(varName)) {
+            // Create a full variable object for operator outputs
+            const variable = {
+              id: `var_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+              name: varName,
+              description: 'Operator output variable',
+              type: varData.type || 'text',
+              format: this.getDefaultFormatForType(varData.type || 'text'),
+              required: false,
+              originalText: String(varData.value),
+              placeholder: `{{${varName}}}`,
+              createdAt: varData.lastUpdated || new Date().toISOString(),
+              value: varData.value,
+              isOperatorOutput: true
+            };
+
+            this.variables.set(varName, variable);
+          }
+        }
+      }
+
+      this.updateVariablesUI();
+      console.log(`📊 Loaded variables for document: ${this.variables.size} total`);
+
+    } catch (error) {
+      console.error('Error loading variables for document:', error);
+    }
+  }
+
+  /**
+   * Infer data type from value
+   */
+  inferTypeFromValue(value) {
+    if (typeof value === 'number') {
+      return 'number';
+    }
+    if (typeof value === 'boolean') {
+      return 'text';
+    }
+    if (value instanceof Date) {
+      return 'date';
+    }
+    if (typeof value === 'string') {
+      // Check for currency patterns
+      if (value.match(/^\$[\d,]+\.?\d*$/)) {
+        return 'currency';
+      }
+      // Check for percentage patterns
+      if (value.match(/^\d+\.?\d*%$/)) {
+        return 'percentage';
+      }
+      // Check for number patterns
+      if (value.match(/^\d+\.?\d*$/)) {
+        return 'number';
+      }
+      // Check for date patterns
+      if (value.match(/^\d{4}-\d{2}-\d{2}/) || value.match(/^\d{1,2}\/\d{1,2}\/\d{4}/)) {
+        return 'date';
+      }
+    }
+    return 'text';
+  }
+
+  /**
+   * Get default format for data type
+   */
+  getDefaultFormatForType(type) {
+    switch (type) {
+      case 'currency':
+        return '$#,##0';
+      case 'percentage':
+        return '0.0%';
+      case 'number':
+        return '#,##0';
+      case 'date':
+        return 'MM/DD/YYYY';
+      default:
+        return '';
+    }
   }
 }
 

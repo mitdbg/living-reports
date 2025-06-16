@@ -39,7 +39,7 @@ class ExecutionResult:
 
     def get_variables_dict(self) -> Dict[str, str]:
         """Get a simplified dictionary of variable names to values."""
-        return {name: data["value"] for name, data in self.variables.items()}
+        return {name: data.get("value") for name, data in self.variables.items()}
 
     def get_variable_count(self) -> int:
         """Get the number of variables."""

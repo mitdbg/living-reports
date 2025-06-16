@@ -560,8 +560,14 @@ function handleTextSelection(event) {
   const sourceEditor = elements.sourceEditor;
   const previewContent = elements.previewContent;
   
+  // Also check for other source-editor elements (like in Tools dialog)
+  const isInSourceEditor = range.commonAncestorContainer.nodeType === Node.TEXT_NODE ? 
+    range.commonAncestorContainer.parentElement?.closest('.source-editor') !== null :
+    range.commonAncestorContainer.closest?.('.source-editor') !== null;
+  
   if ((templateEditor && templateEditor.contains(range.commonAncestorContainer)) ||
-      (sourceEditor && sourceEditor.contains(range.commonAncestorContainer))) {
+      (sourceEditor && sourceEditor.contains(range.commonAncestorContainer)) ||
+      isInSourceEditor) {
     // For contenteditable elements, use the utility function to preserve line breaks
     try {
       // Create a temporary container with the selected content

@@ -230,7 +230,7 @@ class Template:
                         variable_instances[var_name] = 0
                     variable_instances[var_name] += 1
                     
-                    value = variables[var_name]["value"]
+                    value = variables[var_name].get("value", "")
                     # Wrap in span with metadata for content-to-template mapping
                     return f'<span class="var-ref" data-var="{var_name}" data-instance="{variable_instances[var_name]}" data-value="{value}">{value}</span>'
                 else:
@@ -252,7 +252,7 @@ class Template:
                         variable_instances[var_name] = 0
                     variable_instances[var_name] += 1
                     
-                    value = variables[var_name]["value"]
+                    value = variables[var_name].get("value", "")
                     # Wrap in span with metadata for content-to-template mapping
                     return f'<span class="var-ref" data-var="{var_name}" data-instance="{variable_instances[var_name]}" data-value="{value}">{value}</span>'
                 else:
@@ -263,7 +263,34 @@ class Template:
                         
                 return f"{{{{${var_name}}}}}"  # Keep original if not found
 
-            return re.sub(r"\{\{\$(\w+)\}\}", substitute_curly_variable, text)
+            text = re.sub(r"\{\{\$(\w+)\}\}", substitute_curly_variable, text)
+            
+            # Replace {{variable_name}} format (without $) - but avoid {{name:=value}} patterns
+            def substitute_simple_curly_variable(match):
+                var_name = match.group(1)
+                # Skip if this looks like a variable assignment (contains :=)
+                full_match = match.group(0)
+                if ':=' in full_match:
+                    return full_match  # Keep assignment syntax unchanged
+                    
+                if var_name in variables:
+                    # Track instance count for this variable
+                    if var_name not in variable_instances:
+                        variable_instances[var_name] = 0
+                    variable_instances[var_name] += 1
+                    
+                    value = variables[var_name].get("value", "")
+                    # Wrap in span with metadata for content-to-template mapping
+                    return f'<span class="var-ref" data-var="{var_name}" data-instance="{variable_instances[var_name]}" data-value="{value}">{value}</span>'
+                else:
+                    # Check if it's a data source reference
+                    rendered_data_source = self._render_data_source(var_name)
+                    if rendered_data_source != f"${var_name}":  # Found a data source
+                        return rendered_data_source
+                        
+                return f"{{{{{var_name}}}}}"  # Keep original if not found
+
+            return re.sub(r"\{\{(\w+)\}\}", substitute_simple_curly_variable, text)
 
         # Process {{name:=prompt}} format with multiple modes:
         # 1. {{name:=LLM(prompt)}} - Execute prompt with LLM and store the result
@@ -415,7 +442,28 @@ class Template:
                         
                 return f"{{{{${var_name}}}}}"  # Keep original if not found
             
-            return re.sub(r"\{\{\$(\w+)\}\}", substitute_curly_variable, text)
+            text = re.sub(r"\{\{\$(\w+)\}\}", substitute_curly_variable, text)
+            
+            # Replace {{variable_name}} format (without $) - but avoid {{name:=value}} patterns
+            def substitute_simple_curly_variable(match):
+                var_name = match.group(1)
+                # Skip if this looks like a variable assignment (contains :=)
+                full_match = match.group(0)
+                if ':=' in full_match:
+                    return full_match  # Keep assignment syntax unchanged
+                    
+                if var_name in variables:
+                    # Special marked-up format for variables in references mode
+                    return f"$${var_name}:{{{variables[var_name]['value']}}}"
+                else:
+                    # Check if it's a data source reference
+                    rendered_data_source = self._render_data_source(var_name)
+                    if rendered_data_source != f"${var_name}":  # Found a data source
+                        return rendered_data_source
+                        
+                return f"{{{{{var_name}}}}}"  # Keep original if not found
+            
+            return re.sub(r"\{\{(\w+)\}\}", substitute_simple_curly_variable, text)
         
         # Process {{name:=prompt}} format like in _process_template
         # but without returning the processed result

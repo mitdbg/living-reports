@@ -163,9 +163,6 @@ class CommentTranslationService:
         """
         Main function to translate a user comment into a template edit suggestion
         """
-        if not self.llm_client:
-            return self._fallback_suggestion(comment_context)
-        
         # Analyze comment intent
         analysis = self.analyze_comment_intent(comment_context)
         
@@ -185,7 +182,6 @@ class CommentTranslationService:
             
         except Exception as e:
             print(f"Error calling LLM: {e}")
-            return self._fallback_suggestion(comment_context, analysis)
     
     def _create_llm_prompt(self, context: CommentContext, analysis: CommentAnalysis) -> str:
         """Create a detailed prompt for the LLM based on context and analysis"""
@@ -244,35 +240,3 @@ class CommentTranslationService:
                 confidence=0.6,
                 change_type="modify"
             )
-    
-    def _fallback_suggestion(self, context: CommentContext, analysis: Optional[CommentAnalysis] = None) -> AIEditSuggestion:
-        """Generate a fallback suggestion when LLM is not available"""
-        if analysis:
-            intent = analysis.intent
-            confidence = analysis.confidence
-        else:
-            intent = CommentIntent.CHANGE_CONTENT
-            confidence = 0.5
-        
-        # Generate simple rule-based suggestions
-        if intent == CommentIntent.CHANGE_CONTENT:
-            suggested_change = f"Consider updating the text '{context.selected_text}' based on the comment: '{context.comment_text}'"
-            explanation = "The user has requested a change to this content. Review the comment and update the template accordingly."
-        elif intent == CommentIntent.CHANGE_VARIABLE:
-            suggested_change = f"Review variable definitions and update based on: '{context.comment_text}'"
-            explanation = "The user has commented on variable usage. Check variable assignments and references."
-        elif intent == CommentIntent.ADD_CONTENT:
-            suggested_change = f"Add new content near '{context.selected_text}' addressing: '{context.comment_text}'"
-            explanation = "The user wants additional content added to this section."
-        else:
-            suggested_change = f"Review and modify template based on: '{context.comment_text}'"
-            explanation = "The user has provided feedback on this section. Consider their comment when updating the template."
-        
-        return AIEditSuggestion(
-            original_comment=context.comment_text,
-            selected_text=context.selected_text,
-            suggested_change=suggested_change,
-            explanation=explanation,
-            confidence=confidence,
-            change_type="modify"
-        )
