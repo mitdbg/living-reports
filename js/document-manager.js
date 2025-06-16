@@ -1889,7 +1889,7 @@ export class DocumentManager {
         // Load variables for this document (includes operator outputs)
         try {
           const { variablesManager } = await import('./variables.js');
-          await variablesManager.loadVariablesForDocument();
+          await variablesManager.loadVariablesFromBackend();
           console.log(`✅ Variables loaded for document ${documentId}`);
         } catch (error) {
           console.warn('Could not load variables:', error);
@@ -1916,7 +1916,7 @@ export class DocumentManager {
         // Load variables for this document (includes operator outputs)
         try {
           const { variablesManager } = await import('./variables.js');
-          await variablesManager.loadVariablesForDocument();
+          await variablesManager.loadVariablesFromBackend();
           console.log(`✅ Variables loaded for document ${documentId}`);
         } catch (error) {
           console.warn('Could not load variables:', error);
