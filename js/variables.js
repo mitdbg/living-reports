@@ -1218,89 +1218,13 @@ class VariablesManager {
     this.variables.set(variableName, variable);
     this.updateVariablesUI();
 
-    // **NEW: Real-time template update**
-    await this.updateDocumentVariables(variableName, value);
-    await this.triggerTemplateRefresh();
-
     // Save to vars.json for persistence (operator outputs are also saved via document auto-save)
     await this.saveVariables();
 
     console.log(`Variable ${variableName} set to:`, value);
   }
 
-  /**
-   * Update the active document's variables and trigger auto-save
-   */
-  async updateDocumentVariables(variableName, value) {
-    try {
-      // Get current active document
-      const documentManager = window.documentManager;
-      if (!documentManager || !documentManager.activeDocumentId) {
-        console.warn('No active document to update variables');
-        return;
-      }
-
-      const activeDoc = documentManager.getActiveDocument();
-      if (!activeDoc) {
-        console.warn('Active document not found');
-        return;
-      }
-
-      // Update document's variables object
-      if (!activeDoc.variables) {
-        activeDoc.variables = {};
-      }
-
-      // Store in simplified format for document persistence
-      activeDoc.variables[variableName] = {
-        value: value,
-        type: this.inferTypeFromValue(value),
-        isOperatorOutput: true,
-        lastUpdated: new Date().toISOString()
-      };
-
-      // Update document's last modified time
-      activeDoc.lastModified = new Date().toISOString();
-
-      // Trigger auto-save (this will save to backend)
-      documentManager.hasUnsavedChanges = true;
-      
-      console.log(`✅ Updated document variables: ${variableName} = ${value}`);
-
-    } catch (error) {
-      console.error('Error updating document variables:', error);
-    }
-  }
-
-  /**
-   * Trigger template refresh when variables change
-   */
-  async triggerTemplateRefresh() {
-    try {
-      // Import template execution module
-      const { executeTemplate } = await import('./template-execution.js');
-      
-      // Check if we're in template mode and have template content
-      const { state, elements } = await import('./state.js');
-      
-      if (state.currentMode === 'template' && elements.templateEditor) {
-        const templateContent = elements.templateEditor.textContent || elements.templateEditor.innerHTML;
-        
-        if (templateContent.trim()) {
-          console.log('🔄 Auto-refreshing template with new variable values...');
-          
-          // Execute template with live update flag (no status messages)
-          executeTemplate(false, true);
-          
-          // Show a brief notification
-          this.showVariableUpdateNotification();
-        }
-      }
-
-    } catch (error) {
-      console.warn('Could not trigger template refresh:', error);
-    }
-  }
+  
 
   /**
    * Show a brief notification when variables are updated
@@ -1344,49 +1268,15 @@ class VariablesManager {
   }
 
   /**
-   * Load variables for active document and merge with operator outputs
+   * Load variables for active document (simplified - only from vars.json)
    */
-  async loadVariablesForDocument() {
+  async loadVariablesFromBackend() {
     try {
-      const documentManager = window.documentManager;
-      if (!documentManager || !documentManager.activeDocumentId) {
-        return;
-      }
-
-      const activeDoc = documentManager.getActiveDocument();
-      if (!activeDoc) {
-        return;
-      }
-
-      // Load from backend API first
+      // Load only from backend API (vars.json)
       await this.loadVariables();
-
-      // Merge with document-specific variables (operator outputs)
-      if (activeDoc.variables) {
-        for (const [varName, varData] of Object.entries(activeDoc.variables)) {
-          if (!this.variables.has(varName)) {
-            // Create a full variable object for operator outputs
-            const variable = {
-              id: `var_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-              name: varName,
-              description: 'Operator output variable',
-              type: varData.type || 'text',
-              format: this.getDefaultFormatForType(varData.type || 'text'),
-              required: false,
-              originalText: String(varData.value),
-              placeholder: `{{${varName}}}`,
-              createdAt: varData.lastUpdated || new Date().toISOString(),
-              value: varData.value,
-              isOperatorOutput: true
-            };
-
-            this.variables.set(varName, variable);
-          }
-        }
-      }
-
+      
       this.updateVariablesUI();
-      console.log(`📊 Loaded variables for document: ${this.variables.size} total`);
+      console.log(`📊 Loaded variables for document: ${this.variables.size} total (from vars.json only)`);
 
     } catch (error) {
       console.error('Error loading variables for document:', error);

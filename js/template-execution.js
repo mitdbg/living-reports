@@ -21,8 +21,55 @@ if (!window[TEMPLATE_EXEC_KEY]) {
 
 const templateExecData = window[TEMPLATE_EXEC_KEY];
 
+// Operators Integration - Execute required operators before template processing
+async function executeRequiredOperatorsBeforeTemplate(templateText, isLiveUpdate = false) {
+  try {
+    // Only execute operators if operators module is available
+    if (!window.operatorsModule || !window.operatorsModule.executeRequiredOperatorsForTemplate) {
+      console.log(`[${windowId}] Operators module not available, skipping operator execution`);
+      return;
+    }
+
+    console.log(`[${windowId}] Checking template for required operators...`);
+    
+    // Execute required operators for this template
+    const result = await window.operatorsModule.executeRequiredOperatorsForTemplate(templateText);
+    
+    if (result.success) {
+      if (result.executedOperators.length > 0) {
+        console.log(`[${windowId}] Successfully executed ${result.executedOperators.length} operators:`, result.executedOperators);
+        
+        if (!isLiveUpdate) {
+          // Show summary message for manual execution
+          addMessageToUI('system', `✅ Pre-executed ${result.executedOperators.length} operators: ${result.executedOperators.join(', ')}`);
+        }
+      } else {
+        console.log(`[${windowId}] No operators needed for this template`);
+      }
+    } else {
+      console.error(`[${windowId}] Error executing required operators:`, result.error);
+      
+      if (!isLiveUpdate) {
+        addMessageToUI('system', `⚠️ Some operators failed to execute: ${result.error}`);
+      }
+      
+      // Continue with template execution even if operators fail
+      // This allows templates to work with partial data or fallback to manual execution
+    }
+    
+  } catch (error) {
+    console.error(`[${windowId}] Error in executeRequiredOperatorsBeforeTemplate:`, error);
+    
+    if (!isLiveUpdate) {
+      addMessageToUI('system', `⚠️ Could not execute required operators: ${error.message}`);
+    }
+    
+    // Continue with template execution
+  }
+}
+
 // Basic template execution
-export function executeTemplate(clearCache = false, isLiveUpdate = false) {
+export async function executeTemplate(clearCache = false, isLiveUpdate = false) {
   if (!elements.templateEditor) {
     setExecutionStatus('Template editor not found', 'error');
     return;
@@ -47,6 +94,13 @@ export function executeTemplate(clearCache = false, isLiveUpdate = false) {
     setExecutionStatus('Please enter a template first', 'error');
     return;
   }
+
+  if (!isLiveUpdate) {
+    setExecutionStatus('Preparing template execution...', 'loading');
+  }
+
+  // Execute required operators before template processing
+  await executeRequiredOperatorsBeforeTemplate(templateText, isLiveUpdate);
 
   if (!isLiveUpdate) {
     setExecutionStatus(clearCache ? 'Executing template (no cache)...' : 'Executing template...', 'loading');
@@ -515,7 +569,7 @@ export async function acceptAISuggestion(commentId) {
   delete state.comments[commentId];
   
   // Execute the new template
-  executeTemplate(false, true);
+  await executeTemplate(false, true);
   
   // Show feedback
   addMessageToUI('system', '✅ AI suggestion accepted and applied!');
@@ -778,9 +832,9 @@ export function initTemplateExecution() {
   }
   
   // Create new event handler
-  templateExecData.executeHandler = () => {
+  templateExecData.executeHandler = async () => {
     console.log(`[${windowId}] Execute template clicked`);
-    executeTemplate();
+    await executeTemplate();
   };
   
   // Add the event listener to the current button
