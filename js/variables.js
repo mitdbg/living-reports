@@ -1218,43 +1218,13 @@ class VariablesManager {
     this.variables.set(variableName, variable);
     this.updateVariablesUI();
 
-    await this.triggerTemplateRefresh();
-
     // Save to vars.json for persistence (operator outputs are also saved via document auto-save)
     await this.saveVariables();
 
     console.log(`Variable ${variableName} set to:`, value);
   }
 
-  /**
-   * Trigger template refresh when variables change
-   */
-  async triggerTemplateRefresh() {
-    try {
-      // Import template execution module
-      const { executeTemplate } = await import('./template-execution.js');
-      
-      // Check if we're in template mode and have template content
-      const { state, elements } = await import('./state.js');
-      
-      if (state.currentMode === 'template' && elements.templateEditor) {
-        const templateContent = elements.templateEditor.textContent || elements.templateEditor.innerHTML;
-        
-        if (templateContent.trim()) {
-          console.log('🔄 Auto-refreshing template with new variable values...');
-          
-          // Execute template with live update flag (no status messages)
-          executeTemplate(false, true);
-          
-          // Show a brief notification
-          this.showVariableUpdateNotification();
-        }
-      }
-
-    } catch (error) {
-      console.warn('Could not trigger template refresh:', error);
-    }
-  }
+  
 
   /**
    * Show a brief notification when variables are updated

@@ -330,7 +330,7 @@ function findConflictingDiffs(targetText, htmlContent) {
         const executeTemplate = async () => {
           try {
             const { executeTemplate: execTemplate } = await import('./template-execution.js');
-            execTemplate(false, true);
+            await execTemplate(false, true);
           } catch (error) {
             console.warn('Could not auto-execute template:', error);
           }

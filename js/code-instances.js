@@ -9,7 +9,8 @@ if (!window[CODE_INSTANCES_KEY]) {
   window[CODE_INSTANCES_KEY] = {
     instances: new Map(),
     currentEditingInstance: null,
-    executionQueue: []
+    executionQueue: [],
+    isExecutingForTemplate: false // Flag to prevent auto-refresh loops
   };
 }
 
@@ -201,18 +202,27 @@ class OperatorManager {
             }
           }
         }
-      } else {
-        console.log(`[${windowId}] Skipping output processing due to execution error or invalid result`);
-        addMessageToUI('system', `⚠️ Skipping variable assignment due to execution error`);
+
+        this.saveInstances();
+        this.notifyInstanceUpdate(instance);
+  
+        console.log(`[${windowId}] operator executed successfully: ${instance.name}`);
+        addMessageToUI('system', `✅ operator executed: ${instance.name}`);
+  
+        return result;
+
+
+      } 
+
+      if (result.status === 'error') {
+        instance.status = 'error';
+        instance.error = result.error.substring(0, 200);
+        instance.lastExecuted = new Date().toISOString();
+        this.saveInstances();
+        this.notifyInstanceUpdate(instance);
+        addMessageToUI('system', `❌ Error executing ${instance.name}: ${result.error}`);
+        return result;
       }
-
-      this.saveInstances();
-      this.notifyInstanceUpdate(instance);
-
-      console.log(`[${windowId}] operator executed successfully: ${instance.name}`);
-      addMessageToUI('system', `✅ operator executed: ${instance.name}`);
-
-      return result;
 
     } catch (error) {
       console.error(`[${windowId}] Error executing operator:`, error);
@@ -1386,8 +1396,178 @@ export {
   showOperatorsDialog,
   showAddInstanceDialog,
   addParameterField,
-  addOutputField
+  addOutputField,
+  executeRequiredOperatorsForTemplate
 };
+
+// Template-Operator Integration Functions
+async function executeRequiredOperatorsForTemplate(templateContent) {
+  console.log(`[${windowId}] Analyzing template for required operators...`);
+  
+  try {
+    // 1. Extract variables from template content
+    const requiredVariables = extractVariablesFromTemplate(templateContent);
+    console.log(`[${windowId}] Template requires variables:`, requiredVariables);
+    
+    if (requiredVariables.length === 0) {
+      console.log(`[${windowId}] No variables found in template, skipping operator execution`);
+      return { success: true, executedOperators: [] };
+    }
+    
+    // 2. Identify operators that output these variables
+    const requiredOperators = identifyRequiredOperators(requiredVariables);
+    console.log(`[${windowId}] Required operators:`, requiredOperators.map(op => op.name));
+    
+    if (requiredOperators.length === 0) {
+      console.log(`[${windowId}] No operators needed for template variables`);
+      return { success: true, executedOperators: [] };
+    }
+    
+    // 3. Execute operators in sequence
+    const executionResults = await executeOperatorsSequence(requiredOperators);
+    
+    return {
+      success: true,
+      executedOperators: requiredOperators.map(op => op.name),
+      results: executionResults
+    };
+    
+  } catch (error) {
+    console.error(`[${windowId}] Error executing required operators:`, error);
+    return {
+      success: false,
+      error: error.message,
+      executedOperators: []
+    };
+  }
+}
+
+function extractVariablesFromTemplate(templateContent) {
+  if (!templateContent || typeof templateContent !== 'string') {
+    return [];
+  }
+  
+  // Extract variables using {{variable_name}} pattern
+  const variableMatches = templateContent.match(/\{\{([^}]+)\}\}/g) || [];
+  const variables = variableMatches.map(match => 
+    match.replace(/\{\{|\}\}/g, '').trim()
+  );
+  
+  // Remove duplicates and filter out assignment patterns (variables that contain :=)
+  const filteredVariables = variables.filter(varName => !varName.includes(':='));
+  const uniqueVariables = [...new Set(filteredVariables)];
+  
+  console.log(`[${windowId}] Extracted variables from template:`, uniqueVariables);
+  
+  return uniqueVariables;
+}
+
+function identifyRequiredOperators(requiredVariables) {
+  const allOperators = operatorManager.getAllInstances();
+  const requiredOperators = [];
+  
+  for (const operator of allOperators) {
+    const outputVariables = getOperatorOutputVariables(operator);
+    
+    // Check if any of this operator's outputs are needed by the template
+    const hasRequiredOutput = outputVariables.some(varName => 
+      requiredVariables.includes(varName)
+    );
+    
+    if (hasRequiredOutput) {
+      requiredOperators.push(operator);
+      console.log(`[${windowId}] Operator "${operator.name}" outputs variables:`, outputVariables);
+    }
+  }
+  
+  return requiredOperators;
+}
+
+function getOperatorOutputVariables(operator) {
+  const outputVars = [];
+  
+  // Handle new format: array of outputs
+  if (operator.outputs && Array.isArray(operator.outputs)) {
+    operator.outputs.forEach(output => {
+      if (output.variable && output.variable.trim()) {
+        outputVars.push(output.variable.trim());
+      }
+    });
+  }
+  
+  // Handle legacy format: single output
+  if (operator.outputVariable && operator.outputVariable.trim()) {
+    const legacyVar = operator.outputVariable.trim();
+    if (!outputVars.includes(legacyVar)) {
+      outputVars.push(legacyVar);
+    }
+  }
+  
+  return outputVars;
+}
+
+async function executeOperatorsSequence(operators) {
+  const results = [];
+  let successCount = 0;
+  let errorCount = 0;
+  
+  console.log(`[${windowId}] Executing ${operators.length} required operators...`);
+  
+  // Set flag to prevent template auto-refresh loop
+  operatorsData.isExecutingForTemplate = true;
+  
+  try {
+    // Show progress message
+    addMessageToUI('system', `🔄 Executing ${operators.length} required operators for template...`);
+    
+    for (const operator of operators) {
+      try {
+        console.log(`[${windowId}] Executing operator: ${operator.name}`);
+        addMessageToUI('system', `⚙️ Executing operator: ${operator.name}...`);
+        
+        const result = await operatorManager.executeInstance(operator.id);
+        
+        results.push({
+          operatorId: operator.id,
+          operatorName: operator.name,
+          success: true,
+          result: result
+        });
+        
+        successCount++;
+        console.log(`[${windowId}] ✅ Operator "${operator.name}" executed successfully`);
+        
+      } catch (error) {
+        console.error(`[${windowId}] ❌ Error executing operator "${operator.name}":`, error);
+        
+        results.push({
+          operatorId: operator.id,
+          operatorName: operator.name,
+          success: false,
+          error: error.message
+        });
+        
+        errorCount++;
+        addMessageToUI('system', `❌ Error executing operator "${operator.name}": ${error.message}`);
+      }
+    }
+    
+    // Summary message
+    if (errorCount === 0) {
+      addMessageToUI('system', `✅ All ${successCount} operators executed successfully`);
+    } else {
+      addMessageToUI('system', `⚠️ Operators execution completed: ${successCount} successful, ${errorCount} failed`);
+    }
+    
+    console.log(`[${windowId}] Operators execution summary: ${successCount} successful, ${errorCount} failed`);
+    
+  } finally {
+    // Always clear flag after execution is complete, even if there were errors
+    operatorsData.isExecutingForTemplate = false;
+  }
+  
+  return results;
+}
 
 // Make functions globally available
 window.operatorsModule = {
@@ -1400,5 +1580,6 @@ window.operatorsModule = {
   addOutputField,
   insertInstanceReference,
   openInstanceFromReference,
-  styleInstanceReferences
+  styleInstanceReferences,
+  executeRequiredOperatorsForTemplate
 }; 
