@@ -202,13 +202,45 @@ function isRichHTMLContent(text) {
     /<div[^>]*class="block content"/i,
     /<style>[^<]*\._css_/i,
     
+    // CSV table content
+    /<table[^>]*class="csv-table"/i,
+    /<table[^>]*style=[^>]*border-collapse/i,
+    
+    // Markdown rendered content
+    /<div[^>]*class="markdown-content"/i,
+    
+    // JSON formatted content
+    /<div[^>]*class="json-content"/i,
+    /<pre><code>/i,
+    
+    // Excel/CSV structured content
+    /<table[^>]*>[\s\S]*<\/table>/i,
+    
+    // HTML content wrappers
+    /<div[^>]*class="html-content"/i,
+    
+    // PowerPoint content
+    /<div[^>]*class="powerpoint-content"/i,
+    /<div[^>]*class="pptx-presentation"/i,
+    
+    // PDF content wrapper
+    /<div[^>]*class="pdf-content"/i,
+    
     // Other rich HTML structures
     /<div[^>]*style="[^"]*position:\s*absolute/i,
     /<div[^>]*style="[^"]*width:\s*\d+px[^"]*height:\s*\d+px/i,
     
     // Complex nested structures
     /(<div[^>]*>[^<]*<div[^>]*>[^<]*<\/div>[^<]*<\/div>)/i,
-    /(<section[^>]*>[\s\S]*<\/section>)/i
+    /(<section[^>]*>[\s\S]*<\/section>)/i,
+    
+    // Media content
+    /<img[^>]*src=/i,
+    /<video[^>]*>/i,
+    
+    // Any content with CSS classes (indicates structured content)
+    /<div[^>]*class="[^"]+"/i,
+    /<span[^>]*class="[^"]+"/i
   ];
   
   return richHTMLIndicators.some(pattern => pattern.test(text));

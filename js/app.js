@@ -64,9 +64,8 @@ async function initApp() {
     // Start auto-refresh for shared documents
     documentManager.startAutoRefresh();
     
-    // Initialize main page functionality
     initMainPageFunctionality();
-    
+
     // Initialize collaboration features
     initCollaborationFeatures();
     
@@ -103,14 +102,6 @@ async function initializeCoreModules() {
     // Add sample tools for demonstration (only if no tools exist)
     addSampleTools();
     
-    // Initialize comment translation module
-    try {
-      await import('./comment-translation.js');
-      console.log('✅ Comment translation module loaded');
-    } catch (error) {
-      console.warn('⚠️ Comment translation module not available:', error);
-    }
-    
     console.log('Core modules initialized successfully');
   } catch (error) {
     console.error('Error initializing core modules:', error);
@@ -125,7 +116,6 @@ if (document.readyState === 'loading') {
   initApp();
 }
 
-// Initialize main page functionality
 function initMainPageFunctionality() {
   try {
     // Initialize clear comments functionality for when documents are active
@@ -151,6 +141,7 @@ function initMainPageFunctionality() {
     console.error('💥 Error in initMainPageFunctionality:', error);
   }
 }
+
 
 // Initialize collaboration features
 function initCollaborationFeatures() {

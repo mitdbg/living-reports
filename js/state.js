@@ -1,4 +1,3 @@
-// State Management Module
 
 // Get window-specific identifier
 function getWindowId() {
@@ -57,7 +56,6 @@ export function initDOMElements() {
   elements.rejectSuggestionBtn = document.querySelector('.reject-suggestion');
   elements.diffCurrentContent = document.querySelector('.diff-current-content');
   elements.diffSuggestedContent = document.querySelector('.diff-suggested-content');
-  elements.clearCommentsBtn = document.querySelector('.clear-comments-btn');
   elements.contextFilesSection = document.querySelector('.context-files-section');
   elements.contextFilesList = document.querySelector('.context-files-list');
   elements.contentTitle = document.querySelector('#content-title');

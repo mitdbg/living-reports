@@ -655,8 +655,8 @@ body, html {
   padding: 10px;
   box-sizing: border-box;
   overflow-y: auto;
-  background-color: #1e1e1e;
-  color: #d4d4d4;
+  background-color: #ffffff;
+  color: #020000;
   resize: vertical;
   white-space: pre-wrap; /* Preserve whitespace and line breaks */
   word-wrap: break-word; /* Allow long lines to wrap */
@@ -6506,4 +6506,3 @@ p {
 }
 
 /* Original styles below */
-

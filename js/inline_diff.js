@@ -10,65 +10,165 @@ export { addInlineDiffEventListeners, findConflictingDiffs, removeConflictingInl
  * @param {Function} options.escapeHtml - HTML escape function (optional, for source mode)
  * @returns {boolean} - Success status
  */
+/**
+ * Extract clean text content from HTML, preserving line breaks
+ */
+function extractTextFromHtml(htmlContent) {
+  // Create a temporary div to parse HTML
+  const tempDiv = document.createElement('div');
+  tempDiv.innerHTML = htmlContent;
+  
+  // Replace <br> tags with newlines before extracting text
+  tempDiv.innerHTML = tempDiv.innerHTML.replace(/<br\s*\/?>/gi, '\n');
+  
+  // Get text content and clean up extra whitespace
+  return tempDiv.textContent || tempDiv.innerText || '';
+}
+
+/**
+ * Simple diff algorithm to find differences between two texts
+ */
+function computeDiff(oldHtml, newHtml) {
+  // Extract clean text content from HTML
+  const oldText = extractTextFromHtml(oldHtml);
+  const newText = extractTextFromHtml(newHtml);
+  
+  console.log('Computing diff on clean text:', { 
+    oldText: oldText.substring(0, 100) + '...', 
+    newText: newText.substring(0, 100) + '...' 
+  });
+  
+  const oldLines = oldText.split('\n');
+  const newLines = newText.split('\n');
+  
+  const diff = [];
+  let oldIndex = 0;
+  let newIndex = 0;
+  
+  while (oldIndex < oldLines.length || newIndex < newLines.length) {
+    if (oldIndex >= oldLines.length) {
+      // All remaining lines are additions
+      diff.push({ type: 'add', content: newLines[newIndex] });
+      newIndex++;
+    } else if (newIndex >= newLines.length) {
+      // All remaining lines are deletions
+      diff.push({ type: 'delete', content: oldLines[oldIndex] });
+      oldIndex++;
+    } else if (oldLines[oldIndex] === newLines[newIndex]) {
+      // Lines are the same
+      diff.push({ type: 'same', content: oldLines[oldIndex] });
+      oldIndex++;
+      newIndex++;
+    } else {
+      // Find the next matching line
+      let foundMatch = false;
+      
+      // Look ahead in new lines for a match with current old line
+      for (let i = newIndex + 1; i < Math.min(newIndex + 5, newLines.length); i++) {
+        if (newLines[i] === oldLines[oldIndex]) {
+          // Found match - mark intermediate new lines as additions
+          for (let j = newIndex; j < i; j++) {
+            diff.push({ type: 'add', content: newLines[j] });
+          }
+          diff.push({ type: 'same', content: oldLines[oldIndex] });
+          newIndex = i + 1;
+          oldIndex++;
+          foundMatch = true;
+          break;
+        }
+      }
+      
+      if (!foundMatch) {
+        // Look ahead in old lines for a match with current new line
+        for (let i = oldIndex + 1; i < Math.min(oldIndex + 5, oldLines.length); i++) {
+          if (oldLines[i] === newLines[newIndex]) {
+            // Found match - mark intermediate old lines as deletions
+            for (let j = oldIndex; j < i; j++) {
+              diff.push({ type: 'delete', content: oldLines[j] });
+            }
+            diff.push({ type: 'same', content: newLines[newIndex] });
+            oldIndex = i + 1;
+            newIndex++;
+            foundMatch = true;
+            break;
+          }
+        }
+      }
+      
+      if (!foundMatch) {
+        // No match found nearby - treat as replace
+        diff.push({ type: 'delete', content: oldLines[oldIndex] });
+        diff.push({ type: 'add', content: newLines[newIndex] });
+        oldIndex++;
+        newIndex++;
+      }
+    }
+  }
+  
+  return diff;
+}
+
 function createInlineDiff(options) {
-  const { selectedText, parsedSuggestion, commentId, targetElement, escapeHtml, documentId } = options;
+  const { parsedSuggestion, commentId, targetElement, escapeHtml, documentId } = options;
   
   if (!targetElement) {
     console.warn('Target element not found');
     return false;
   }
-  
-  let content = targetElement.innerHTML;
-  const originalText = parsedSuggestion.original_text || selectedText;
-  const newText = parsedSuggestion.suggested_change || parsedSuggestion.new_text || '';
-  const changeType = parsedSuggestion.change_type;
-  
-  console.log('Creating inline diff:', { originalText, newText, changeType });
-  
-  // Handle HTML escaping if provided (for source mode)
-  const safeOriginalText = escapeHtml ? escapeHtml(originalText) : originalText;
-  const safeNewText = escapeHtml ? escapeHtml(newText) : newText;
-  
-  if (changeType === 'replace' && content.includes(safeOriginalText)) {
-    // Replace: show both original (strikethrough) and new (highlighted)
-    const inlineDiffHtml = `<span class="inline-diff-container" data-comment-id="${commentId}"><span class="inline-diff-delete" data-comment-id="${commentId}" title="Original text - click to accept/reject">${safeOriginalText}</span><span class="inline-diff-add" data-comment-id="${commentId}" title="AI suggestion - click to accept/reject">${safeNewText}</span></span>`;
-    
-    content = content.replace(safeOriginalText, inlineDiffHtml);
-    targetElement.innerHTML = content;
-    
-  } else if (changeType === 'add') {
-    // Add: show new content as highlighted addition (wrapped in container)
-    const additionHtml = `<span class="inline-diff-container" data-comment-id="${commentId}"><span class="inline-diff-add" data-comment-id="${commentId}" title="AI suggestion - click to accept/reject">${safeNewText}</span></span>`;
-    
-    // Try to add near the selected text, or append at end
-    const safeSelectedText = escapeHtml ? escapeHtml(selectedText) : selectedText;
-    if (content.includes(safeSelectedText)) {
-      content = content.replace(safeSelectedText, safeSelectedText + ' ' + additionHtml);
-    } else {
-      content += '\n' + additionHtml;
-    }
-    targetElement.innerHTML = content;
-    
-  } else if (changeType === 'remove' && content.includes(safeOriginalText)) {
-    // Remove: show original text with strikethrough (wrapped in container)
-    const removalHtml = `<span class="inline-diff-container" data-comment-id="${commentId}"><span class="inline-diff-delete" data-comment-id="${commentId}" title="Text to remove - click to accept/reject">${safeOriginalText}</span></span>`;
-    
-    content = content.replace(safeOriginalText, removalHtml);
-    targetElement.innerHTML = content;
-    
-  } else {
-    console.warn('Could not apply diff');
-    const { addMessageToUI } = import('./chat.js');
-    addMessageToUI('system', parsedSuggestion.new_text);
-  }
 
-  const containers = targetElement.querySelectorAll(`.inline-diff-container[data-comment-id="${commentId}"]`);
-  console.log('Created inline diff - Containers found:', containers.length);
-  console.log('Created inline diff - targetElement:', targetElement);
+  const originalContent = targetElement.innerHTML;
+  const newContent = parsedSuggestion.new_text || '';
+  
+  console.log('Creating full content diff:', { 
+    originalLength: originalContent.length, 
+    newLength: newContent.length,
+    explanation: parsedSuggestion.explanation 
+  });
+  
+  // If new content is empty or same as original, no diff needed
+  if (!newContent.trim() || newContent === originalContent) {
+    console.log('No meaningful changes detected');
+    return false;
+  }
+  
+  // Compute the diff between original and new content
+  const diff = computeDiff(originalContent, newContent);
+  
+  // Convert diff to HTML with inline markup (clean text display)
+  let diffHtml = '';
+  let hasChanges = false;
+  
+  for (const item of diff) {
+    switch (item.type) {
+      case 'same':
+        // Display same lines as plain text with line breaks
+        if (item.content.trim()) {
+          diffHtml += `<div style="margin: 1px 0; padding: 2px;">${escapeHtml ? escapeHtml(item.content) : item.content}</div>\n`;
+        }
+        break;
+      case 'delete':
+        hasChanges = true;
+        diffHtml += `<div class="inline-diff-delete" data-comment-id="${commentId}" title="Original content - click to accept/reject" style="background-color: #ffebee; text-decoration: line-through; margin: 2px 0; padding: 4px; border-left: 3px solid #f44336; font-family: monospace;">- ${escapeHtml ? escapeHtml(item.content) : item.content}</div>\n`;
+        break;
+      case 'add':
+        hasChanges = true;
+        diffHtml += `<div class="inline-diff-add" data-comment-id="${commentId}" title="AI suggestion - click to accept/reject" style="background-color: #e8f5e8; margin: 2px 0; padding: 4px; border-left: 3px solid #4caf50; font-family: monospace;">+ ${escapeHtml ? escapeHtml(item.content) : item.content}</div>\n`;
+        break;
+    }
+  }
+  
+  if (!hasChanges) {
+    console.log('No visual changes detected in diff');
+    return false;
+  }
+  
+  // Apply the diff content to the target element
+  targetElement.innerHTML = diffHtml.trim();
+  
   // Add click handlers for accept/reject
   addInlineDiffEventListeners(commentId, documentId);
   
-  console.log('Created inline diff in content');
+  console.log('Created full content diff with', diff.filter(d => d.type !== 'same').length, 'changes');
   return true;
 }
 
@@ -222,16 +322,11 @@ function findConflictingDiffs(targetText, htmlContent) {
    */
   window.acceptInlineDiff = async function(commentId, documentId = null) {
     try {
-      const diffData = window.currentInlineDiffs && window.currentInlineDiffs[commentId];
-      
-      console.log('Accepting inline diff:', commentId, documentId);
-      console.log('diffData:', diffData);
-      console.log('documentId type:', typeof documentId);
+      console.log('Accepting full content diff:', commentId, documentId);
 
-      // Get the target element - try to find where the diff actually exists
+      // Find the target element containing the diff
       let targetElement;
       if (documentId && documentId !== '') {
-        console.log('Looking for container with ID:', `document-${documentId}`);
         const container = document.querySelector(`#document-${documentId}.active`);
         // Try to find the element with the actual diff first
         const templateDiff = container?.querySelector(`.template-editor [data-comment-id="${commentId}"]`);
@@ -244,56 +339,27 @@ function findConflictingDiffs(targetText, htmlContent) {
           targetElement = container?.querySelector('.preview-content');
         } else if (sourceDiff) {
           targetElement = container?.querySelector('.source-editor');
-        } else {
-          targetElement = container?.querySelector('.template-editor'); // fallback
         }
       }
       
       if (!targetElement) {
         console.error('Target element not found for comment:', commentId);
-        console.log('Available elements with comment ID:', document.querySelectorAll(`[data-comment-id="${commentId}"]`));
-        console.log('Available containers:', document.querySelectorAll('[id^="document-"]'));
         return;
       }
       
-      // Debug: Check what we found
-      console.log('Accept diff - Target element found:', targetElement);
-      console.log('Accept diff - Target element type:', targetElement.tagName, targetElement.className);
+      // Get the AI suggestion from state to retrieve the complete new content
+      const { state } = await import('./state.js');
+      const comment = state.comments[commentId];
       
-      // Get the accepted text (from add elements)
-      const addElements = targetElement.querySelectorAll(`.inline-diff-add[data-comment-id="${commentId}"]`);
-      let acceptedText = Array.from(addElements).map(el => el.textContent).join('');
-      console.log('Accept diff - Add elements found:', addElements);
-      console.log('Accept diff - Accepted text from elements:', acceptedText);
-      
-      // Fallback: if no accepted text from elements, use diffData
-      if (!acceptedText && diffData && diffData.newText) {
-        acceptedText = diffData.newText;
-        console.log('Accept diff - Using fallback text from diffData:', acceptedText);
+      if (!comment || !comment.aiSuggestion || !comment.aiSuggestion.new_text) {
+        console.error('AI suggestion data not found for comment:', commentId);
+        return;
       }
       
-      // Find root containers and replace with accepted text
-      const containers = targetElement.querySelectorAll(`.inline-diff-container[data-comment-id="${commentId}"]`);
-
-      containers.forEach(container => {
-        const textNode = document.createTextNode(acceptedText);
-        container.parentNode.replaceChild(textNode, container);
-      });
-      
-      // Clean up any remaining diff elements (should be none since we use containers consistently)
-      const remaining = targetElement.querySelectorAll(`[data-comment-id="${commentId}"]`);
-      console.log('Remaining elements to clean up:', remaining.length);
-      remaining.forEach(el => el.remove());
-      
-      // For preview content, verify the change was applied correctly
-      if (targetElement.classList.contains('preview-content')) {
-        console.log('Preview content after diff application:', targetElement.innerHTML.substring(0, 200) + '...');
-      }
+      // Apply the complete new content (removing all diff markup)
+      targetElement.innerHTML = comment.aiSuggestion.new_text;
       
       // Clean up
-      if (window.currentInlineDiffs) {
-        delete window.currentInlineDiffs[commentId];
-      }
       removeInlineDiffActions();
       
       // Remove the comment/annotation
@@ -302,22 +368,12 @@ function findConflictingDiffs(targetText, htmlContent) {
         annotation.remove();
       }
       
-      // Extra cleanup: Remove any stray action popups
-      const strayPopups = document.querySelectorAll('.inline-diff-actions');
-      strayPopups.forEach(popup => popup.remove());
-      
-      // Import state to clean up comments
-      const { state } = await import('./state.js');
+      // Remove from state
       delete state.comments[commentId];
       
       // Import addMessageToUI
       const { addMessageToUI } = await import('./chat.js');
-      addMessageToUI('system', '✅ Change accepted and applied.');
-      
-      // Debug: Log what type of element we're working with
-      console.log('Accept diff - Target element classes:', targetElement.className);
-      console.log('Accept diff - Is template editor:', targetElement.classList.contains('template-editor'));
-      console.log('Accept diff - Is preview content:', targetElement.classList.contains('preview-content'));
+      addMessageToUI('system', '✅ AI suggestion accepted and applied to entire content.');
       
       // Trigger auto-save and template execution ONLY if it's template content
       if (targetElement.classList.contains('template-editor')) {

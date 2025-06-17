@@ -10,11 +10,11 @@ import { initSharing, resetSharingInitialization } from './sharing.js';
 import { initContentMapping, resetContentMappingInitialization } from './content-mapping.js';
 import { variablesManager } from './variables.js';
 import { hideAllAnnotations, clearAnnotationsForDocument, updateAnnotationsVisibility, refreshAnnotationElements } from './annotations.js';
-import { clearAllComments } from './comments.js';
 import { addMessageToUI } from './chat.js';
 import { getCurrentUser } from './auth.js';
 import { getTextContentWithLineBreaks } from './utils.js';
 import { setCurrentDocument } from './data-lake.js';
+import { clearAllComments } from './comments.js';
 
 // Export the class instead of singleton instance
 export class DocumentManager {
@@ -417,7 +417,7 @@ export class DocumentManager {
       elements.rejectSuggestionBtn = container.querySelector('.reject-suggestion');
       elements.diffCurrentContent = container.querySelector('.diff-current-content');
       elements.diffSuggestedContent = container.querySelector('.diff-suggested-content');
-      elements.clearCommentsBtn = container.querySelector('.clear-comments-btn');
+      // elements.clearCommentsBtn = container.querySelector('.clear-comments-btn');
       elements.contextFilesSection = container.querySelector('.context-files-section');
       elements.contextFilesList = container.querySelector('.context-files-list');
       elements.contentTitle = container.querySelector('#content-title') || container.querySelector('.content-title');
@@ -1263,10 +1263,9 @@ export class DocumentManager {
   // // Clear all user-specific data when switching users
   clearUserData() {
     console.log('Clearing user-specific document data...');
-    
-    // Clear all annotation windows first
+
     clearAllComments();
-    
+
     // Stop auto-save
     this.stopAutoSave();
     
@@ -1804,17 +1803,12 @@ export class DocumentManager {
       } else {
         console.error('Failed to load document from backend');
         addMessageToUI('system', '❌ Failed to load latest version of document');
-        
-        // Fallback to opening local version
-        await this.loadLocalDocumentAsFallback(documentId);
       }
       
     } catch (error) {
       console.error('Error loading document from backend:', error);
       addMessageToUI('system', '❌ Could not connect to backend. Opening local version.');
-      
-      // Fallback to opening local version
-      await this.loadLocalDocumentAsFallback(documentId);
+
     }
   }
 
@@ -1967,23 +1961,6 @@ export class DocumentManager {
   }
 
   /**
-   * Fallback method to load local document version
-   */
-  async loadLocalDocumentAsFallback(documentId) {
-    const doc = this.documents.get(documentId);
-    if (!doc) return;
-    
-    this.createTab(doc);
-    this.createDocumentContent(doc);
-    
-    // Switch to document first
-    this.switchToDocument(documentId);
-    
-    // Load content with retry mechanism
-    await this.loadDocumentContentWithRetry(documentId, doc, 1);
-  }
-
-  /**
    * Utility method for delays
    */
   delay(ms) {
@@ -2020,13 +1997,6 @@ export class DocumentManager {
         return;
       }
 
-      // Import required modules
-      const [{ state }, { createFloatingAnnotation, refreshAnnotationElements, removeFloatingAnnotation }, { refreshHighlightEventListeners, clearAllComments }] = await Promise.all([
-        import('./state.js'),
-        import('./annotations.js'),
-        import('./comments.js')
-      ]);
-
       // Clear the global comments state FIRST
       state.comments = {};
 
@@ -2054,8 +2024,6 @@ export class DocumentManager {
           highlight.replaceWith(document.createTextNode(highlight.textContent));
         });
       }
-      
-      // DON'T remove preview highlights - they're already correct from backend HTML!
 
       // NOW restore comments to global state
       if (documentData.comments) {
@@ -2152,13 +2120,6 @@ export class DocumentManager {
         if (!currentComment) {
           continue;
         }
-
-        console.log(`Processing comment ${commentId}:`, {
-          isAISuggestion: savedComment.isAISuggestion,
-          isTemplateSuggestion: savedComment.isTemplateSuggestion,
-          hasLineDiffs: !!savedComment.lineDiffs,
-          hasInlineDiffData: !!savedComment.inlineDiffData
-        });
 
         // Handle template suggestion comments first (they take priority over AI suggestions)
         if (savedComment.isTemplateSuggestion && savedComment.inlineDiffData) {
