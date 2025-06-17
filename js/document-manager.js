@@ -1933,6 +1933,7 @@ export class DocumentManager {
   verifyContentStillThere(templateEditor, expectedContent) {
     const childCount = templateEditor.childNodes.length;
     const textContent = templateEditor.textContent || '';
+    const htmlContent = templateEditor.innerHTML || '';
     const expectedLength = expectedContent ? expectedContent.length : 0;
     
     if (childCount === 0 && expectedLength > 0) {
@@ -1943,21 +1944,23 @@ export class DocumentManager {
       return { success: false, reason: 'No text content but content expected' };
     }
     
-    if (expectedLength > 0 && textContent.length < expectedLength * 0.8) {
-      return { success: false, reason: 'Content significantly shorter than expected' };
-    }
-    
-    // Extra check: verify first 50 characters match
+    // Compare HTML to HTML, not HTML to plain text!
     if (expectedLength > 0) {
-      const expectedPrefix = expectedContent.substring(0, 50);
-      const actualPrefix = textContent.substring(0, 50);
-      
-      if (expectedPrefix !== actualPrefix) {
-        return { success: false, reason: 'Content prefix mismatch' };
+      // If expected content contains HTML tags, compare with innerHTML
+      if (expectedContent.includes('<') && expectedContent.includes('>')) {
+        if (htmlContent.length < expectedLength * 0.7) {
+          return { success: false, reason: `HTML content too short: ${htmlContent.length} vs expected ${expectedLength}` };
+        }
+      } else {
+        // For plain text, compare with textContent
+        if (textContent.length < expectedLength * 0.8) {
+          return { success: false, reason: `Text content too short: ${textContent.length} vs expected ${expectedLength}` };
+        }
       }
     }
     
-    return { success: true, reason: 'Content verified as stable' };
+    // Simplified check: just ensure we have some content
+    return { success: true, reason: 'Content verified as present' };
   }
 
   /**
