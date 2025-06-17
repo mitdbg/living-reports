@@ -1,6 +1,6 @@
 // Chat System Module
 import { state, elements, windowId } from './state.js';
-import { sendToBackend } from './template-execution.js';
+import { getTextContentWithLineBreaks } from './utils.js';
 
 // Create window-specific storage for initialization flags and handlers
 const CHAT_KEY = `chat_${windowId}`;
@@ -55,6 +55,42 @@ function renderMarkdownForChat(text) {
     .replace(/^- (.*$)/gim, '<li>$1</li>')
     .replace(/^\d+\. (.*$)/gim, '<li>$1</li>')
     .replace(/\n/g, '<br>');
+}
+
+// Extract content from LLM response (for preview mode)
+function extractContentFromResponse(responseText) {
+  if (!responseText) return null;
+  
+  // Try to extract markdown code blocks first
+  const codeBlockMatch = responseText.match(/```(?:html|markdown|md)?\s*\n([\s\S]*?)\n```/i);
+  if (codeBlockMatch) {
+    return codeBlockMatch[1].trim();
+  }
+  
+  // Try to extract content between specific markers
+  const contentMatch = responseText.match(/(?:content|output|result):\s*\n([\s\S]*?)(?:\n\n|$)/i);
+  if (contentMatch) {
+    return contentMatch[1].trim();
+  }
+  
+  // If response is mostly HTML, return it as-is
+  if (responseText.includes('<') && responseText.includes('>')) {
+    return responseText;
+  }
+  
+  return null;
+}
+
+// Display extracted content in preview panel
+function displayContentInPreview(content) {
+  if (!elements.previewContent || !content) return;
+  
+  // Render markdown if it looks like markdown
+  if (content.includes('#') || content.includes('*') || content.includes('`')) {
+    elements.previewContent.innerHTML = renderMarkdownForChat(content);
+  } else {
+    elements.previewContent.innerHTML = content;
+  }
 }
 
 export function addMessageToUI(sender, text) {
@@ -115,7 +151,7 @@ export function removeWaitingIndicator() {
   }
 }
 
-function sendMessage() {
+async function sendMessage() {
   const message = elements.messageInput.value.trim();
   if (!message) return;
   
@@ -129,18 +165,14 @@ function sendMessage() {
   addWaitingIndicator();
   
   // Send to backend and get response
-  sendToBackendWithLoading(message);
-}
-
-async function sendToBackendWithLoading(message) {
   try {
-    // Call the original sendToBackend function without template suggestion flag
-    await sendToBackend(message, false);
+    // Call the chatToLLM function and wait for it to complete
+    await chatToLLM(message, false);
   } catch (error) {
-    console.error('Error in sendToBackendWithLoading:', error);
+    console.error('Error in chatToLLM:', error);
     addMessageToUI('system', 'Error: Failed to get response from server. Please try again.');
   } finally {
-    // Always remove the waiting indicator when done
+    // Always remove the waiting indicator when done (after LLM response)
     removeWaitingIndicator();
   }
 }
@@ -155,6 +187,58 @@ export function clearChatHistory() {
   
   // Add a confirmation message
   addMessageToUI('system', '🧹 Chat history cleared');
+}
+
+async function chatToLLM(message, suggestTemplate = false) {
+  try {
+    // Get all document content for complete context
+    const currentTemplateContent = elements.templateEditor ? elements.templateEditor.innerHTML : '';
+    const currentPreviewContent = elements.previewContent ? elements.previewContent.innerHTML : '';
+    
+    const response = await fetch('http://127.0.0.1:5000/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        user_message: message,
+        session_id: state.sessionId,
+        current_template: currentTemplateContent,
+        current_preview: currentPreviewContent,
+        current_mode: state.currentMode,
+        suggest_template: suggestTemplate
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Backend responded with status: ${response.status}`);
+    }
+
+    // Wait for the response to be parsed
+    const data = await response.json();
+
+    const responseText = data;
+    
+    // Add the raw response to chat
+    addMessageToUI('system', responseText);
+    
+    // If in preview mode, try to extract and display content smartly
+    if (state.currentMode === 'preview') {
+      const extractedContent = extractContentFromResponse(responseText);
+      if (extractedContent && extractedContent !== responseText) {
+        // Display extracted content in preview
+        displayContentInPreview(extractedContent);
+        // Add a note to chat that content was extracted
+        addMessageToUI('system', 'Content extracted and displayed in preview');
+      }
+    }
+    
+    // Response is fully processed at this point
+    
+  } catch (error) {
+    console.error('Error sending message:', error);
+    addMessageToUI('system', 'Error: Failed to get response from server. Make sure the Python backend is running.');
+    // Re-throw to let the caller handle it
+    throw error;
+  }
 }
 
 async function clearBackendChatHistory() {
@@ -172,6 +256,31 @@ async function clearBackendChatHistory() {
     }
   } catch (error) {
     console.warn('Backend not available for clearing chat history:', error);
+  }
+}
+
+// Simple function for users to chat with LLM including document context
+export async function sendChatMessage(userMessage) {
+  if (!userMessage || !userMessage.trim()) {
+    console.warn('Empty message provided to sendChatMessage');
+    return;
+  }
+  
+  // Add user message to UI
+  addMessageToUI('user', userMessage.trim());
+  
+  // Show waiting indicator
+  addWaitingIndicator();
+  
+  try {
+    // Send message with full document context and wait for completion
+    await chatToLLM(userMessage.trim(), false);
+  } catch (error) {
+    console.error('Error in sendChatMessage:', error);
+    addMessageToUI('system', 'Error: Failed to get response from AI assistant. Please try again.');
+  } finally {
+    // Always remove the waiting indicator after LLM response is processed
+    removeWaitingIndicator();
   }
 }
 

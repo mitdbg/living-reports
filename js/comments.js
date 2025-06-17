@@ -925,19 +925,6 @@ async function handleAskAI(selectedText, userRequest, mode = null) {
     
   } catch (error) {
     console.error(`Error getting ${actualMode} AI suggestion:`, error);
-    
-    // Special fallback for template mode
-    if (actualMode === 'template') {
-      try {
-        const { sendToBackend } = await import('./template-execution.js');
-        await sendToBackend(`Context: "${selectedText}"\n\nRequest: ${userRequest}\n\nPlease suggest improvements to the template.`, true);
-        addMessageToUI('system', '🔄 Analyzing template for AI suggestions (fallback after error)...');
-      } catch (fallbackError) {
-        addMessageToUI('system', `❌ Failed to get AI suggestion for template: ${error.message}`);
-      }
-    } else {
-      addMessageToUI('system', `❌ Failed to get AI suggestion for ${actualMode}: ${error.message}`);
-    }
   }
   
   // SAFEGUARD: Re-enable text selection handling after AI processing

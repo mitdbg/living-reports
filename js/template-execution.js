@@ -269,63 +269,6 @@ function setExecutionStatus(message, type) {
   }
 }
 
-// Backend communication for chat
-export async function sendToBackend(message, suggestTemplate = false) {
-  try {
-    const response = await fetch('http://127.0.0.1:5000/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        message,
-        session_id: state.sessionId,
-        current_template: getTextContentWithLineBreaks(elements.templateEditor),
-        current_output: state.currentOutput,
-        suggest_template: suggestTemplate
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error(`Backend responded with status: ${response.status}`);
-    }
-
-    const data = await response.json();
-    
-    // Check if this is a diff view response (template suggestion)
-    if (data.view_type === 'diff' && suggestTemplate) {
-      // Switch to diff view mode
-      await handleDiffViewResponse(data);
-    } else {
-      // Handle regular chat response
-      if (data.content || data.assistant_message || data.response) {
-        const responseText = data.content || data.assistant_message || data.response;
-        
-        // Add the raw response to chat
-        addMessageToUI('system', responseText);
-        
-        // If in preview mode, try to extract and display content smartly
-        if (state.currentMode === 'preview') {
-          const extractedContent = extractContentFromResponse(responseText);
-          if (extractedContent && extractedContent !== responseText) {
-            // Display extracted content in preview
-            displayContentInPreview(extractedContent);
-            // Add a note to chat that content was extracted
-            addMessageToUI('system', 'Content extracted and displayed in preview');
-          }
-        }
-      } else {
-        // If no content in response, show a fallback message
-        addMessageToUI('system', 'I received your message but didn\'t get a proper response from the server.');
-      }
-    }
-    
-  } catch (error) {
-    console.error('Error sending message:', error);
-    addMessageToUI('system', 'Error: Failed to get response from server. Make sure the Python backend is running.');
-    // Re-throw to let the caller handle it
-    throw error;
-  }
-}
-
 // Handle diff view response from template suggestions
 async function handleDiffViewResponse(data) {
   // First, show the LLM's response in chat if available

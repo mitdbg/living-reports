@@ -213,9 +213,11 @@ def handle_chat():
     """Handle chat messages using the ChatManager."""
     try:
         data = request.get_json()
-        user_message = data.get('message', '')
+        user_message = data.get('user_message', '')
         session_id = data.get('session_id', 'default')
         current_template = data.get('current_template', '')
+        current_preview = data.get('current_preview', '')
+        current_mode = data.get('current_mode', 'preview')
         suggest_template = data.get('suggest_template', False)  # Default to False for regular chat
         
         # Check if chat_manager is available (requires OpenAI API key)
@@ -236,7 +238,9 @@ def handle_chat():
         response = chat_manager.handle_chat_message(
             user_message=user_message,
             session_id=session_id,
-            current_template_text=current_template,
+            current_template=current_template,
+            current_preview=current_preview,
+            current_mode=current_mode,
             suggest_template=suggest_template
         )
         
