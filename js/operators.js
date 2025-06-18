@@ -1984,7 +1984,7 @@ function createOperatorsSidebarToolElement(tool) {
       <div class="sidebar-tool-description">${escapeHtml(tool.description || 'No description')}</div>
     </div>
     <div class="sidebar-tool-actions">
-      <button class="sidebar-tool-delete-btn" data-tool-id="${tool.id}" title="Delete tool">✕</button>
+      <button class="sidebar-tool-delete-btn" data-tool-id="${tool.id}" title="Delete tool">🗑️</button>
     </div>
   `;
   

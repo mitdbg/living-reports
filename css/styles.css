@@ -6300,7 +6300,8 @@ p {
 }
 
 .edit-variable-btn,
-.remove-variable-btn {
+.remove-variable-btn,
+.sidebar-tool-delete-btn {
   background: none;
   border: none;
   padding: 4px 8px;
@@ -6323,12 +6324,14 @@ p {
   transform: translateY(-1px);
 }
 
-.remove-variable-btn {
+.remove-variable-btn,
+.sidebar-tool-delete-btn {
   background: #f8f9fa;
   color: #dc3545;
 }
 
-.remove-variable-btn:hover {
+.remove-variable-btn:hover,
+.sidebar-tool-delete-btn:hover {
   background: #f5c6cb;
   transform: translateY(-1px);
 }
@@ -6916,6 +6919,9 @@ p {
 }
 
 .operators-sidebar-tool-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   padding: 12px;
   background: white;
   border: 1px solid #dee2e6;
@@ -6951,6 +6957,14 @@ p {
   font-size: 12px;
   color: #666;
   line-height: 1.4;
+}
+
+.sidebar-tool-content {
+  flex: 1;
+}
+
+.sidebar-tool-actions {
+  margin-left: 10px;
 }
 
 .operators-sidebar-tool-item.selected .sidebar-tool-description {
