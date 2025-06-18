@@ -26,9 +26,6 @@ class Operator {
     this.inputDatasets = options.inputDatasets || []; // Array of dataset references
     this.parameters = options.parameters || {};
     this.outputs = options.outputs || []; // Array of output assignments
-    this.outputConfig = options.outputConfig || ''; // Output configuration (e.g., output.name)
-    this.outputVariable = options.outputVariable || ''; // Variable name to store output
-    this.outputFormat = options.outputFormat || ['result'];
     this.lastExecuted = options.lastExecuted || null;
     this.output = options.output || null;
     this.status = options.status || 'idle'; // idle, running, completed, error
@@ -52,9 +49,6 @@ class Operator {
       inputDatasets: this.inputDatasets,
       parameters: this.parameters,
       outputs: this.outputs || [],
-      outputConfig: this.outputConfig,
-      outputVariable: this.outputVariable,
-      outputFormat: this.outputFormat,
       lastExecuted: this.lastExecuted,
       output: this.output,
       status: this.status,
@@ -173,9 +167,7 @@ class OperatorManager {
       instance.error = null;
 
       // Store outputs in variables if specified
-      const outputsToProcess = instance.outputs && instance.outputs.length > 0 
-        ? instance.outputs 
-        : (instance.outputVariable ? [{ config: instance.outputConfig || '', variable: instance.outputVariable }] : []);
+      const outputsToProcess = instance.outputs || [];
       
       // Only process outputs if execution was successful (result has data, not error)
       if (result && typeof result === 'object' && !result.error && result.status !== 'error') {
@@ -1124,17 +1116,8 @@ function populateOutputsForm(instance) {
   // Clear existing output fields first
   clearOutputsForm();
   
-  // Handle backward compatibility
-  let outputs = [];
-  
-  if (instance.outputs && Array.isArray(instance.outputs)) {
-    outputs = instance.outputs;
-  } else if (instance.outputConfig || instance.outputVariable) {
-    outputs = [{
-      config: instance.outputConfig || '',
-      variable: instance.outputVariable || ''
-    }];
-  }
+  // Get outputs array
+  const outputs = instance.outputs || [];
   
   // Add output fields for each assignment
   outputs.forEach(output => {
@@ -1404,9 +1387,6 @@ function createInstanceElement(instance) {
       `${output.config || 'result'} → \${${output.variable}}`
     );
     outputText = `Output: ${outputDescriptions.join(', ')}`;
-  } else if (instance.outputVariable) {
-    // Backward compatibility
-    outputText = `Output: ${instance.outputConfig || 'result'} → \${${instance.outputVariable}}`;
   }
 
   return `
@@ -1716,9 +1696,7 @@ function saveInstance() {
     toolName: toolName,
     inputDatasets: [],
     parameters: parameters,
-    outputs: outputs,
-    outputConfig: outputs.length > 0 ? outputs[0].config : '',
-    outputVariable: outputs.length > 0 ? outputs[0].variable : ''
+    outputs: outputs
   };
 
   try {
@@ -1870,21 +1848,13 @@ function identifyRequiredOperators(requiredVariables) {
 function getOperatorOutputVariables(operator) {
   const outputVars = [];
   
-  // Handle new format: array of outputs
+  // Handle outputs array
   if (operator.outputs && Array.isArray(operator.outputs)) {
     operator.outputs.forEach(output => {
       if (output.variable && output.variable.trim()) {
         outputVars.push(output.variable.trim());
       }
     });
-  }
-  
-  // Handle legacy format: single output
-  if (operator.outputVariable && operator.outputVariable.trim()) {
-    const legacyVar = operator.outputVariable.trim();
-    if (!outputVars.includes(legacyVar)) {
-      outputVars.push(legacyVar);
-    }
   }
   
   return outputVars;
