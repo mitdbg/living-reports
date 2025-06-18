@@ -246,7 +246,7 @@ class VariablesManager {
         <div class="dialog-content">
           <div class="dialog-header">
             <h3>✨ Create Variable</h3>
-            <div class="ai-indicator" id="ai-indicator" style="display: none;">
+            <div class="ai-indicator" id="variable-ai-indicator" style="display: none;">
               <span class="ai-spinner">🤖</span>
               <span class="ai-text">AI is analyzing...</span>
             </div>
@@ -526,7 +526,7 @@ class VariablesManager {
     if (!this.variableDialog) return;
     
     // Show AI indicator
-    const aiIndicator = this.variableDialog.querySelector('#ai-indicator');
+    const aiIndicator = this.variableDialog.querySelector('#variable-ai-indicator');
     if (aiIndicator) {
       aiIndicator.style.display = 'flex';
     }
@@ -555,7 +555,7 @@ class VariablesManager {
     if (!this.variableDialog) return;
     
     // Hide AI indicator
-    const aiIndicator = this.variableDialog.querySelector('#ai-indicator');
+    const aiIndicator = this.variableDialog.querySelector('#variable-ai-indicator');
     if (aiIndicator) {
       aiIndicator.style.display = 'none';
     }
