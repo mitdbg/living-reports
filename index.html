@@ -330,6 +330,146 @@ def calculate():
             </div>
           </div>
           
+          <!-- Operators Panel (embedded) -->
+          <div class="operators-panel" style="display: none;">
+            <div class="operators-header">
+              <h3>🔧 Operators Management</h3>
+              <div class="operators-nav">
+                <span class="nav-breadcrumb">Operators</span>
+                <button class="btn-secondary close-operators-btn">✕ Close</button>
+              </div>
+            </div>
+            
+            <!-- Operators List View -->
+            <div class="operators-list-view">
+              <!-- Left sidebar - Tools list -->
+              <div class="operators-tools-sidebar">
+                <div class="tools-sidebar-header">
+                  <h4>🛠️ Available Tools</h4>
+                  <div class="tools-sidebar-search">
+                    <input type="text" id="operators-tools-search" placeholder="Search tools..." />
+                  </div>
+                  <button class="btn-primary add-tool-btn-sidebar">➕ Add Tool</button>
+                </div>
+                
+                <div class="tools-sidebar-content">
+                  <div class="tools-sidebar-items" id="operators-tools-items">
+                    <div class="no-tools-message" id="operators-no-tools-message">
+                      <p>No tools available.</p>
+                      <p>Click "Add Tool" to create your first tool.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Right area - Operators/Instances -->
+              <div class="operators-instances-area">
+                <div class="instances-header">
+                  <h4>📋 Operator Instances</h4>
+                </div>
+                
+                <div class="instances-content-area">
+                  <div class="instances-items" id="instances-items">
+                    <div class="no-instances-message" id="no-instances-message">
+                      <p>No Operator Instances yet.</p>
+                      <p>Select a tool from the left and click "Add Instance" to create.</p>
+                    </div>
+                  </div>
+                </div>
+                
+                <div class="instances-actions">
+                  <button class="btn-primary add-instance-btn">➕ Add Instance</button>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Tool Editor View (initially hidden) -->
+            <div class="operators-tool-editor-view" style="display: none;">
+              <div class="tool-editor-header">
+                <button class="btn-secondary back-to-operators-btn">← Back to Operators</button>
+                <h4 id="tool-editor-title">Add New Tool</h4>
+              </div>
+              
+              <div class="tool-editor-form">
+                <div class="form-group">
+                  <label for="embedded-tool-name">Tool Name:</label>
+                  <input type="text" id="embedded-tool-name" placeholder="Enter tool name..." />
+                </div>
+                
+                <div class="form-group">
+                  <label for="embedded-tool-description">Description (optional):</label>
+                  <input type="text" id="embedded-tool-description" placeholder="Brief description of what this tool does..." />
+                </div>
+                
+                <div class="form-group">
+                  <label for="embedded-tool-code">Source Code:</label>
+                  <div id="embedded-tool-code" class="source-editor" contenteditable="true" data-placeholder="# Enter your source code here...
+import math
+
+def calculate():
+    return 42"></div>
+                </div>
+              </div>
+              
+              <div class="tool-editor-actions">
+                <button class="btn-primary" id="save-embedded-tool-btn">Save Tool</button>
+                <button class="btn-secondary" id="cancel-embedded-tool-btn">Cancel</button>
+              </div>
+            </div>
+            
+            <!-- Instance Editor View (initially hidden) -->
+            <div class="operators-instance-editor-view" style="display: none;">
+              <div class="instance-editor-header">
+                <button class="btn-secondary back-to-operators-btn">← Back to Operators</button>
+                <h4 id="instance-editor-title">Configure Operator Instance</h4>
+              </div>
+              
+              <div class="instance-editor-form">
+                <div class="form-group">
+                  <label for="embedded-instance-name">Instance Name:</label>
+                  <input type="text" id="embedded-instance-name" placeholder="Enter instance name..." />
+                </div>
+                
+                <div class="form-group">
+                  <label for="embedded-instance-tool">Tool:</label>
+                  <select id="embedded-instance-tool">
+                    <option value="">Select a tool...</option>
+                  </select>
+                </div>
+                
+                <div class="form-group">
+                  <label>Parameters:</label>
+                  <div class="parameters-container">
+                    <div class="instance-parameters" id="embedded-instance-parameters">
+                      <!-- Parameters will be added here -->
+                    </div>
+                    <button type="button" class="btn-secondary add-parameter-btn">➕ Add Parameter</button>
+                    <small style="color: #666; font-size: 12px; margin-top: 5px; display: block;">
+                      Each parameter can be a dataset from Data Lake or a literal value (e.g., false, 123, "text")
+                    </small>
+                  </div>
+                </div>
+                
+                <div class="form-group">
+                  <label>Output Configuration:</label>
+                  <div class="output-config-container">
+                    <div class="instance-outputs" id="embedded-instance-outputs">
+                      <!-- Output assignments will be added here -->
+                    </div>
+                    <button type="button" class="btn-secondary add-output-btn">➕ Add Output Assignment</button>
+                    <small style="color: #666; font-size: 12px; margin-top: 5px; display: block;">
+                      Use "output" for the full result, or "output.field" to access specific fields from dictionary outputs
+                    </small>
+                  </div>
+                </div>
+              </div>
+              
+              <div class="instance-editor-actions">
+                <button class="btn-primary" id="save-embedded-instance-btn">Save Instance</button>
+                <button class="btn-secondary" id="cancel-embedded-instance-btn">Cancel</button>
+              </div>
+            </div>
+          </div>
 
           
           <!-- Preview mode -->
