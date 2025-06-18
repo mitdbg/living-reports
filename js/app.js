@@ -96,11 +96,11 @@ async function initializeCoreModules() {
     initContentMapping();
     initVerification();
     initDataLake(); // Initialize Data Lake functionality
-    initTools(); // Initialize Tools functionality
+    await initTools(); // Initialize Tools functionality
     initOperators(); // Initialize Operators functionality
     
     // Add sample tools for demonstration (only if no tools exist)
-    addSampleTools();
+    await addSampleTools();
     
     console.log('Core modules initialized successfully');
   } catch (error) {

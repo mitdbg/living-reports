@@ -6,11 +6,10 @@ class ToolsManager {
   constructor() {
     this.tools = [];
     this.currentEditingTool = null;
-    this.init();
   }
 
-  init() {
-    this.loadTools();
+  async init() {
+    await this.loadTools();
     this.setupEventListeners();
   }
 
@@ -154,7 +153,7 @@ class ToolsManager {
     }
   }
 
-  saveTool() {
+  async saveTool() {
     const nameInput = document.getElementById('tool-name');
     const descriptionInput = document.getElementById('tool-description');
     const codeInput = document.getElementById('tool-code');
@@ -207,7 +206,7 @@ class ToolsManager {
       addMessageToUI('system', `Tool "${name}" added successfully.`);
     }
     
-    this.saveTools();
+    await this.saveTools();
     this.refreshToolsList();
     this.hideAddToolDialog();
     
@@ -260,12 +259,12 @@ class ToolsManager {
     }
   }
 
-  removeTool(toolId) {
+  async removeTool(toolId) {
     const tool = this.tools.find(t => t.id === toolId);
     if (tool) {
       if (confirm(`Are you sure you want to delete the tool "${tool.name}"?`)) {
         this.tools = this.tools.filter(t => t.id !== toolId);
-        this.saveTools();
+        await this.saveTools();
         this.refreshToolsList();
         addMessageToUI('system', `Tool "${tool.name}" deleted successfully.`);
         
@@ -381,20 +380,37 @@ class ToolsManager {
     return div.innerHTML;
   }
 
-  saveTools() {
+  async saveTools() {
     try {
-      localStorage.setItem('tools_data', JSON.stringify(this.tools));
+      const response = await fetch('http://127.0.0.1:5000/api/tools', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ tools: this.tools })
+      });
+      
+      const result = await response.json();
+      if (!result.success) {
+        console.error('Error saving tools:', result.error);
+        addMessageToUI('system', `Error saving tools: ${result.error}`);
+      }
     } catch (error) {
       console.error('Error saving tools:', error);
-      addMessageToUI('system', 'Error saving tools to storage.');
+      addMessageToUI('system', 'Error saving tools to backend.');
     }
   }
 
-  loadTools() {
+  async loadTools() {
     try {
-      const saved = localStorage.getItem('tools_data');
-      if (saved) {
-        this.tools = JSON.parse(saved);
+      const response = await fetch('http://127.0.0.1:5000/api/tools');
+      const result = await response.json();
+      
+      if (result.success) {
+        this.tools = result.tools || [];
+      } else {
+        console.error('Error loading tools:', result.error);
+        this.tools = [];
       }
     } catch (error) {
       console.error('Error loading tools:', error);
@@ -406,8 +422,9 @@ class ToolsManager {
 // Initialize tools manager
 let toolsManager;
 
-export function initTools() {
+export async function initTools() {
   toolsManager = new ToolsManager();
+  await toolsManager.init();
   
   // Make toolsManager globally available
   window.toolsManager = toolsManager;

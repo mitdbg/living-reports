@@ -254,17 +254,18 @@ class OperatorManager {
     }
   }
 
-  getTool(toolId) {
+  async getTool(toolId) {
     // Get tool from the existing tools system
     if (window.toolsManager) {
       return window.toolsManager.tools.find(tool => tool.id === toolId);
     }
     
-    // Fallback to localStorage
+    // Fallback to API
     try {
-      const toolsData = localStorage.getItem('tools_data');
-      if (toolsData) {
-        const tools = JSON.parse(toolsData);
+      const response = await fetch('/api/tools');
+      const result = await response.json();
+      if (result.success) {
+        const tools = result.tools || [];
         return tools.find(tool => tool.id === toolId);
       }
     } catch (error) {
@@ -723,7 +724,7 @@ function hideAddInstanceDialog() {
   }
 }
 
-function populateToolsDropdown() {
+async function populateToolsDropdown() {
   const select = document.getElementById('instance-tool');
   if (!select) return;
 
@@ -735,11 +736,12 @@ function populateToolsDropdown() {
   if (window.toolsManager) {
     tools = window.toolsManager.tools;
   } else {
-    // Fallback to localStorage
+    // Fallback to API
     try {
-      const toolsData = localStorage.getItem('tools_data');
-      if (toolsData) {
-        tools = JSON.parse(toolsData);
+      const response = await fetch('/api/tools');
+      const result = await response.json();
+      if (result.success) {
+        tools = result.tools || [];
       }
     } catch (error) {
       console.error('Error loading tools:', error);
@@ -1574,7 +1576,7 @@ async function executeOperatorsSequence(operators) {
 }
 
 // Tools Sidebar Integration Functions for Operators Dialog
-function refreshOperatorsToolsList() {
+async function refreshOperatorsToolsList() {
   const toolsContainer = document.getElementById('operators-tools-items');
   if (!toolsContainer) return;
   
@@ -1583,11 +1585,12 @@ function refreshOperatorsToolsList() {
   if (window.toolsManager) {
     tools = window.toolsManager.tools;
   } else {
-    // Fallback to localStorage
+    // Fallback to API
     try {
-      const toolsData = localStorage.getItem('tools_data');
-      if (toolsData) {
-        tools = JSON.parse(toolsData);
+      const response = await fetch('/api/tools');
+      const result = await response.json();
+      if (result.success) {
+        tools = result.tools || [];
       }
     } catch (error) {
       console.error('Error loading tools:', error);
@@ -1666,50 +1669,55 @@ function setupToolsSidebarEventListeners() {
         window.toolsManager.editTool(toolId);
       } else {
         // Fallback: try to get tool data and show edit dialog
-        let tools = [];
-        try {
-          const toolsData = localStorage.getItem('tools_data');
-          if (toolsData) {
-            tools = JSON.parse(toolsData);
+        async function showEditDialogFallback() {
+          let tools = [];
+          try {
+            const response = await fetch('/api/tools');
+            const result = await response.json();
+            if (result.success) {
+              tools = result.tools || [];
+            }
+          } catch (error) {
+            console.error('Error loading tools:', error);
           }
-        } catch (error) {
-          console.error('Error loading tools:', error);
+          
+          const tool = tools.find(t => t.id === toolId);
+          if (tool) {
+            // Show the add tool dialog with this tool's data for editing
+            const addToolDialog = document.getElementById('add-tool-dialog');
+            if (addToolDialog) {
+              // Populate the form with tool data
+              const nameInput = document.getElementById('tool-name');
+              const descriptionInput = document.getElementById('tool-description');
+              const codeInput = document.getElementById('tool-code');
+              
+              if (nameInput) nameInput.value = tool.name;
+              if (descriptionInput) descriptionInput.value = tool.description || '';
+              if (codeInput) {
+                // Set code content with proper line break handling
+                if (window.toolsManager) {
+                  window.toolsManager.setCodeEditorContent(codeInput, tool.code);
+                  window.toolsManager.currentEditingTool = tool;
+                } else {
+                  // Fallback: manually set the content
+                  const htmlContent = tool.code ? tool.code.replace(/\n/g, '<br>') : '';
+                  codeInput.innerHTML = htmlContent;
+                  
+                  // Store the tool data for manual saving later
+                  codeInput.dataset.editingToolId = tool.id;
+                }
+              }
+              
+              // Update dialog title
+              const title = addToolDialog.querySelector('.dialog-header h3');
+              if (title) title.textContent = '✏️ Edit Tool';
+              
+              addToolDialog.style.display = 'flex';
+            }
+          }
         }
         
-        const tool = tools.find(t => t.id === toolId);
-        if (tool) {
-          // Show the add tool dialog with this tool's data for editing
-          const addToolDialog = document.getElementById('add-tool-dialog');
-          if (addToolDialog) {
-            // Populate the form with tool data
-            const nameInput = document.getElementById('tool-name');
-            const descriptionInput = document.getElementById('tool-description');
-            const codeInput = document.getElementById('tool-code');
-            
-            if (nameInput) nameInput.value = tool.name;
-            if (descriptionInput) descriptionInput.value = tool.description || '';
-            if (codeInput) {
-              // Set code content with proper line break handling
-              if (window.toolsManager) {
-                window.toolsManager.setCodeEditorContent(codeInput, tool.code);
-                window.toolsManager.currentEditingTool = tool;
-              } else {
-                // Fallback: manually set the content
-                const htmlContent = tool.code ? tool.code.replace(/\n/g, '<br>') : '';
-                codeInput.innerHTML = htmlContent;
-                
-                // Store the tool data for manual saving later
-                codeInput.dataset.editingToolId = tool.id;
-              }
-            }
-            
-            // Update dialog title
-            const title = addToolDialog.querySelector('.dialog-header h3');
-            if (title) title.textContent = '✏️ Edit Tool';
-            
-            addToolDialog.style.display = 'flex';
-          }
-        }
+        showEditDialogFallback();
       }
     }
   });

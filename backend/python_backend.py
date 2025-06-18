@@ -201,6 +201,38 @@ def save_variables(variables):
 # Initialize variables storage
 variables_storage = load_variables()
 
+# Persistent storage for Tools
+TOOLS_FILE = os.path.join(DATABASE_DIR, 'tools.json')
+
+def load_tools():
+    """Load all tools from file"""
+    try:
+        ensure_database_dir()
+        if os.path.exists(TOOLS_FILE):
+            with open(TOOLS_FILE, 'r') as f:
+                tools = json.load(f)
+                logger.info(f"🔧 Loaded {len(tools)} tools from {TOOLS_FILE}")
+                return tools
+        else:
+            logger.info("🔧 No existing tools file found. Starting fresh.")
+            return []
+    except Exception as e:
+        logger.error(f"❌ Error loading tools: {e}")
+        return []
+
+def save_tools(tools):
+    """Save all tools to file"""
+    try:
+        ensure_database_dir()
+        with open(TOOLS_FILE, 'w') as f:
+            json.dump(tools, f, indent=2)
+        logger.info(f"💾 Saved {len(tools)} tools to {TOOLS_FILE}")
+    except Exception as e:
+        logger.error(f"❌ Error saving tools: {e}")
+
+# Initialize tools storage
+tools_storage = load_tools()
+
 @app.before_request
 def log_request():
     """Log all incoming requests for debugging."""
@@ -1208,6 +1240,100 @@ JSON:"""
             'error': str(e)
         }), 500
 
+# Tools API endpoints
+@app.route('/api/tools', methods=['GET'])
+def get_tools():
+    """Get all tools"""
+    try:
+        return jsonify({
+            'success': True,
+            'tools': tools_storage
+        })
+    except Exception as e:
+        logger.error(f"❌ Error getting tools: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/tools', methods=['POST'])
+def save_tools_endpoint():
+    """Save tools to file"""
+    try:
+        data = request.get_json()
+        
+        if not data or 'tools' not in data:
+            return jsonify({
+                'success': False,
+                'error': 'Missing tools data'
+            }), 400
+        
+        tools = data['tools']
+        
+        # Validate tools structure
+        if not isinstance(tools, list):
+            return jsonify({
+                'success': False,
+                'error': 'Tools must be an array'
+            }), 400
+        
+        # Validate each tool has required fields
+        for tool in tools:
+            if not isinstance(tool, dict) or 'id' not in tool or 'name' not in tool:
+                return jsonify({
+                    'success': False,
+                    'error': 'Each tool must have id and name fields'
+                }), 400
+        
+        # Update global storage
+        global tools_storage
+        tools_storage = tools
+        
+        # Save to file
+        save_tools(tools)
+        
+        return jsonify({
+            'success': True,
+            'message': f'Successfully saved {len(tools)} tools'
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Error saving tools: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/tools/<tool_id>', methods=['DELETE'])
+def delete_tool(tool_id):
+    """Delete a specific tool"""
+    try:
+        global tools_storage
+        
+        # Find and remove the tool
+        original_count = len(tools_storage)
+        tools_storage = [tool for tool in tools_storage if tool.get('id') != tool_id]
+        
+        if len(tools_storage) == original_count:
+            return jsonify({
+                'success': False,
+                'error': 'Tool not found'
+            }), 404
+        
+        # Save updated tools
+        save_tools(tools_storage)
+        
+        return jsonify({
+            'success': True,
+            'message': f'Successfully deleted tool {tool_id}'
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Error deleting tool: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 if __name__ == '__main__':
     print("Starting Python backend server...")
