@@ -16,7 +16,7 @@ import { initVerification } from './verification.js';
 import { initDataLake } from './data-lake.js';
 import { initTools } from './tools.js';
 import { addSampleTools } from './sample-tools.js';
-import { initOperators } from './code-instances.js';
+import { initOperators } from './operators.js';
 import './variables.js'; // Import variables module to initialize it
 
 let documentManager;

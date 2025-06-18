@@ -165,27 +165,57 @@ def calculate():
   </div>
 
   <!-- Code Instances Dialog -->
-  <div class="code-instances-dialog" id="code-instances-dialog" style="display: none;">
+  <div class="operators-dialog" id="operators-dialog" style="display: none;">
     <div class="dialog-overlay">
-      <div class="dialog-content instances-content">
+      <div class="dialog-content operators-content">
         <div class="dialog-header">
-          <h3>🔧 Data Pipelines</h3>
+          <h3>🔧 Operators Setup</h3>
           <button class="close-btn" id="close-instances-btn">✕</button>
         </div>
         
+        <div class="operators-main-content">
+          <!-- Left sidebar - Tools list -->
+          <div class="operators-tools-sidebar">
+            <div class="tools-sidebar-header">
+              <h4>🛠️ Available Tools</h4>
+              <div class="tools-sidebar-search">
+                <input type="text" id="operators-tools-search" placeholder="Search tools..." />
+              </div>
+              <button class="btn-primary add-tool-btn-sidebar">➕ Add Tool</button>
+            </div>
+            
+            <div class="tools-sidebar-content">
+              <div class="tools-sidebar-items" id="operators-tools-items">
+                <div class="no-tools-message" id="operators-no-tools-message">
+                  <p>No tools available.</p>
+                  <p>Click "Add Tool" to create your first tool.</p>
+                </div>
+              </div>
+            </div>
+          </div>
 
-        
-        <div class="instances-content-area">
-          <div class="instances-items" id="instances-items">
-            <div class="no-instances-message" id="no-instances-message">
-              <p>No Data Pipelines yet.</p>
-              <p>Click "Add Data Pipelines" to create.</p>
+          <!-- Right area - Operators/Instances -->
+          <div class="operators-instances-area">
+            <div class="instances-header">
+              <h4>📋 Data Pipeline Instances</h4>
+            </div>
+            
+            <div class="instances-content-area">
+              <div class="instances-items" id="instances-items">
+                <div class="no-instances-message" id="no-instances-message">
+                  <p>No Data Pipelines yet.</p>
+                  <p>Select a tool from the left and click "Add Instance" to create.</p>
+                </div>
+              </div>
+            </div>
+            
+            <div class="instances-actions">
+              <button class="btn-primary add-instance-btn">➕ Add Instance</button>
             </div>
           </div>
         </div>
         
         <div class="dialog-actions">
-          <button class="btn-primary add-instance-btn">➕ Add Instance</button>
           <button class="btn-secondary" id="close-instances-bottom-btn">Close</button>
         </div>
       </div>
@@ -270,8 +300,8 @@ def calculate():
             <button class="clear-comments-btn mode-toggle" style="display: none;">Clear Comments</button>
             <button class="data-lake-btn mode-toggle">🗄️ Data Lake</button>
             <button class="variables-btn mode-toggle">📊 Vars</button>
-            <button class="tools-btn mode-toggle">🛠️ Tools</button>
-            <button class="code-instances-btn mode-toggle">🔧 Data Pipelines</button>
+
+            <button class="operators-btn mode-toggle">🔧 Operators</button>
             <div class="mode-buttons">
               <button class="mode-btn source-mode-btn" data-mode="source" title="Source Code" style="display: none;">💻</button>
               <button class="mode-btn template-mode-btn active" data-mode="template" title="Template">📝</button>

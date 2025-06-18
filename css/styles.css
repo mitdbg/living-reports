@@ -4939,7 +4939,7 @@ p {
   width: 100%;
   height: 100%;
   background: rgba(0, 0, 0, 0.5);
-  z-index: 1001;
+  z-index: 10000;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -5591,7 +5591,7 @@ p {
 }
 
 /* Code Instances Dialog */
-.code-instances-dialog {
+.operators-dialog {
   position: fixed;
   top: 0;
   left: 0;
@@ -5601,7 +5601,7 @@ p {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 10000;
+  z-index: 9000;
 }
 
 .instances-content {
@@ -6506,3 +6506,178 @@ p {
 }
 
 /* Original styles below */
+
+/* Operators Dialog - Merged Tools & Instances Layout */
+.operators-content {
+  width: 95%;
+  max-width: 1200px;
+  max-height: 90vh;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.operators-main-content {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.operators-tools-sidebar {
+  width: 350px;
+  background: #f8f9fa;
+  border-right: 1px solid #e9ecef;
+  display: flex;
+  flex-direction: column;
+}
+
+.tools-sidebar-header {
+  padding: 20px;
+  border-bottom: 1px solid #e9ecef;
+  background: white;
+}
+
+.tools-sidebar-header h4 {
+  margin: 0 0 15px 0;
+  color: #495057;
+  font-weight: 600;
+}
+
+.tools-sidebar-search {
+  margin-bottom: 15px;
+}
+
+.tools-sidebar-search input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.tools-sidebar-search input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
+}
+
+.add-tool-btn-sidebar {
+  width: 100%;
+  padding: 10px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.add-tool-btn-sidebar:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.tools-sidebar-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px;
+}
+
+.tools-sidebar-items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.operators-sidebar-tool-item {
+  background: white;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  padding: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.operators-sidebar-tool-item:hover {
+  border-color: #667eea;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.15);
+}
+
+.operators-sidebar-tool-item.selected {
+  background: #667eea;
+  color: white;
+  border-color: #667eea;
+}
+
+.operators-sidebar-tool-item.filtered-out {
+  display: none;
+}
+
+.sidebar-tool-name {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.sidebar-tool-description {
+  font-size: 12px;
+  color: #6c757d;
+  line-height: 1.3;
+}
+
+.operators-sidebar-tool-item.selected .sidebar-tool-description {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.operators-instances-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.instances-header {
+  padding: 20px;
+  border-bottom: 1px solid #e9ecef;
+  background: white;
+}
+
+.instances-header h4 {
+  margin: 0;
+  color: #495057;
+  font-weight: 600;
+}
+
+.instances-actions {
+  padding: 15px 20px;
+  border-top: 1px solid #e9ecef;
+  background: #f8f9fa;
+}
+
+.instances-actions .add-instance-btn {
+  background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.instances-actions .add-instance-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(40, 167, 69, 0.3);
+}
+
+.instances-actions .add-instance-btn:disabled {
+  background: #6c757d;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}

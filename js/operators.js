@@ -595,7 +595,7 @@ function setupAutoStyling() {
 function setupOperatorEventListeners() {
   // Listen for operator buttons
   document.addEventListener('click', (event) => {
-    if (event.target.matches('.code-instances-btn') || event.target.closest('.code-instances-btn')) {
+    if (event.target.matches('.operators-btn') || event.target.closest('.operators-btn')) {
       console.log(`[${windowId}] operators button clicked`);
       showOperatorsDialog();
     }
@@ -654,19 +654,23 @@ function setupOperatorEventListeners() {
       insertInstanceReference(instanceId);
     }
   });
+  
+  // Setup tools sidebar event listeners
+  setupToolsSidebarEventListeners();
 }
 
 // UI Functions
 function showOperatorsDialog() {
-  const dialog = document.getElementById('code-instances-dialog');
+  const dialog = document.getElementById('operators-dialog');
   if (dialog) {
     dialog.style.display = 'block';
     refreshInstancesList();
+    refreshOperatorsToolsList(); // Populate the tools sidebar
   }
 }
 
 function hideOperatorsDialog() {
-  const dialog = document.getElementById('code-instances-dialog');
+  const dialog = document.getElementById('operators-dialog');
   if (dialog) {
     dialog.style.display = 'none';
   }
@@ -1569,10 +1573,175 @@ async function executeOperatorsSequence(operators) {
   return results;
 }
 
+// Tools Sidebar Integration Functions for Operators Dialog
+function refreshOperatorsToolsList() {
+  const toolsContainer = document.getElementById('operators-tools-items');
+  if (!toolsContainer) return;
+  
+  // Get available tools
+  let tools = [];
+  if (window.toolsManager) {
+    tools = window.toolsManager.tools;
+  } else {
+    // Fallback to localStorage
+    try {
+      const toolsData = localStorage.getItem('tools_data');
+      if (toolsData) {
+        tools = JSON.parse(toolsData);
+      }
+    } catch (error) {
+      console.error('Error loading tools:', error);
+    }
+  }
+  
+  // Clear existing items
+  toolsContainer.innerHTML = '';
+  
+  if (tools.length === 0) {
+    const noToolsDiv = document.getElementById('operators-no-tools-message');
+    if (noToolsDiv) {
+      noToolsDiv.style.display = 'block';
+    }
+    return;
+  }
+  
+  // Hide no tools message
+  const noToolsDiv = document.getElementById('operators-no-tools-message');
+  if (noToolsDiv) {
+    noToolsDiv.style.display = 'none';
+  }
+  
+  // Create tool items
+  tools.forEach(tool => {
+    const toolElement = createOperatorsSidebarToolElement(tool);
+    toolsContainer.appendChild(toolElement);
+  });
+}
+
+function createOperatorsSidebarToolElement(tool) {
+  const toolDiv = document.createElement('div');
+  toolDiv.className = 'operators-sidebar-tool-item';
+  toolDiv.dataset.toolId = tool.id;
+  
+  toolDiv.innerHTML = `
+    <div class="sidebar-tool-name">${escapeHtml(tool.name)}</div>
+    <div class="sidebar-tool-description">${escapeHtml(tool.description || 'No description')}</div>
+  `;
+  
+  return toolDiv;
+}
+
+function setupToolsSidebarEventListeners() {
+  // Tools sidebar search
+  document.addEventListener('input', (e) => {
+    if (e.target.id === 'operators-tools-search') {
+      filterOperatorsTools(e.target.value);
+    }
+  });
+  
+  // Add tool button in sidebar
+  document.addEventListener('click', (e) => {
+    if (e.target.classList.contains('add-tool-btn-sidebar')) {
+      // Import and use tools manager
+      if (window.toolsManager && window.toolsManager.showAddToolDialog) {
+        window.toolsManager.showAddToolDialog();
+      } else {
+        // Fallback: try to find tools module functions
+        const addToolBtn = document.querySelector('.add-tool-btn');
+        if (addToolBtn) {
+          addToolBtn.click();
+        }
+      }
+    }
+  });
+  
+  // Tool selection in sidebar - show tool details dialog
+  document.addEventListener('click', (e) => {
+    const toolItem = e.target.closest('.operators-sidebar-tool-item');
+    if (toolItem) {
+      const toolId = toolItem.dataset.toolId;
+      
+      // Get the tool and show edit dialog
+      if (window.toolsManager) {
+        window.toolsManager.editTool(toolId);
+      } else {
+        // Fallback: try to get tool data and show edit dialog
+        let tools = [];
+        try {
+          const toolsData = localStorage.getItem('tools_data');
+          if (toolsData) {
+            tools = JSON.parse(toolsData);
+          }
+        } catch (error) {
+          console.error('Error loading tools:', error);
+        }
+        
+        const tool = tools.find(t => t.id === toolId);
+        if (tool) {
+          // Show the add tool dialog with this tool's data for editing
+          const addToolDialog = document.getElementById('add-tool-dialog');
+          if (addToolDialog) {
+            // Populate the form with tool data
+            const nameInput = document.getElementById('tool-name');
+            const descriptionInput = document.getElementById('tool-description');
+            const codeInput = document.getElementById('tool-code');
+            
+            if (nameInput) nameInput.value = tool.name;
+            if (descriptionInput) descriptionInput.value = tool.description || '';
+            if (codeInput) {
+              // Set code content with proper line break handling
+              if (window.toolsManager) {
+                window.toolsManager.setCodeEditorContent(codeInput, tool.code);
+                window.toolsManager.currentEditingTool = tool;
+              } else {
+                // Fallback: manually set the content
+                const htmlContent = tool.code ? tool.code.replace(/\n/g, '<br>') : '';
+                codeInput.innerHTML = htmlContent;
+                
+                // Store the tool data for manual saving later
+                codeInput.dataset.editingToolId = tool.id;
+              }
+            }
+            
+            // Update dialog title
+            const title = addToolDialog.querySelector('.dialog-header h3');
+            if (title) title.textContent = '✏️ Edit Tool';
+            
+            addToolDialog.style.display = 'flex';
+          }
+        }
+      }
+    }
+  });
+}
+
+function filterOperatorsTools(searchTerm) {
+  const toolItems = document.querySelectorAll('.operators-sidebar-tool-item');
+  const term = searchTerm.toLowerCase();
+  
+  toolItems.forEach(item => {
+    const name = item.querySelector('.sidebar-tool-name').textContent.toLowerCase();
+    const description = item.querySelector('.sidebar-tool-description').textContent.toLowerCase();
+    
+    if (name.includes(term) || description.includes(term)) {
+      item.classList.remove('filtered-out');
+    } else {
+      item.classList.add('filtered-out');
+    }
+  });
+}
+
+// Enhanced showAddInstanceDialog - just use the original
+const originalShowAddInstanceDialog = showAddInstanceDialog;
+async function showAddInstanceDialogEnhanced(instanceId = null) {
+  // Call original function
+  await originalShowAddInstanceDialog(instanceId);
+}
+
 // Make functions globally available
 window.operatorsModule = {
   showOperatorsDialog,
-  showAddInstanceDialog,
+  showAddInstanceDialog: showAddInstanceDialogEnhanced,
   executeInstanceById,
   editInstance,
   deleteInstance,
@@ -1581,5 +1750,7 @@ window.operatorsModule = {
   insertInstanceReference,
   openInstanceFromReference,
   styleInstanceReferences,
-  executeRequiredOperatorsForTemplate
+  executeRequiredOperatorsForTemplate,
+  refreshOperatorsToolsList,
+  setupToolsSidebarEventListeners
 }; 

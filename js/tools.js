@@ -210,6 +210,9 @@ class ToolsManager {
     this.saveTools();
     this.refreshToolsList();
     this.hideAddToolDialog();
+    
+    // Refresh operators tools sidebar if operators dialog is open
+    this.refreshOperatorsToolsIfOpen();
   }
 
   loadTool(toolId) {
@@ -265,6 +268,20 @@ class ToolsManager {
         this.saveTools();
         this.refreshToolsList();
         addMessageToUI('system', `Tool "${tool.name}" deleted successfully.`);
+        
+        // Refresh operators tools sidebar if operators dialog is open
+        this.refreshOperatorsToolsIfOpen();
+      }
+    }
+  }
+
+  refreshOperatorsToolsIfOpen() {
+    // Check if operators dialog is open
+    const operatorsDialog = document.getElementById('operators-dialog');
+    if (operatorsDialog && operatorsDialog.style.display !== 'none') {
+      // Refresh the tools sidebar in operators dialog
+      if (window.operatorsModule && window.operatorsModule.refreshOperatorsToolsList) {
+        window.operatorsModule.refreshOperatorsToolsList();
       }
     }
   }
@@ -391,6 +408,10 @@ let toolsManager;
 
 export function initTools() {
   toolsManager = new ToolsManager();
+  
+  // Make toolsManager globally available
+  window.toolsManager = toolsManager;
+  
   console.log('✅ Tools module initialized');
 }
 

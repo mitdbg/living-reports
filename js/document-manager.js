@@ -341,7 +341,7 @@ export class DocumentManager {
 
     // Get Tools and Operators buttons
     const toolsBtn = container.querySelector('.tools-btn');
-    const operatorsBtn = container.querySelector('.code-instances-btn');
+    const operatorsBtn = container.querySelector('.operators-btn');
 
     // Only show Tools and Operators buttons to Data Engineers (charlie)
     const isEngineer = currentUser.role === 'Data Engineer' || currentUser.id === 'charlie';
