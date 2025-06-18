@@ -10,11 +10,11 @@ import { initSharing, resetSharingInitialization } from './sharing.js';
 import { initContentMapping, resetContentMappingInitialization } from './content-mapping.js';
 import { variablesManager } from './variables.js';
 import { hideAllAnnotations, clearAnnotationsForDocument, updateAnnotationsVisibility, refreshAnnotationElements } from './annotations.js';
-import { clearAllComments } from './comments.js';
 import { addMessageToUI } from './chat.js';
 import { getCurrentUser } from './auth.js';
 import { getTextContentWithLineBreaks } from './utils.js';
 import { setCurrentDocument } from './data-lake.js';
+import { clearAllComments } from './comments.js';
 
 // Export the class instead of singleton instance
 export class DocumentManager {
@@ -341,7 +341,7 @@ export class DocumentManager {
 
     // Get Tools and Operators buttons
     const toolsBtn = container.querySelector('.tools-btn');
-    const operatorsBtn = container.querySelector('.code-instances-btn');
+    const operatorsBtn = container.querySelector('.operators-btn');
 
     // Only show Tools and Operators buttons to Data Engineers (charlie)
     const isEngineer = currentUser.role === 'Data Engineer' || currentUser.id === 'charlie';
@@ -417,7 +417,7 @@ export class DocumentManager {
       elements.rejectSuggestionBtn = container.querySelector('.reject-suggestion');
       elements.diffCurrentContent = container.querySelector('.diff-current-content');
       elements.diffSuggestedContent = container.querySelector('.diff-suggested-content');
-      elements.clearCommentsBtn = container.querySelector('.clear-comments-btn');
+      // elements.clearCommentsBtn = container.querySelector('.clear-comments-btn');
       elements.contextFilesSection = container.querySelector('.context-files-section');
       elements.contextFilesList = container.querySelector('.context-files-list');
       elements.contentTitle = container.querySelector('#content-title') || container.querySelector('.content-title');
@@ -1263,10 +1263,9 @@ export class DocumentManager {
   // // Clear all user-specific data when switching users
   clearUserData() {
     console.log('Clearing user-specific document data...');
-    
-    // Clear all annotation windows first
+
     clearAllComments();
-    
+
     // Stop auto-save
     this.stopAutoSave();
     
@@ -1804,17 +1803,12 @@ export class DocumentManager {
       } else {
         console.error('Failed to load document from backend');
         addMessageToUI('system', '❌ Failed to load latest version of document');
-        
-        // Fallback to opening local version
-        await this.loadLocalDocumentAsFallback(documentId);
       }
       
     } catch (error) {
       console.error('Error loading document from backend:', error);
       addMessageToUI('system', '❌ Could not connect to backend. Opening local version.');
-      
-      // Fallback to opening local version
-      await this.loadLocalDocumentAsFallback(documentId);
+
     }
   }
 
@@ -1939,6 +1933,7 @@ export class DocumentManager {
   verifyContentStillThere(templateEditor, expectedContent) {
     const childCount = templateEditor.childNodes.length;
     const textContent = templateEditor.textContent || '';
+    const htmlContent = templateEditor.innerHTML || '';
     const expectedLength = expectedContent ? expectedContent.length : 0;
     
     if (childCount === 0 && expectedLength > 0) {
@@ -1949,38 +1944,23 @@ export class DocumentManager {
       return { success: false, reason: 'No text content but content expected' };
     }
     
-    if (expectedLength > 0 && textContent.length < expectedLength * 0.8) {
-      return { success: false, reason: 'Content significantly shorter than expected' };
-    }
-    
-    // Extra check: verify first 50 characters match
+    // Compare HTML to HTML, not HTML to plain text!
     if (expectedLength > 0) {
-      const expectedPrefix = expectedContent.substring(0, 50);
-      const actualPrefix = textContent.substring(0, 50);
-      
-      if (expectedPrefix !== actualPrefix) {
-        return { success: false, reason: 'Content prefix mismatch' };
+      // If expected content contains HTML tags, compare with innerHTML
+      if (expectedContent.includes('<') && expectedContent.includes('>')) {
+        if (htmlContent.length < expectedLength * 0.7) {
+          return { success: false, reason: `HTML content too short: ${htmlContent.length} vs expected ${expectedLength}` };
+        }
+      } else {
+        // For plain text, compare with textContent
+        if (textContent.length < expectedLength * 0.8) {
+          return { success: false, reason: `Text content too short: ${textContent.length} vs expected ${expectedLength}` };
+        }
       }
     }
     
-    return { success: true, reason: 'Content verified as stable' };
-  }
-
-  /**
-   * Fallback method to load local document version
-   */
-  async loadLocalDocumentAsFallback(documentId) {
-    const doc = this.documents.get(documentId);
-    if (!doc) return;
-    
-    this.createTab(doc);
-    this.createDocumentContent(doc);
-    
-    // Switch to document first
-    this.switchToDocument(documentId);
-    
-    // Load content with retry mechanism
-    await this.loadDocumentContentWithRetry(documentId, doc, 1);
+    // Simplified check: just ensure we have some content
+    return { success: true, reason: 'Content verified as present' };
   }
 
   /**
@@ -2020,13 +2000,6 @@ export class DocumentManager {
         return;
       }
 
-      // Import required modules
-      const [{ state }, { createFloatingAnnotation, refreshAnnotationElements, removeFloatingAnnotation }, { refreshHighlightEventListeners, clearAllComments }] = await Promise.all([
-        import('./state.js'),
-        import('./annotations.js'),
-        import('./comments.js')
-      ]);
-
       // Clear the global comments state FIRST
       state.comments = {};
 
@@ -2054,8 +2027,6 @@ export class DocumentManager {
           highlight.replaceWith(document.createTextNode(highlight.textContent));
         });
       }
-      
-      // DON'T remove preview highlights - they're already correct from backend HTML!
 
       // NOW restore comments to global state
       if (documentData.comments) {
@@ -2152,13 +2123,6 @@ export class DocumentManager {
         if (!currentComment) {
           continue;
         }
-
-        console.log(`Processing comment ${commentId}:`, {
-          isAISuggestion: savedComment.isAISuggestion,
-          isTemplateSuggestion: savedComment.isTemplateSuggestion,
-          hasLineDiffs: !!savedComment.lineDiffs,
-          hasInlineDiffData: !!savedComment.inlineDiffData
-        });
 
         // Handle template suggestion comments first (they take priority over AI suggestions)
         if (savedComment.isTemplateSuggestion && savedComment.inlineDiffData) {

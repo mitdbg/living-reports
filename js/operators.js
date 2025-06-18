@@ -25,9 +25,7 @@ class Operator {
     this.toolName = options.toolName || '';
     this.inputDatasets = options.inputDatasets || []; // Array of dataset references
     this.parameters = options.parameters || {};
-    this.outputConfig = options.outputConfig || ''; // Output configuration (e.g., output.name)
-    this.outputVariable = options.outputVariable || ''; // Variable name to store output
-    this.outputFormat = options.outputFormat || ['result'];
+    this.outputs = options.outputs || []; // Array of output assignments
     this.lastExecuted = options.lastExecuted || null;
     this.output = options.output || null;
     this.status = options.status || 'idle'; // idle, running, completed, error
@@ -51,9 +49,6 @@ class Operator {
       inputDatasets: this.inputDatasets,
       parameters: this.parameters,
       outputs: this.outputs || [],
-      outputConfig: this.outputConfig,
-      outputVariable: this.outputVariable,
-      outputFormat: this.outputFormat,
       lastExecuted: this.lastExecuted,
       output: this.output,
       status: this.status,
@@ -152,7 +147,7 @@ class OperatorManager {
       this.notifyInstanceUpdate(instance);
 
       // Get the tool
-      const tool = this.getTool(instance.toolId);
+      const tool = await this.getTool(instance.toolId);
       if (!tool) {
         throw new Error(`Tool not found: ${instance.toolId}`);
       }
@@ -172,9 +167,7 @@ class OperatorManager {
       instance.error = null;
 
       // Store outputs in variables if specified
-      const outputsToProcess = instance.outputs && instance.outputs.length > 0 
-        ? instance.outputs 
-        : (instance.outputVariable ? [{ config: instance.outputConfig || '', variable: instance.outputVariable }] : []);
+      const outputsToProcess = instance.outputs || [];
       
       // Only process outputs if execution was successful (result has data, not error)
       if (result && typeof result === 'object' && !result.error && result.status !== 'error') {
@@ -254,18 +247,46 @@ class OperatorManager {
     }
   }
 
-  getTool(toolId) {
+  async getTool(toolId) {
+    console.log(`[${windowId}] Getting tool with ID: ${toolId}`);
+    
     // Get tool from the existing tools system
     if (window.toolsManager) {
-      return window.toolsManager.tools.find(tool => tool.id === toolId);
+      console.log(`[${windowId}] Using toolsManager, available tools:`, window.toolsManager.tools.length);
+      const tool = window.toolsManager.tools.find(tool => tool.id === toolId);
+      if (tool) {
+        console.log(`[${windowId}] Found tool in toolsManager:`, {
+          id: tool.id, 
+          name: tool.name, 
+          hasCode: !!tool.code,
+          toolKeys: Object.keys(tool)
+        });
+        return tool;
+      } else {
+        console.log(`[${windowId}] Tool not found in toolsManager. Available tool IDs:`, 
+          window.toolsManager.tools.map(t => t.id));
+      }
+    } else {
+      console.log(`[${windowId}] No toolsManager available`);
     }
     
-    // Fallback to localStorage
+    // Fallback to API
     try {
-      const toolsData = localStorage.getItem('tools_data');
-      if (toolsData) {
-        const tools = JSON.parse(toolsData);
-        return tools.find(tool => tool.id === toolId);
+      const response = await fetch('http://127.0.0.1:5000/api/tools');
+      const result = await response.json();
+      if (result.success) {
+        const tools = result.tools || [];
+        console.log(`[${windowId}] API returned ${tools.length} tools`);
+        const tool = tools.find(tool => tool.id === toolId);
+        if (tool) {
+          console.log(`[${windowId}] Found tool in API:`, {
+            id: tool.id, 
+            name: tool.name, 
+            hasCode: !!tool.code,
+            toolKeys: Object.keys(tool)
+          });
+        }
+        return tool;
       }
     } catch (error) {
       console.error('Error loading tools:', error);
@@ -330,9 +351,12 @@ class OperatorManager {
         }
       }
 
+      // Convert HTML code back to plain text for backend execution
+      const plainTextCode = this.convertHtmlCodeToPlainText(tool.code);
+      
       // Prepare the execution payload
       const executionPayload = {
-        code: tool.code,
+        code: plainTextCode,
         datasets: datasetsFromParams, // Datasets from parameters
         parameters: processedParameters // Literal values
       };
@@ -356,7 +380,7 @@ class OperatorManager {
           'ngrok-skip-browser-warning': 'true' // Skip ngrok warning page
         },
         body: JSON.stringify({
-          code: tool.code,
+          code: plainTextCode,
           parameters: executionPayload.parameters
         })
       });
@@ -456,6 +480,41 @@ class OperatorManager {
     
     // Return as string
     return trimmed;
+  }
+
+  convertHtmlCodeToPlainText(htmlCode) {
+    if (!htmlCode) {
+      return '';
+    }
+
+    // If the code doesn't contain HTML tags, return as is
+    if (!htmlCode.includes('<')) {
+      return htmlCode;
+    }
+
+    // First, replace <br> tags with newlines before parsing
+    let processedCode = htmlCode
+      .replace(/<br\s*\/?>/gi, '\n')  // Replace <br> and <br/> with newlines
+      .replace(/<div>/gi, '\n')       // Replace <div> with newlines
+      .replace(/<\/div>/gi, '')       // Remove closing </div> tags
+      .replace(/<p>/gi, '\n')         // Replace <p> with newlines  
+      .replace(/<\/p>/gi, '');        // Remove closing </p> tags
+
+    // Create a temporary div to parse any remaining HTML
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = processedCode;
+
+    // Get the plain text content
+    let plainText = tempDiv.textContent || tempDiv.innerText || '';
+
+    // Clean up extra whitespace and normalize line endings
+    plainText = plainText
+      .replace(/\r\n/g, '\n')         // Normalize Windows line endings
+      .replace(/\r/g, '\n')           // Normalize Mac line endings
+      .replace(/\n{3,}/g, '\n\n')     // Replace multiple newlines with double newlines
+      .trim();                        // Remove leading/trailing whitespace
+
+    return plainText;
   }
 
   extractValueFromOutput(result, outputConfig) {
@@ -595,7 +654,7 @@ function setupAutoStyling() {
 function setupOperatorEventListeners() {
   // Listen for operator buttons
   document.addEventListener('click', (event) => {
-    if (event.target.matches('.code-instances-btn') || event.target.closest('.code-instances-btn')) {
+    if (event.target.matches('.operators-btn') || event.target.closest('.operators-btn')) {
       console.log(`[${windowId}] operators button clicked`);
       showOperatorsDialog();
     }
@@ -609,19 +668,27 @@ function setupOperatorEventListeners() {
     }
     
     if (event.target.matches('.add-instance-btn') || event.target.closest('.add-instance-btn')) {
-      showAddInstanceDialog();
+      showInstanceEditor();
     }
     
-    if (event.target.id === 'close-instances-btn' || event.target.id === 'close-instances-bottom-btn') {
-      hideOperatorsDialog();
+    if (event.target.matches('.back-to-operators-btn') || event.target.closest('.back-to-operators-btn')) {
+      showOperatorsListView();
     }
     
-    if (event.target.id === 'close-add-instance-btn' || event.target.id === 'cancel-add-instance-btn') {
-      hideAddInstanceDialog();
+    if (event.target.id === 'save-embedded-tool-btn') {
+      saveTool();
     }
     
-    if (event.target.id === 'save-instance-btn') {
+    if (event.target.id === 'cancel-embedded-tool-btn') {
+      showOperatorsListView();
+    }
+    
+    if (event.target.id === 'save-embedded-instance-btn') {
       saveInstance();
+    }
+    
+    if (event.target.id === 'cancel-embedded-instance-btn') {
+      showOperatorsListView();
     }
     
     if (event.target.matches('.instance-execute-btn')) {
@@ -631,9 +698,7 @@ function setupOperatorEventListeners() {
     
     if (event.target.matches('.instance-edit-btn')) {
       const instanceId = event.target.getAttribute('data-instance-id');
-      editInstance(instanceId).catch(error => {
-        console.error('Error editing instance:', error);
-      });
+      showInstanceEditor(instanceId);
     }
     
     if (event.target.matches('.instance-delete-btn')) {
@@ -649,78 +714,291 @@ function setupOperatorEventListeners() {
       addOutputField();
     }
     
-    if (event.target.matches('.instance-insert-btn')) {
-      const instanceId = event.target.getAttribute('data-instance-id');
-      insertInstanceReference(instanceId);
+    if (event.target.matches('.add-tool-btn-sidebar')) {
+      showToolEditor();
     }
+    
+    if (event.target.matches('.close-operators-btn') || event.target.closest('.close-operators-btn')) {
+      hideOperatorsDialog();
+    }
+    
+
   });
+  
+  // Setup tools sidebar event listeners
+  setupToolsSidebarEventListeners();
+}
+
+// Helper function to get the active document container
+function getActiveDocumentContainer() {
+  // Find the active document tab content (not the template)
+  const activeContent = document.querySelector('.tab-content.active:not(.document-tab-template)');
+  if (activeContent) {
+    return activeContent;
+  }
+  
+  // Fallback: if we have an active document ID from window.documentManager
+  if (window.documentManager?.activeDocumentId) {
+    const container = document.getElementById(`document-${window.documentManager.activeDocumentId}`);
+    if (container) {
+      return container;
+    }
+  }
+  
+  // Last fallback: find any visible tab content that's not the template
+  const visibleContent = document.querySelector('.tab-content[style*="flex"]:not(.document-tab-template), .tab-content:not([style*="none"]):not(.document-tab-template)');
+  if (visibleContent) {
+    return visibleContent;
+  }
+  
+  return null;
 }
 
 // UI Functions
 function showOperatorsDialog() {
-  const dialog = document.getElementById('code-instances-dialog');
-  if (dialog) {
-    dialog.style.display = 'block';
+  // Get the active document container
+  const container = getActiveDocumentContainer();
+  if (!container) {
+    console.error('No active document container found');
+    return;
+  }
+  
+  // Hide all other panels within this document first
+  const panels = container.querySelectorAll('.source-panel, .template-panel, .preview-panel, .operators-panel, .diff-view');
+  panels.forEach(panel => {
+    panel.classList.remove('active');
+    panel.style.display = 'none';
+  });
+  
+  // Show the operators panel within this document
+  const operatorsPanel = container.querySelector('.operators-panel');
+  if (operatorsPanel) {
+    operatorsPanel.style.display = 'flex';
+    operatorsPanel.classList.add('active');
+    
+    // Update content title
+    const contentTitle = container.querySelector('#content-title, .content-title');
+    if (contentTitle) {
+      contentTitle.textContent = 'Operators Management';
+    }
+    
+    // Ensure we're showing the list view, not editor views
+    showOperatorsListView();
+    
+    // Refresh the content
     refreshInstancesList();
+    refreshOperatorsToolsList();
+  } else {
+    console.error('Operators panel not found in active document');
   }
 }
 
 function hideOperatorsDialog() {
-  const dialog = document.getElementById('code-instances-dialog');
-  if (dialog) {
-    dialog.style.display = 'none';
+  // Get the active document container
+  const container = getActiveDocumentContainer();
+  if (!container) {
+    console.error('No active document container found');
+    return;
+  }
+  
+  // Hide the operators panel and show the template panel
+  const operatorsPanel = container.querySelector('.operators-panel');
+  const templatePanel = container.querySelector('.template-panel');
+  const contentTitle = container.querySelector('#content-title, .content-title');
+  
+  if (operatorsPanel) {
+    operatorsPanel.style.display = 'none';
+    operatorsPanel.classList.remove('active');
+  }
+  
+  if (templatePanel) {
+    templatePanel.style.display = 'block';
+    templatePanel.classList.add('active');
+  }
+  
+  if (contentTitle) {
+    contentTitle.textContent = 'Template Editor';
   }
 }
 
-async function showAddInstanceDialog(instanceId = null) {
-  const dialog = document.getElementById('add-instance-dialog');
-  if (!dialog) return;
+function showOperatorsListView() {
+  // Get the active document container
+  const container = getActiveDocumentContainer();
+  if (!container) {
+    console.error('No active document container found');
+    return;
+  }
+  
+  const listView = container.querySelector('.operators-list-view');
+  const toolEditorView = container.querySelector('.operators-tool-editor-view');
+  const instanceEditorView = container.querySelector('.operators-instance-editor-view');
+  const breadcrumb = container.querySelector('.nav-breadcrumb');
+  
+  if (listView) {
+    listView.style.display = 'flex';
+    listView.classList.add('active');
+  }
+  
+  if (toolEditorView) {
+    toolEditorView.style.display = 'none';
+    toolEditorView.classList.remove('active');
+  }
+  
+  if (instanceEditorView) {
+    instanceEditorView.style.display = 'none';
+    instanceEditorView.classList.remove('active');
+  }
+  
+  if (breadcrumb) {
+    breadcrumb.textContent = 'Operators';
+  }
+}
 
+function showToolEditor(toolId = null) {
+  // Get the active document container
+  const container = getActiveDocumentContainer();
+  if (!container) {
+    console.error('No active document container found');
+    return;
+  }
+  
+  const listView = container.querySelector('.operators-list-view');
+  const toolEditorView = container.querySelector('.operators-tool-editor-view');
+  const instanceEditorView = container.querySelector('.operators-instance-editor-view');
+  const breadcrumb = container.querySelector('.nav-breadcrumb');
+  const title = container.querySelector('#tool-editor-title');
+  
+  if (listView) {
+    listView.style.display = 'none';
+    listView.classList.remove('active');
+  }
+  
+  if (instanceEditorView) {
+    instanceEditorView.style.display = 'none';
+    instanceEditorView.classList.remove('active');
+  }
+  
+  if (toolEditorView) {
+    toolEditorView.style.display = 'flex';
+    toolEditorView.classList.add('active');
+  }
+  
+  if (breadcrumb) {
+    breadcrumb.textContent = 'Operators > Tool Editor';
+  }
+  
+  // Set title and populate form if editing
+  if (toolId) {
+    if (title) title.textContent = 'Edit Tool';
+    populateToolForm(toolId);
+  } else {
+    if (title) title.textContent = 'Add New Tool';
+    clearToolForm();
+  }
+}
+
+function showInstanceEditor(instanceId = null) {
+  // Get the active document container
+  const container = getActiveDocumentContainer();
+  if (!container) {
+    console.error('No active document container found');
+    return;
+  }
+  
+  const listView = container.querySelector('.operators-list-view');
+  const toolEditorView = container.querySelector('.operators-tool-editor-view');
+  const instanceEditorView = container.querySelector('.operators-instance-editor-view');
+  const breadcrumb = container.querySelector('.nav-breadcrumb');
+  const title = container.querySelector('#instance-editor-title');
+  
+  if (listView) {
+    listView.style.display = 'none';
+    listView.classList.remove('active');
+  }
+  
+  if (toolEditorView) {
+    toolEditorView.style.display = 'none';
+    toolEditorView.classList.remove('active');
+  }
+  
+  if (instanceEditorView) {
+    instanceEditorView.style.display = 'flex';
+    instanceEditorView.classList.add('active');
+  }
+  
+  if (breadcrumb) {
+    breadcrumb.textContent = 'Operators > Instance Editor';
+  }
+  
   // Populate tools dropdown
   populateToolsDropdown();
-
-      // Reset form
-    document.getElementById('instance-name').value = '';
-    document.getElementById('instance-tool').value = '';
-    clearParametersForm();
-    clearOutputsForm();
-
-  // Populate variables list (async) and wait for completion
-  await populateVariablesList();
-
+  
+  // Populate variables list
+  populateVariablesList();
+  
+  // Set title and populate form if editing
   if (instanceId) {
-    // Edit mode
-    const instance = operatorManager.getInstance(instanceId);
-    if (instance) {
-      console.log(`[${windowId}] Editing instance:`, instance);
-      document.getElementById('instance-name').value = instance.name;
-      document.getElementById('instance-tool').value = instance.toolId;
-      
-      // Populate form fields
-      populateParametersForm(instance.parameters);
-      await populateOutputsForm(instance);
-      
-      operatorsData.currentEditingInstance = instance;
-    }
+    if (title) title.textContent = 'Edit Operator Instance';
+    populateInstanceForm(instanceId);
   } else {
-    // Create mode - add one empty output field
-    await addOutputField();
-    operatorsData.currentEditingInstance = null;
-  }
-
-  dialog.style.display = 'block';
-}
-
-function hideAddInstanceDialog() {
-  const dialog = document.getElementById('add-instance-dialog');
-  if (dialog) {
-    dialog.style.display = 'none';
-    operatorsData.currentEditingInstance = null;
+    if (title) title.textContent = 'Configure Operator Instance';
+    clearInstanceForm();
+    // Add one empty output field for new instances
+    addOutputField();
   }
 }
 
-function populateToolsDropdown() {
-  const select = document.getElementById('instance-tool');
+function populateToolForm(toolId) {
+  // Get the tool data
+  const tool = window.toolsManager?.tools.find(t => t.id === toolId);
+  if (!tool) return;
+  
+  // Get the active document container
+  const container = getActiveDocumentContainer();
+  if (!container) return;
+  
+  // Populate form fields
+  const nameInput = container.querySelector('#embedded-tool-name');
+  const descriptionInput = container.querySelector('#embedded-tool-description');
+  const codeEditor = container.querySelector('#embedded-tool-code');
+  
+  if (nameInput) nameInput.value = tool.name;
+  if (descriptionInput) descriptionInput.value = tool.description || '';
+  if (codeEditor) {
+    // If tool.code already contains HTML (like <br> tags), use it directly
+    // Otherwise, convert newlines to <br> tags for proper display in contenteditable div
+    if (tool.code && (tool.code.includes('<br>') || tool.code.includes('<div>') || tool.code.includes('<p>'))) {
+      codeEditor.innerHTML = tool.code;
+    } else {
+      codeEditor.innerHTML = tool.code ? tool.code.replace(/\n/g, '<br>') : '';
+    }
+    codeEditor.dataset.editingToolId = toolId;
+  }
+}
+
+function clearToolForm() {
+  // Get the active document container
+  const container = getActiveDocumentContainer();
+  if (!container) return;
+  
+  const nameInput = container.querySelector('#embedded-tool-name');
+  const descriptionInput = container.querySelector('#embedded-tool-description');
+  const codeEditor = container.querySelector('#embedded-tool-code');
+  
+  if (nameInput) nameInput.value = '';
+  if (descriptionInput) descriptionInput.value = '';
+  if (codeEditor) {
+    codeEditor.innerHTML = '';
+    delete codeEditor.dataset.editingToolId;
+  }
+}
+
+async function populateToolsDropdown() {
+  // Get the active document container
+  const container = getActiveDocumentContainer();
+  if (!container) return;
+  
+  const select = container.querySelector('#embedded-instance-tool');
   if (!select) return;
 
   // Clear existing options
@@ -731,11 +1009,12 @@ function populateToolsDropdown() {
   if (window.toolsManager) {
     tools = window.toolsManager.tools;
   } else {
-    // Fallback to localStorage
+    // Fallback to API
     try {
-      const toolsData = localStorage.getItem('tools_data');
-      if (toolsData) {
-        tools = JSON.parse(toolsData);
+      const response = await fetch('http://127.0.0.1:5000/api/tools');
+      const result = await response.json();
+      if (result.success) {
+        tools = result.tools || [];
       }
     } catch (error) {
       console.error('Error loading tools:', error);
@@ -751,63 +1030,204 @@ function populateToolsDropdown() {
   });
 }
 
+async function populateVariablesList() {
+  // Get the active document container
+  const container = getActiveDocumentContainer();
+  if (!container) return;
+  
+  const allSelects = container.querySelectorAll('#embedded-instance-outputs .output-variable-select');
+  for (const select of allSelects) {
+    await populateVariablesDropdown(select);
+  }
+}
 
+function populateInstanceForm(instanceId) {
+  const instance = operatorManager.getInstance(instanceId);
+  if (!instance) return;
+  
+  // Get the active document container
+  const container = getActiveDocumentContainer();
+  if (!container) return;
+  
+  const nameInput = container.querySelector('#embedded-instance-name');
+  const toolSelect = container.querySelector('#embedded-instance-tool');
+  
+  if (nameInput) nameInput.value = instance.name;
+  if (toolSelect) toolSelect.value = instance.toolId;
+  
+  // Populate parameters
+  populateParametersForm(instance.parameters);
+  
+  // Populate outputs
+  populateOutputsForm(instance);
+  
+  // Store editing instance
+  operatorsData.currentEditingInstance = instance;
+}
+
+function clearInstanceForm() {
+  // Get the active document container
+  const container = getActiveDocumentContainer();
+  if (!container) return;
+  
+  const nameInput = container.querySelector('#embedded-instance-name');
+  const toolSelect = container.querySelector('#embedded-instance-tool');
+  
+  if (nameInput) nameInput.value = '';
+  if (toolSelect) toolSelect.value = '';
+  
+  clearParametersForm();
+  clearOutputsForm();
+  
+  operatorsData.currentEditingInstance = null;
+}
 
 function populateParametersForm(parameters) {
-  const container = document.getElementById('instance-parameters');
+  // Get the active document container
+  const documentContainer = getActiveDocumentContainer();
+  if (!documentContainer) return;
+  
+  const container = documentContainer.querySelector('#embedded-instance-parameters');
   if (!container) return;
 
   container.innerHTML = '';
 
-  Object.entries(parameters).forEach(([key, paramData]) => {
-    // Check if this is a new format parameter or legacy format
-    if (typeof paramData === 'object' && paramData.type && paramData.value !== undefined) {
-      // New format: { type: 'dataset|literal', value: '...' }
-      addParameterField(key, paramData.value, paramData.type);
-    } else {
-      // Legacy format: just a string value (assume literal)
-      addParameterField(key, paramData, 'literal');
-    }
-  });
+      Object.entries(parameters).forEach(([key, paramData]) => {
+      if (typeof paramData === 'object' && paramData.type && paramData.value !== undefined) {
+        addParameterField(key, paramData.value, paramData.type);
+      } else {
+        addParameterField(key, paramData, 'literal');
+      }
+    });
 }
 
 function clearParametersForm() {
-  const container = document.getElementById('instance-parameters');
+  // Get the active document container
+  const documentContainer = getActiveDocumentContainer();
+  if (!documentContainer) return;
+  
+  const container = documentContainer.querySelector('#embedded-instance-parameters');
   if (container) {
     container.innerHTML = '';
+  }
+}
+
+function populateOutputsForm(instance) {
+  // Clear existing output fields first
+  clearOutputsForm();
+  
+  // Get outputs array
+  const outputs = instance.outputs || [];
+  
+  // Add output fields for each assignment
+  outputs.forEach(output => {
+    addOutputField(output.config, output.variable);
+  });
+  
+  // If no outputs exist, add one empty field
+  if (outputs.length === 0) {
+    addOutputField();
   }
 }
 
 function clearOutputsForm() {
-  const container = document.getElementById('instance-outputs');
+  // Get the active document container
+  const documentContainer = getActiveDocumentContainer();
+  if (!documentContainer) return;
+  
+  const container = documentContainer.querySelector('#embedded-instance-outputs');
   if (container) {
     container.innerHTML = '';
   }
 }
 
-async function populateOutputsForm(instance) {
-  // Handle backward compatibility - convert single output to array format
-  let outputs = [];
+function addParameterField(key = '', value = '', valueType = 'literal') {
+  // Get the active document container
+  const documentContainer = getActiveDocumentContainer();
+  if (!documentContainer) return;
   
-  if (instance.outputs && Array.isArray(instance.outputs)) {
-    // New format: array of output assignments
-    outputs = instance.outputs;
-  } else if (instance.outputConfig || instance.outputVariable) {
-    // Old format: single output assignment
-    outputs = [{
-      config: instance.outputConfig || '',
-      variable: instance.outputVariable || ''
-    }];
-  }
+  const container = documentContainer.querySelector('#embedded-instance-parameters');
+  if (!container) return;
+
+  // Get available datasets for the dropdown
+  const datasets = window.dataLakeModule?.getAllDataSources() || [];
+  const datasetOptions = datasets.map(dataset => 
+    `<option value="${dataset.name}" ${valueType === 'dataset' && value === dataset.name ? 'selected' : ''}>${dataset.name} (${dataset.type || 'dataset'})</option>`
+  ).join('');
+
+  const field = document.createElement('div');
+  field.className = 'parameter-field';
+  field.innerHTML = `
+    <input type="text" class="param-key" placeholder="Parameter name" value="${key}">
+    <div class="param-value-container">
+      <select class="param-type-select">
+        <option value="literal" ${valueType === 'literal' ? 'selected' : ''}>Literal Value</option>
+        <option value="dataset" ${valueType === 'dataset' ? 'selected' : ''}>Dataset</option>
+      </select>
+      <input type="text" class="param-value param-literal" placeholder="e.g., false, 123, 'text'" value="${valueType === 'literal' ? value : ''}" ${valueType === 'dataset' ? 'style="display: none;"' : ''}>
+      <select class="param-value param-dataset" ${valueType === 'literal' ? 'style="display: none;"' : ''}>
+        <option value="">Select dataset...</option>
+        ${datasetOptions}
+      </select>
+    </div>
+    <button type="button" class="remove-param-btn">✕</button>
+  `;
   
-  // Add output fields for each assignment
-  for (const output of outputs) {
-    await addOutputField(output.config, output.variable);
-  }
+  // Add event listener to toggle between literal and dataset
+  const typeSelect = field.querySelector('.param-type-select');
+  const literalInput = field.querySelector('.param-literal');
+  const datasetSelect = field.querySelector('.param-dataset');
   
-  // If no outputs exist, add one empty field
-  if (outputs.length === 0) {
-    await addOutputField();
+  typeSelect.addEventListener('change', () => {
+    if (typeSelect.value === 'literal') {
+      literalInput.style.display = '';
+      datasetSelect.style.display = 'none';
+    } else {
+      literalInput.style.display = 'none';
+      datasetSelect.style.display = '';
+    }
+  });
+
+  // Add remove functionality
+  field.querySelector('.remove-param-btn').addEventListener('click', () => {
+    field.remove();
+  });
+
+  container.appendChild(field);
+}
+
+async function addOutputField(outputConfig = '', outputVariable = '') {
+  // Get the active document container
+  const documentContainer = getActiveDocumentContainer();
+  if (!documentContainer) return;
+  
+  const container = documentContainer.querySelector('#embedded-instance-outputs');
+  if (!container) return;
+
+  const field = document.createElement('div');
+  field.className = 'output-config-field';
+  field.innerHTML = `
+    <input type="text" class="output-config-input" placeholder="e.g., output, output.name, output.data.value" value="${outputConfig}">
+    <select class="output-variable-select">
+      <option value="">Select a variable...</option>
+    </select>
+    <button type="button" class="remove-output-btn">✕</button>
+  `;
+
+  // Add remove functionality
+  field.querySelector('.remove-output-btn').addEventListener('click', () => {
+    field.remove();
+  });
+
+  container.appendChild(field);
+
+  // Populate the variables dropdown for this field
+  const select = field.querySelector('.output-variable-select');
+  await populateVariablesDropdown(select);
+  
+  // Set the selected value if provided
+  if (outputVariable) {
+    select.value = outputVariable;
   }
 }
 
@@ -875,15 +1295,6 @@ async function populateVariablesDropdown(select) {
   }
 }
 
-async function populateVariablesList() {
-  // This function is kept for backward compatibility
-  // It now populates all existing dropdowns
-  const allSelects = document.querySelectorAll('.output-variable-select');
-  for (const select of allSelects) {
-    await populateVariablesDropdown(select);
-  }
-}
-
 async function loadVariablesFromBackend() {
   try {
     // Get the current document ID to load document-specific variables
@@ -927,198 +1338,18 @@ async function loadVariablesFromBackend() {
   }
 }
 
-function addParameterField(key = '', value = '', valueType = 'literal') {
-  const container = document.getElementById('instance-parameters');
-  if (!container) return;
 
-  // Get available datasets for the dropdown
-  const datasets = window.dataLakeModule?.getAllDataSources() || [];
-  const datasetOptions = datasets.map(dataset => 
-    `<option value="${dataset.name}" ${valueType === 'dataset' && value === dataset.name ? 'selected' : ''}>${dataset.name} (${dataset.type || 'dataset'})</option>`
-  ).join('');
 
-  const field = document.createElement('div');
-  field.className = 'parameter-field';
-  field.innerHTML = `
-    <input type="text" class="param-key" placeholder="Parameter name" value="${key}">
-    <div class="param-value-container">
-      <select class="param-type-select">
-        <option value="literal" ${valueType === 'literal' ? 'selected' : ''}>Literal Value</option>
-        <option value="dataset" ${valueType === 'dataset' ? 'selected' : ''}>Dataset</option>
-      </select>
-      <input type="text" class="param-value param-literal" placeholder="e.g., false, 123, 'text'" value="${valueType === 'literal' ? value : ''}" ${valueType === 'dataset' ? 'style="display: none;"' : ''}>
-      <select class="param-value param-dataset" ${valueType === 'literal' ? 'style="display: none;"' : ''}>
-        <option value="">Select dataset...</option>
-        ${datasetOptions}
-      </select>
-    </div>
-    <button type="button" class="remove-param-btn">✕</button>
-  `;
-  
-  // Add event listener to toggle between literal and dataset
-  const typeSelect = field.querySelector('.param-type-select');
-  const literalInput = field.querySelector('.param-literal');
-  const datasetSelect = field.querySelector('.param-dataset');
-  
-  typeSelect.addEventListener('change', () => {
-    if (typeSelect.value === 'literal') {
-      literalInput.style.display = '';
-      datasetSelect.style.display = 'none';
-    } else {
-      literalInput.style.display = 'none';
-      datasetSelect.style.display = '';
-    }
-  });
 
-  // Add remove functionality
-  field.querySelector('.remove-param-btn').addEventListener('click', () => {
-    field.remove();
-  });
 
-  container.appendChild(field);
-}
 
-async function addOutputField(outputConfig = '', outputVariable = '') {
-  const container = document.getElementById('instance-outputs');
-  if (!container) return;
-
-  const field = document.createElement('div');
-  field.className = 'output-config-field';
-  field.innerHTML = `
-    <input type="text" class="output-config-input" placeholder="e.g., output, output.name, output.data.value" value="${outputConfig}">
-    <select class="output-variable-select">
-      <option value="">Select a variable...</option>
-    </select>
-    <button type="button" class="remove-output-btn">✕</button>
-  `;
-
-  // Add remove functionality
-  field.querySelector('.remove-output-btn').addEventListener('click', () => {
-    field.remove();
-  });
-
-  container.appendChild(field);
-
-  // Populate the variables dropdown for this field
-  const select = field.querySelector('.output-variable-select');
-  await populateVariablesDropdown(select);
-  
-  // Set the selected value if provided
-  if (outputVariable) {
-    select.value = outputVariable;
-  }
-}
-
-function saveInstance() {
-  const nameInput = document.getElementById('instance-name');
-  const toolSelect = document.getElementById('instance-tool');
-
-  const name = nameInput.value.trim();
-  const toolId = toolSelect.value;
-
-  // Validation
-  if (!name) {
-    addMessageToUI('system', 'Please enter an instance name.');
-    nameInput.focus();
-    return;
-  }
-
-  if (!toolId) {
-    addMessageToUI('system', 'Please select a tool.');
-    toolSelect.focus();
-    return;
-  }
-
-  // Get output assignments
-  const outputs = [];
-  const outputFields = document.querySelectorAll('.output-config-field');
-  
-  // Validate output fields
-  for (const field of outputFields) {
-    const configInput = field.querySelector('.output-config-input');
-    const variableSelect = field.querySelector('.output-variable-select');
-    
-    const config = configInput.value.trim();
-    const variable = variableSelect.value;
-    
-    // Only add if both config and variable are provided
-    if (config && variable) {
-      outputs.push({
-        config: config,
-        variable: variable
-      });
-    } else if (config && !variable) {
-      addMessageToUI('system', 'Please select a variable for output configuration: ' + config);
-      variableSelect.focus();
-      return;
-    } else if (!config && variable) {
-      addMessageToUI('system', 'Please specify output configuration for variable: ' + variable);
-      configInput.focus();
-      return;
-    }
-    // If both are empty, that's fine - just skip this field
-  }
-
-  // Get parameters (including datasets as parameters)
-  const parameters = {};
-  const paramFields = document.querySelectorAll('.parameter-field');
-  paramFields.forEach(field => {
-    const key = field.querySelector('.param-key').value.trim();
-    const typeSelect = field.querySelector('.param-type-select');
-    const paramType = typeSelect.value;
-    
-    let value = '';
-    if (paramType === 'literal') {
-      value = field.querySelector('.param-literal').value.trim();
-    } else if (paramType === 'dataset') {
-      value = field.querySelector('.param-dataset').value;
-    }
-    
-    if (key && value) {
-      parameters[key] = {
-        type: paramType,
-        value: value
-      };
-    }
-  });
-
-  // Get tool name for display
-  const toolOption = toolSelect.options[toolSelect.selectedIndex];
-  const toolName = toolOption ? toolOption.textContent : '';
-
-  const instanceData = {
-    name: name,
-    toolId: toolId,
-    toolName: toolName,
-    inputDatasets: [], // Legacy field - now all datasets go through parameters
-    parameters: parameters,
-    outputs: outputs,
-    // Keep backward compatibility fields for existing instances
-    outputConfig: outputs.length > 0 ? outputs[0].config : '',
-    outputVariable: outputs.length > 0 ? outputs[0].variable : ''
-  };
-
-  try {
-    if (operatorsData.currentEditingInstance) {
-      // Update existing instance
-      operatorManager.updateInstance(operatorsData.currentEditingInstance.id, instanceData);
-      addMessageToUI('system', `operator "${name}" updated successfully.`);
-    } else {
-      // Create new instance
-      operatorManager.createInstance(instanceData);
-      addMessageToUI('system', `operator "${name}" created successfully.`);
-    }
-
-    hideAddInstanceDialog();
-    refreshInstancesList();
-  } catch (error) {
-    console.error('Error saving instance:', error);
-    addMessageToUI('system', `Error saving instance: ${error.message}`);
-  }
-}
 
 function refreshInstancesList() {
-  const container = document.getElementById('instances-items');
+  // Get the active document container
+  const documentContainer = getActiveDocumentContainer();
+  if (!documentContainer) return;
+  
+  const container = documentContainer.querySelector('#instances-items');
   if (!container) return;
 
   const instances = operatorManager.getAllInstances();
@@ -1156,9 +1387,6 @@ function createInstanceElement(instance) {
       `${output.config || 'result'} → \${${output.variable}}`
     );
     outputText = `Output: ${outputDescriptions.join(', ')}`;
-  } else if (instance.outputVariable) {
-    // Backward compatibility
-    outputText = `Output: ${instance.outputConfig || 'result'} → \${${instance.outputVariable}}`;
   }
 
   return `
@@ -1178,7 +1406,6 @@ function createInstanceElement(instance) {
         </div>
       </div>
       <div class="instance-item-actions">
-        <button class="instance-item-btn instance-insert-btn" data-instance-id="${instance.id}">Insert</button>
         <button class="instance-item-btn instance-execute-btn" data-instance-id="${instance.id}" ${instance.status === 'running' ? 'disabled' : ''}>
           ${instance.status === 'running' ? 'Running...' : 'Execute'}
         </button>
@@ -1189,76 +1416,7 @@ function createInstanceElement(instance) {
   `;
 }
 
-// Insert instance reference into template
-function insertInstanceReference(instanceId) {
-  const instance = operatorManager.getInstance(instanceId);
-  if (!instance) {
-    addMessageToUI('system', 'Instance not found');
-    return;
-  }
 
-  // Find the currently active template editor
-  let templateEditor = null;
-  
-  // Try to get the template editor from the active document
-  if (window.documentManager?.activeDocumentId) {
-    const container = document.getElementById(`document-${window.documentManager.activeDocumentId}`);
-    templateEditor = container?.querySelector('.template-editor');
-  }
-  
-  // Fallback to global template editor
-  if (!templateEditor) {
-    templateEditor = elements.templateEditor;
-  }
-  
-  if (!templateEditor) {
-    addMessageToUI('system', 'No template editor found');
-    return;
-  }
-
-  // Use $$ prefix to distinguish from data sources (which use $)
-  const instanceReference = `$$${instance.name.replace(/\s+/g, '_')}`;
-  
-  // Focus the template editor
-  templateEditor.focus();
-  
-  // Get current cursor position or insert at end
-  const selection = window.getSelection();
-  let range;
-  
-  if (selection.rangeCount > 0 && templateEditor.contains(selection.anchorNode)) {
-    // Insert at cursor position
-    range = selection.getRangeAt(0);
-  } else {
-    // Insert at end of template
-    range = document.createRange();
-    range.selectNodeContents(templateEditor);
-    range.collapse(false);
-  }
-  
-  // Insert the instance reference
-  const text = templateEditor.textContent;
-  const needsNewline = text.length > 0 && !text.endsWith('\n') && range.startOffset === text.length;
-  const textToInsert = needsNewline ? `\n${instanceReference}` : instanceReference;
-  
-  range.deleteContents();
-  range.insertNode(document.createTextNode(textToInsert));
-  
-  // Move cursor after the inserted text
-  range.collapse(false);
-  selection.removeAllRanges();
-  selection.addRange(range);
-  
-  // Apply styling to make instance references clickable
-  setTimeout(() => {
-    styleInstanceReferences(templateEditor);
-  }, 100);
-  
-  addMessageToUI('system', `Inserted instance reference: ${instanceReference}`);
-  
-  // Close instances dialog
-  hideOperatorsDialog();
-}
 
 // Open instance details from a clicked reference
 async function openInstanceFromReference(instanceName) {
@@ -1272,8 +1430,8 @@ async function openInstanceFromReference(instanceName) {
     return;
   }
   
-  // Open the edit dialog for this instance
-  await showAddInstanceDialog(instance.id);
+  // Open the instance editor for this instance
+  showInstanceEditor(instance.id);
   addMessageToUI('system', `Opened instance details for: ${instanceName}`);
 }
 
@@ -1354,6 +1512,214 @@ function styleInstanceReferences(templateEditor) {
   }
 }
 
+  // Form Save Functions
+async function saveTool() {
+  // Get the active document container
+  const container = getActiveDocumentContainer();
+  if (!container) return;
+  
+  const nameInput = container.querySelector('#embedded-tool-name');
+  const descriptionInput = container.querySelector('#embedded-tool-description');
+  const codeEditor = container.querySelector('#embedded-tool-code');
+
+  const name = nameInput?.value.trim();
+  const description = descriptionInput?.value.trim();
+  // Preserve formatting for source code - save innerHTML to preserve <br> tags and formatting
+  const code = codeEditor?.innerHTML || '';
+
+  // Validation
+  if (!name) {
+    addMessageToUI('system', 'Please enter a tool name.');
+    nameInput?.focus();
+    return;
+  }
+
+  // Check if code has any meaningful content (not just whitespace or empty HTML tags)
+  const tempDiv = document.createElement('div');
+  tempDiv.innerHTML = code;
+  const textContent = tempDiv.textContent || tempDiv.innerText || '';
+  if (!textContent.trim()) {
+    addMessageToUI('system', 'Please enter source code for the tool.');
+    codeEditor?.focus();
+    return;
+  }
+
+  try {
+    const toolData = {
+      name: name,
+      description: description,
+      code: code
+    };
+
+    // Check if we're editing an existing tool
+    const editingToolId = codeEditor?.dataset.editingToolId;
+    
+    if (window.toolsManager) {
+      // Use the toolsManager to save the tool (handles both create and update)
+      if (editingToolId) {
+        // Find the existing tool and update it
+        const existingTool = window.toolsManager.tools.find(t => t.id === editingToolId);
+        if (existingTool) {
+          // Update the existing tool data
+          Object.assign(existingTool, {
+            name: toolData.name,
+            description: toolData.description,
+            code: toolData.code,
+            updatedAt: new Date().toISOString()
+          });
+          await window.toolsManager.saveTools();
+          addMessageToUI('system', `Tool "${name}" updated successfully.`);
+        }
+      } else {
+        // Create new tool
+        const newTool = {
+          id: window.toolsManager.generateId(),
+          name: toolData.name,
+          description: toolData.description,
+          code: toolData.code,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        window.toolsManager.tools.push(newTool);
+        await window.toolsManager.saveTools();
+        addMessageToUI('system', `Tool "${name}" created successfully.`);
+      }
+    } else {
+      // Fallback API call
+      const response = await fetch('http://127.0.0.1:5000/api/tools', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(toolData)
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to save tool');
+      }
+      addMessageToUI('system', `Tool "${name}" saved successfully.`);
+    }
+
+    // Refresh the tools list and go back to list view
+    await refreshOperatorsToolsList();
+    showOperatorsListView();
+    
+  } catch (error) {
+    console.error('Error saving tool:', error);
+    addMessageToUI('system', `Error saving tool: ${error.message}`);
+  }
+}
+
+function saveInstance() {
+  // Get the active document container
+  const container = getActiveDocumentContainer();
+  if (!container) return;
+  
+  const nameInput = container.querySelector('#embedded-instance-name');
+  const toolSelect = container.querySelector('#embedded-instance-tool');
+
+  const name = nameInput?.value.trim();
+  const toolId = toolSelect?.value;
+
+  // Validation
+  if (!name) {
+    addMessageToUI('system', 'Please enter an instance name.');
+    nameInput?.focus();
+    return;
+  }
+
+  if (!toolId) {
+    addMessageToUI('system', 'Please select a tool.');
+    toolSelect?.focus();
+    return;
+  }
+
+  // Get output assignments
+  const outputs = [];
+  const outputFields = container.querySelectorAll('#embedded-instance-outputs .output-config-field');
+  
+  // Validate output fields
+  for (const field of outputFields) {
+    const configInput = field.querySelector('.output-config-input');
+    const variableSelect = field.querySelector('.output-variable-select');
+    
+    const config = configInput?.value.trim();
+    const variable = variableSelect?.value;
+    
+    // Only add if both config and variable are provided
+    if (config && variable) {
+      outputs.push({
+        config: config,
+        variable: variable
+      });
+    } else if (config && !variable) {
+      addMessageToUI('system', 'Please select a variable for output configuration: ' + config);
+      variableSelect?.focus();
+      return;
+    } else if (!config && variable) {
+      addMessageToUI('system', 'Please specify output configuration for variable: ' + variable);
+      configInput?.focus();
+      return;
+    }
+  }
+
+  // Get parameters
+  const parameters = {};
+  const paramFields = container.querySelectorAll('#embedded-instance-parameters .parameter-field');
+  paramFields.forEach(field => {
+    const key = field.querySelector('.param-key')?.value.trim();
+    const typeSelect = field.querySelector('.param-type-select');
+    const paramType = typeSelect?.value;
+    
+    let value = '';
+    if (paramType === 'literal') {
+      value = field.querySelector('.param-literal')?.value.trim();
+    } else if (paramType === 'dataset') {
+      value = field.querySelector('.param-dataset')?.value;
+    }
+    
+    if (key && value) {
+      parameters[key] = {
+        type: paramType,
+        value: value
+      };
+    }
+  });
+
+  // Get tool name for display
+  const toolOption = toolSelect?.options[toolSelect.selectedIndex];
+  const toolName = toolOption ? toolOption.textContent : '';
+
+  const instanceData = {
+    name: name,
+    toolId: toolId,
+    toolName: toolName,
+    inputDatasets: [],
+    parameters: parameters,
+    outputs: outputs
+  };
+
+  try {
+    if (operatorsData.currentEditingInstance) {
+      // Update existing instance
+      operatorManager.updateInstance(operatorsData.currentEditingInstance.id, instanceData);
+      addMessageToUI('system', `Operator "${name}" updated successfully.`);
+    } else {
+      // Create new instance
+      operatorManager.createInstance(instanceData);
+      addMessageToUI('system', `Operator "${name}" created successfully.`);
+    }
+
+    // Refresh the instances list and go back to list view
+    refreshInstancesList();
+    showOperatorsListView();
+    
+  } catch (error) {
+    console.error('Error saving instance:', error);
+    addMessageToUI('system', `Error saving instance: ${error.message}`);
+  }
+}
+
 // Action Functions
 async function executeInstanceById(instanceId) {
   try {
@@ -1362,10 +1728,6 @@ async function executeInstanceById(instanceId) {
   } catch (error) {
     console.error('Error executing instance:', error);
   }
-}
-
-async function editInstance(instanceId) {
-  await showAddInstanceDialog(instanceId);
 }
 
 function deleteInstance(instanceId) {
@@ -1394,7 +1756,7 @@ export {
   Operator, 
   OperatorManager, 
   showOperatorsDialog,
-  showAddInstanceDialog,
+  showInstanceEditor,
   addParameterField,
   addOutputField,
   executeRequiredOperatorsForTemplate
@@ -1486,21 +1848,13 @@ function identifyRequiredOperators(requiredVariables) {
 function getOperatorOutputVariables(operator) {
   const outputVars = [];
   
-  // Handle new format: array of outputs
+  // Handle outputs array
   if (operator.outputs && Array.isArray(operator.outputs)) {
     operator.outputs.forEach(output => {
       if (output.variable && output.variable.trim()) {
         outputVars.push(output.variable.trim());
       }
     });
-  }
-  
-  // Handle legacy format: single output
-  if (operator.outputVariable && operator.outputVariable.trim()) {
-    const legacyVar = operator.outputVariable.trim();
-    if (!outputVars.includes(legacyVar)) {
-      outputVars.push(legacyVar);
-    }
   }
   
   return outputVars;
@@ -1569,17 +1923,156 @@ async function executeOperatorsSequence(operators) {
   return results;
 }
 
+// Tools Sidebar Integration Functions for Operators Dialog
+async function refreshOperatorsToolsList() {
+  // Get the active document container
+  const documentContainer = getActiveDocumentContainer();
+  if (!documentContainer) return;
+  
+  const toolsContainer = documentContainer.querySelector('#operators-tools-items');
+  if (!toolsContainer) return;
+  
+  // Get available tools
+  let tools = [];
+  if (window.toolsManager) {
+    tools = window.toolsManager.tools;
+  } else {
+    // Fallback to API
+    try {
+      const response = await fetch('http://127.0.0.1:5000/api/tools');
+      const result = await response.json();
+      if (result.success) {
+        tools = result.tools || [];
+      }
+    } catch (error) {
+      console.error('Error loading tools:', error);
+    }
+  }
+  
+  // Clear existing items
+  toolsContainer.innerHTML = '';
+  
+  if (tools.length === 0) {
+    const noToolsDiv = documentContainer.querySelector('#operators-no-tools-message');
+    if (noToolsDiv) {
+      noToolsDiv.style.display = 'block';
+    }
+    return;
+  }
+  
+  // Hide no tools message
+  const noToolsDiv = documentContainer.querySelector('#operators-no-tools-message');
+  if (noToolsDiv) {
+    noToolsDiv.style.display = 'none';
+  }
+  
+  // Create tool items
+  tools.forEach(tool => {
+    const toolElement = createOperatorsSidebarToolElement(tool);
+    toolsContainer.appendChild(toolElement);
+  });
+}
+
+function createOperatorsSidebarToolElement(tool) {
+  const toolDiv = document.createElement('div');
+  toolDiv.className = 'operators-sidebar-tool-item';
+  toolDiv.dataset.toolId = tool.id;
+  
+  toolDiv.innerHTML = `
+    <div class="sidebar-tool-content">
+      <div class="sidebar-tool-name">${escapeHtml(tool.name)}</div>
+      <div class="sidebar-tool-description">${escapeHtml(tool.description || 'No description')}</div>
+    </div>
+    <div class="sidebar-tool-actions">
+      <button class="sidebar-tool-delete-btn" data-tool-id="${tool.id}" title="Delete tool">🗑️</button>
+    </div>
+  `;
+  
+  return toolDiv;
+}
+
+function setupToolsSidebarEventListeners() {
+  // Tools sidebar search
+  document.addEventListener('input', (e) => {
+    if (e.target.id === 'operators-tools-search') {
+      filterOperatorsTools(e.target.value);
+    }
+  });
+  
+  // Add tool button in sidebar
+  document.addEventListener('click', (e) => {
+    if (e.target.classList.contains('add-tool-btn-sidebar')) {
+      // Import and use tools manager
+      if (window.toolsManager && window.toolsManager.showAddToolDialog) {
+        window.toolsManager.showAddToolDialog();
+      } else {
+        // Fallback: try to find tools module functions
+        const addToolBtn = document.querySelector('.add-tool-btn');
+        if (addToolBtn) {
+          addToolBtn.click();
+        }
+      }
+    }
+    
+    // Delete tool button
+    if (e.target.classList.contains('sidebar-tool-delete-btn')) {
+      e.stopPropagation(); // Prevent triggering tool selection
+      const toolId = e.target.getAttribute('data-tool-id');
+      if (window.toolsManager) {
+        window.toolsManager.removeTool(toolId);
+      }
+    }
+  });
+  
+  // Tool selection in sidebar - show tool editor
+  document.addEventListener('click', (e) => {
+    const toolItem = e.target.closest('.operators-sidebar-tool-item');
+    if (toolItem && !e.target.classList.contains('sidebar-tool-delete-btn')) {
+      const toolId = toolItem.dataset.toolId;
+      showToolEditor(toolId);
+    }
+  });
+}
+
+function filterOperatorsTools(searchTerm) {
+  const toolItems = document.querySelectorAll('.operators-sidebar-tool-item');
+  const term = searchTerm.toLowerCase();
+  
+  toolItems.forEach(item => {
+    const nameElement = item.querySelector('.sidebar-tool-name');
+    const descriptionElement = item.querySelector('.sidebar-tool-description');
+    
+    if (nameElement && descriptionElement) {
+      const name = nameElement.textContent.toLowerCase();
+      const description = descriptionElement.textContent.toLowerCase();
+      
+      if (name.includes(term) || description.includes(term)) {
+        item.classList.remove('filtered-out');
+      } else {
+        item.classList.add('filtered-out');
+      }
+    }
+  });
+}
+
+
+
 // Make functions globally available
 window.operatorsModule = {
   showOperatorsDialog,
-  showAddInstanceDialog,
+  hideOperatorsDialog,
+  showOperatorsListView,
+  showToolEditor,
+  showInstanceEditor,
+  saveTool,
+  saveInstance,
   executeInstanceById,
-  editInstance,
   deleteInstance,
   addParameterField,
   addOutputField,
-  insertInstanceReference,
   openInstanceFromReference,
   styleInstanceReferences,
-  executeRequiredOperatorsForTemplate
+  executeRequiredOperatorsForTemplate,
+  refreshOperatorsToolsList,
+  setupToolsSidebarEventListeners
 }; 

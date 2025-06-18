@@ -6,11 +6,10 @@ class ToolsManager {
   constructor() {
     this.tools = [];
     this.currentEditingTool = null;
-    this.init();
   }
 
-  init() {
-    this.loadTools();
+  async init() {
+    await this.loadTools();
     this.setupEventListeners();
   }
 
@@ -154,15 +153,15 @@ class ToolsManager {
     }
   }
 
-  saveTool() {
+  async saveTool() {
     const nameInput = document.getElementById('tool-name');
     const descriptionInput = document.getElementById('tool-description');
     const codeInput = document.getElementById('tool-code');
     
     const name = nameInput.value.trim();
     const description = descriptionInput.value.trim();
-    // Preserve formatting for source code - use proper line break extraction
-    const code = getTextContentWithLineBreaks(codeInput);
+    // Preserve formatting for source code - save innerHTML to preserve <br> tags and formatting
+    const code = codeInput.innerHTML;
     
     // Validation
     if (!name) {
@@ -171,8 +170,11 @@ class ToolsManager {
       return;
     }
     
-    // Check if code has any meaningful content (not just whitespace)
-    if (!code.trim()) {
+    // Check if code has any meaningful content (not just whitespace or empty HTML tags)
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = code;
+    const textContent = tempDiv.textContent || tempDiv.innerText || '';
+    if (!textContent.trim()) {
       addMessageToUI('system', 'Please enter source code for the tool.');
       codeInput.focus();
       return;
@@ -207,9 +209,12 @@ class ToolsManager {
       addMessageToUI('system', `Tool "${name}" added successfully.`);
     }
     
-    this.saveTools();
+    await this.saveTools();
     this.refreshToolsList();
     this.hideAddToolDialog();
+    
+    // Refresh operators tools sidebar if operators dialog is open
+    this.refreshOperatorsToolsIfOpen();
   }
 
   loadTool(toolId) {
@@ -234,7 +239,8 @@ class ToolsManager {
     
     const sourceEditor = container.querySelector('.source-editor');
     if (sourceEditor) {
-      sourceEditor.textContent = tool.code;
+      // Load innerHTML to preserve formatting including <br> tags
+      sourceEditor.innerHTML = tool.code;
       addMessageToUI('system', `Loaded tool "${tool.name}" into source editor.`);
       
       // Close tools dialog
@@ -257,14 +263,30 @@ class ToolsManager {
     }
   }
 
-  removeTool(toolId) {
+  async removeTool(toolId) {
     const tool = this.tools.find(t => t.id === toolId);
     if (tool) {
       if (confirm(`Are you sure you want to delete the tool "${tool.name}"?`)) {
         this.tools = this.tools.filter(t => t.id !== toolId);
-        this.saveTools();
+        await this.saveTools();
         this.refreshToolsList();
         addMessageToUI('system', `Tool "${tool.name}" deleted successfully.`);
+        
+        // Refresh operators tools sidebar if operators dialog is open
+        this.refreshOperatorsToolsIfOpen();
+      }
+    }
+  }
+
+  refreshOperatorsToolsIfOpen() {
+    // Check if operators panel is open (either as dialog or embedded in document)
+    const operatorsDialog = document.getElementById('operators-dialog');
+    const operatorsPanel = document.querySelector('.operators-panel.active');
+    
+    if ((operatorsDialog && operatorsDialog.style.display !== 'none') || operatorsPanel) {
+      // Refresh the tools sidebar in operators dialog/panel
+      if (window.operatorsModule && window.operatorsModule.refreshOperatorsToolsList) {
+        window.operatorsModule.refreshOperatorsToolsList();
       }
     }
   }
@@ -353,9 +375,14 @@ class ToolsManager {
       return;
     }
     
-    // Convert newlines to <br> tags for proper display in contenteditable div
-    const htmlContent = content.replace(/\n/g, '<br>');
-    codeInput.innerHTML = htmlContent;
+    // If content already contains HTML (like <br> tags), use it directly
+    // Otherwise, convert newlines to <br> tags for proper display in contenteditable div
+    if (content.includes('<br>') || content.includes('<div>') || content.includes('<p>')) {
+      codeInput.innerHTML = content;
+    } else {
+      const htmlContent = content.replace(/\n/g, '<br>');
+      codeInput.innerHTML = htmlContent;
+    }
   }
 
   escapeHtml(text) {
@@ -364,20 +391,37 @@ class ToolsManager {
     return div.innerHTML;
   }
 
-  saveTools() {
+  async saveTools() {
     try {
-      localStorage.setItem('tools_data', JSON.stringify(this.tools));
+      const response = await fetch('http://127.0.0.1:5000/api/tools', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ tools: this.tools })
+      });
+      
+      const result = await response.json();
+      if (!result.success) {
+        console.error('Error saving tools:', result.error);
+        addMessageToUI('system', `Error saving tools: ${result.error}`);
+      }
     } catch (error) {
       console.error('Error saving tools:', error);
-      addMessageToUI('system', 'Error saving tools to storage.');
+      addMessageToUI('system', 'Error saving tools to backend.');
     }
   }
 
-  loadTools() {
+  async loadTools() {
     try {
-      const saved = localStorage.getItem('tools_data');
-      if (saved) {
-        this.tools = JSON.parse(saved);
+      const response = await fetch('http://127.0.0.1:5000/api/tools');
+      const result = await response.json();
+      
+      if (result.success) {
+        this.tools = result.tools || [];
+      } else {
+        console.error('Error loading tools:', result.error);
+        this.tools = [];
       }
     } catch (error) {
       console.error('Error loading tools:', error);
@@ -389,8 +433,13 @@ class ToolsManager {
 // Initialize tools manager
 let toolsManager;
 
-export function initTools() {
+export async function initTools() {
   toolsManager = new ToolsManager();
+  await toolsManager.init();
+  
+  // Make toolsManager globally available
+  window.toolsManager = toolsManager;
+  
   console.log('✅ Tools module initialized');
 }
 

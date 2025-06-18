@@ -1,9 +1,14 @@
 // Sample Tools for Demonstration
-export function addSampleTools() {
-  // Check if tools already exist in localStorage
-  const existingTools = localStorage.getItem('tools_data');
-  if (existingTools && JSON.parse(existingTools).length > 0) {
-    return; // Don't add samples if tools already exist
+export async function addSampleTools() {
+  // Check if tools already exist via API
+  try {
+    const response = await fetch('http://127.0.0.1:5000/api/tools');
+    const result = await response.json();
+    if (result.success && result.tools && result.tools.length > 0) {
+      return; // Don't add samples if tools already exist
+    }
+  } catch (error) {
+    console.error('Error checking existing tools:', error);
   }
 
   const sampleTools = [
@@ -406,7 +411,23 @@ console.log("Data Processor tool loaded successfully!")`,
     }
   ];
 
-  // Save sample tools to localStorage
-  localStorage.setItem('tools_data', JSON.stringify(sampleTools));
-  console.log('✅ Sample tools added to localStorage');
+  // Save sample tools via API
+  try {
+    const response = await fetch('http://127.0.0.1:5000/api/tools', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ tools: sampleTools })
+    });
+    
+    const result = await response.json();
+    if (result.success) {
+      console.log('✅ Sample tools added via API');
+    } else {
+      console.error('❌ Error adding sample tools:', result.error);
+    }
+  } catch (error) {
+    console.error('❌ Error adding sample tools:', error);
+  }
 } 

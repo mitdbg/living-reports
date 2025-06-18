@@ -123,19 +123,28 @@ export function switchToSource() {
   const sourcePanel = container.querySelector('.source-panel');
   const templatePanel = container.querySelector('.template-panel');
   const previewPanel = container.querySelector('.preview-panel');
+  const operatorsPanel = container.querySelector('.operators-panel');
   const diffView = container.querySelector('.diff-view');
   const contentTitle = container.querySelector('#content-title, .content-title');
   
   if (sourcePanel) {
     sourcePanel.classList.add('active');
+    sourcePanel.style.display = 'block';
   }
   
   if (templatePanel) {
     templatePanel.classList.remove('active');
+    templatePanel.style.display = 'none';
   }
   
   if (previewPanel) {
     previewPanel.classList.remove('active');
+    previewPanel.style.display = 'none';
+  }
+  
+  if (operatorsPanel) {
+    operatorsPanel.classList.remove('active');
+    operatorsPanel.style.display = 'none';
   }
   
   if (diffView) {
@@ -174,19 +183,28 @@ export function switchToTemplate() {
   const sourcePanel = container.querySelector('.source-panel');
   const templatePanel = container.querySelector('.template-panel');
   const previewPanel = container.querySelector('.preview-panel');
+  const operatorsPanel = container.querySelector('.operators-panel');
   const diffView = container.querySelector('.diff-view');
   const contentTitle = container.querySelector('#content-title, .content-title');
   
   if (sourcePanel) {
     sourcePanel.classList.remove('active');
+    sourcePanel.style.display = 'none';
   }
   
   if (templatePanel) {
     templatePanel.classList.add('active');
+    templatePanel.style.display = 'block';
   }
   
   if (previewPanel) {
     previewPanel.classList.remove('active');
+    previewPanel.style.display = 'none';
+  }
+  
+  if (operatorsPanel) {
+    operatorsPanel.classList.remove('active');
+    operatorsPanel.style.display = 'none';
   }
   
   if (diffView) {
@@ -219,19 +237,28 @@ export function switchToPreview() {
   const sourcePanel = container.querySelector('.source-panel');
   const templatePanel = container.querySelector('.template-panel');
   const previewPanel = container.querySelector('.preview-panel');
+  const operatorsPanel = container.querySelector('.operators-panel');
   const diffView = container.querySelector('.diff-view');
   const contentTitle = container.querySelector('#content-title, .content-title');
   
   if (sourcePanel) {
     sourcePanel.classList.remove('active');
+    sourcePanel.style.display = 'none';
   }
   
   if (templatePanel) {
     templatePanel.classList.remove('active');
+    templatePanel.style.display = 'none';
   }
   
   if (previewPanel) {
     previewPanel.classList.add('active');
+    previewPanel.style.display = 'block';
+  }
+  
+  if (operatorsPanel) {
+    operatorsPanel.classList.remove('active');
+    operatorsPanel.style.display = 'none';
   }
   
   if (diffView) {

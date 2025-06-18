@@ -18,19 +18,8 @@ from chat_manager import ChatManager
 from template import Template
 from execution_result import ExecutionResult
 from simple_view import SimpleView
-from diff_view import DiffView  
-from translate_comments_to_code_change import CommentTranslationService, CommentContext
-
-# Add file processing imports
-import pandas as pd
-from bs4 import BeautifulSoup
-import PyPDF2
-import openpyxl
+from file_processor import process_excel_file, process_pdf_file, process_html_file, process_pptx_file
 from pathlib import Path
-import io
-import base64
-from PIL import Image
-import tempfile
 import os
 
 # Add parent directory to path for imports
@@ -75,9 +64,6 @@ except Exception as e:
 # Global state
 view_registry = {}  # session_id -> View
 chat_manager = ChatManager(client, view_registry) if client else None
-
-# Initialize comment translation service
-comment_translation_service = CommentTranslationService(client) if client else None
 
 # Persistent storage for all documents
 DATABASE_DIR = 'database'
@@ -215,6 +201,38 @@ def save_variables(variables):
 # Initialize variables storage
 variables_storage = load_variables()
 
+# Persistent storage for Tools
+TOOLS_FILE = os.path.join(DATABASE_DIR, 'tools.json')
+
+def load_tools():
+    """Load all tools from file"""
+    try:
+        ensure_database_dir()
+        if os.path.exists(TOOLS_FILE):
+            with open(TOOLS_FILE, 'r') as f:
+                tools = json.load(f)
+                logger.info(f"🔧 Loaded {len(tools)} tools from {TOOLS_FILE}")
+                return tools
+        else:
+            logger.info("🔧 No existing tools file found. Starting fresh.")
+            return []
+    except Exception as e:
+        logger.error(f"❌ Error loading tools: {e}")
+        return []
+
+def save_tools(tools):
+    """Save all tools to file"""
+    try:
+        ensure_database_dir()
+        with open(TOOLS_FILE, 'w') as f:
+            json.dump(tools, f, indent=2)
+        logger.info(f"💾 Saved {len(tools)} tools to {TOOLS_FILE}")
+    except Exception as e:
+        logger.error(f"❌ Error saving tools: {e}")
+
+# Initialize tools storage
+tools_storage = load_tools()
+
 @app.before_request
 def log_request():
     """Log all incoming requests for debugging."""
@@ -227,9 +245,11 @@ def handle_chat():
     """Handle chat messages using the ChatManager."""
     try:
         data = request.get_json()
-        user_message = data.get('message', '')
+        user_message = data.get('user_message', '')
         session_id = data.get('session_id', 'default')
         current_template = data.get('current_template', '')
+        current_preview = data.get('current_preview', '')
+        current_mode = data.get('current_mode', 'preview')
         suggest_template = data.get('suggest_template', False)  # Default to False for regular chat
         
         # Check if chat_manager is available (requires OpenAI API key)
@@ -250,7 +270,9 @@ def handle_chat():
         response = chat_manager.handle_chat_message(
             user_message=user_message,
             session_id=session_id,
-            current_template_text=current_template,
+            current_template=current_template,
+            current_preview=current_preview,
+            current_mode=current_mode,
             suggest_template=suggest_template
         )
         
@@ -380,87 +402,48 @@ def clear_file_context():
             'success': False
         }), 500
 
-@app.route('/api/translate-comment', methods=['POST'])
-def translate_comment():
-    """Translate user comment into template edit suggestion."""
+def fix_pptx_css_location(ai_generated_content, original_content):
+    """
+    Fix PPTX CSS that may have been moved to the wrong location by AI.
+    Ensures CSS stays in <style> tags at the proper location.
+    """
     try:
-        data = request.get_json()
+        import re
         
-        # Extract comment data
-        comment_text = data.get('comment_text', '')
-        selected_text = data.get('selected_text', '')
-        mode = data.get('mode', 'preview')  # 'preview', 'template', 'source'
+        # Extract original CSS from the original content
+        original_css_match = re.search(r'<style[^>]*>(.*?)</style>', original_content, re.DOTALL | re.IGNORECASE)
+        if not original_css_match:
+            return ai_generated_content
         
-        # Extract document context
-        template_content = data.get('template_content', '')
-        preview_content = data.get('preview_content', '')
-        source_content = data.get('source_content', '')
-        variables = data.get('variables', {})
+        original_css = original_css_match.group(1)
         
-        # Document and session info
-        document_id = data.get('document_id')
-        session_id = data.get('session_id', 'default')
+        # Check if AI moved CSS outside of style tags
+        # Look for CSS rules that appear as plain text
+        css_pattern = r'\._css_\w+\s*\{[^}]*\}'
+        loose_css_matches = re.findall(css_pattern, ai_generated_content)
         
-        # Validate required fields
-        if not comment_text:
-            return jsonify({
-                'success': False,
-                'error': 'Comment text is required'
-            }), 400
+        if loose_css_matches:
+            # Remove loose CSS from content
+            cleaned_content = ai_generated_content
+            for css_rule in loose_css_matches:
+                cleaned_content = cleaned_content.replace(css_rule, '')
+            
+            # Clean up extra whitespace
+            cleaned_content = re.sub(r'\s+', ' ', cleaned_content).strip()
+            
+            # Ensure the original CSS is present in a style tag
+            if '<style>' not in cleaned_content:
+                # Add style tag with original CSS at the beginning
+                cleaned_content = f'<style>{original_css}</style>\n{cleaned_content}'
+            
+            return cleaned_content
         
-        # Check if comment translation service is available
-        if comment_translation_service is None:
-            return jsonify({
-                'success': False,
-                'error': 'Comment translation service not available (API key not configured)'
-            })
-        
-        # Create comment context
-        comment_context = CommentContext(
-            comment_text=comment_text,
-            selected_text=selected_text,
-            mode=mode,
-            template_content=template_content,
-            preview_content=preview_content,
-            source_content=source_content,
-            variables=variables
-        )
-        
-        # Get translation suggestion
-        suggestion = comment_translation_service.translate_comment_to_template_edit(comment_context)
-        
-        print(f"_____Suggestion: {suggestion}")
-        # Convert suggestion to dict for JSON response
-        suggestion_dict = {
-            'original_comment': suggestion.original_comment,
-            'selected_text': suggestion.selected_text,
-            'suggested_change': suggestion.suggested_change,
-            'explanation': suggestion.explanation,
-            'confidence': suggestion.confidence,
-            'change_type': suggestion.change_type,
-            'original_text': suggestion.original_text
-        }
-        
-        logger.info(f"Generated comment translation for document {document_id}: {comment_text[:50]}...")
-        
-        return jsonify({
-            'success': True,
-            'suggestion': suggestion_dict,
-            'analysis': {
-                'comment_length': len(comment_text),
-                'selected_text_length': len(selected_text),
-                'mode': mode,
-                'template_length': len(template_content),
-                'variables_count': len(variables)
-            }
-        })
+        # If no loose CSS found, return as-is
+        return ai_generated_content
         
     except Exception as e:
-        logger.error(f"Error translating comment: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        print(f"Error fixing PPTX CSS location: {e}")
+        return ai_generated_content
 
 @app.route('/api/ai-suggestion', methods=['POST'])
 def get_ai_suggestion():
@@ -501,6 +484,15 @@ def get_ai_suggestion():
                 'error': 'AI service not available (API key not configured)'
             })
         
+        # Detect if this is PPTX content with embedded CSS
+        has_pptx_css = '<style>' in full_content and '_css_' in full_content
+        
+        # Define strings with backslashes outside f-string
+        newline_instruction = 'Use <br> for line breaks, not newlines.'
+        pptx_warning = 'CRITICAL - PPTX CONTENT DETECTED: This content contains PowerPoint slides with embedded CSS styles. You MUST preserve all <style> tags and CSS rules EXACTLY as they are. Do NOT move, modify, or relocate any CSS code. The CSS must remain in <style> tags at the top of the content.' if has_pptx_css else ''
+        css_requirement = 'If content has <style> tags with CSS, preserve them EXACTLY in their original location' if has_pptx_css else 'You can modify any part of the content to address the user\'s request'
+        css_rule = '6. DO NOT move or modify any <style> tags or CSS rules - they control slide formatting' if has_pptx_css else ''
+        
         # Create structured prompt for LLM
         prompt = f"""You are an AI assistant helping to improve content based on user feedback.
 
@@ -511,36 +503,36 @@ FULL CONTENT:
 SELECTED TEXT: "{selected_text}"
 USER REQUEST: "{user_request}"
 
-Based on the user's request, please suggest a specific improvement to the selected text.
+The user has selected some text and made a request about it. Based on their request, you should provide an improved version of the ENTIRE content, not just the selected text. You can modify any part of the content to address the user's request - add, remove, or change any sections as needed.
 
-IMPORTANT: Respond with ONLY a JSON object in this exact format:
+IMPORTANT: The full_content is in HTML format. You must return the improved content in the SAME HTML format, preserving all HTML tags, attributes, and structure. {newline_instruction}
+
+{pptx_warning}
+
+Respond with ONLY a JSON object in this exact format:
 {{
-    "change_type": "replace|add|remove",
-    "original_text": "exact text from content to change",
-    "new_text": "suggested replacement/addition text",
-    "explanation": "brief explanation of the change",
+    "new_text": "the complete improved content in HTML format (entire document/content)",
+    "explanation": "brief explanation of what changes were made and why",
     "confidence": 0.85
 }}
 
 Requirements:
-1. "original_text" must be the exact text that exists in the content
-2. For "replace": provide both original_text and new_text
-3. For "add": original_text can be nearby context, new_text is what to add
-4. For "remove": only original_text is needed, new_text can be empty
-5. "confidence" should be between 0.0 and 1.0
-6. Return ONLY the JSON object, no other text
+1. "new_text" must contain the ENTIRE improved content in HTML format, not just a fragment
+2. Preserve HTML structure - use <br> for line breaks, maintain existing HTML tags
+3. {css_requirement}
+4. "confidence" should be between 0.0 and 1.0
+5. Return ONLY the JSON object, no other text
+{css_rule}
 
 JSON:"""
-        
         try:
             # Call LLM for suggestion
             if hasattr(client, 'chat'):
-                # OpenAI client
                 response = client.chat.completions.create(
                     model="gpt-3.5-turbo",
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.3,
-                    max_tokens=500
+                    max_tokens=2000
                 )
                 suggestion_text = response.choices[0].message.content.strip()
             else:
@@ -555,9 +547,7 @@ JSON:"""
             
             print(f"AI Suggestion Raw Response: {suggestion_text}")
             
-            # Parse LLM response
             try:
-                # Try to extract JSON from the response
                 import json
                 import re
                 
@@ -569,28 +559,19 @@ JSON:"""
                 else:
                     raise ValueError("No JSON found in response")
                 
-                # Validate required fields
-                required_fields = ['change_type', 'original_text', 'explanation']
+                required_fields = ['new_text', 'explanation', 'confidence']
                 for field in required_fields:
                     if field not in parsed_suggestion:
                         raise ValueError(f"Missing required field: {field}")
                 
-                # Validate change_type
-                if parsed_suggestion['change_type'] not in ['replace', 'add', 'remove']:
-                    raise ValueError(f"Invalid change_type: {parsed_suggestion['change_type']}")
-                
-                # Set defaults
                 parsed_suggestion['confidence'] = parsed_suggestion.get('confidence', 0.7)
-                parsed_suggestion['new_text'] = parsed_suggestion.get('new_text', '')
+                new_text = parsed_suggestion.get('new_text', '')
                 
-                # Additional validation: check if original_text exists in full_content
-                if parsed_suggestion['original_text'] and parsed_suggestion['original_text'] not in full_content:
-                    print(f"Warning: original_text '{parsed_suggestion['original_text']}' not found in content")
-                    # Try to find similar text
-                    if selected_text in full_content:
-                        parsed_suggestion['original_text'] = selected_text
-                        print(f"Using selected_text as fallback: '{selected_text}'")
+                # Post-process PPTX content to ensure CSS stays in proper location
+                if has_pptx_css:
+                    new_text = fix_pptx_css_location(new_text, full_content)
                 
+                parsed_suggestion['new_text'] = new_text
                 return jsonify({
                     'success': True,
                     'suggestion': parsed_suggestion,
@@ -621,176 +602,8 @@ JSON:"""
             'error': str(e)
         }), 500
 
-@app.route('/api/compute-diff', methods=['POST'])
-def compute_diff():
-    """Compute diff between current and suggested template/output."""
-    try:
-        data = request.get_json()
-        current_text = data.get('current_text', '')
-        suggested_text = data.get('suggested_text', '')
-        session_id = data.get('session_id', 'default')
-        content_type = data.get('content_type', 'template')  # 'template' or 'output'
-        
-        # Use the backend diff computation from DiffViewStrategy
-        if content_type == 'template':
-            # For templates, we need to execute both to get outputs
-            document_id = data.get('document_id', None)
-            current_template = Template(current_text, document_id)
-            suggested_template = Template(suggested_text, document_id)
-            
-            # Execute both templates
-            execution_result = ExecutionResult()
-            current_result = current_template.execute(client, execution_result)
-            suggested_result = suggested_template.execute(client, execution_result)
-            
-            # Create DiffView to compute diffs
-            from diff_view import DiffView
-            diff_view = DiffView(
-                current_template=current_template,
-                current_result=current_result,
-                suggested_template=suggested_template,
-                suggested_result=suggested_result,
-                client=client
-            )
-            
-            template_data = diff_view.render_template()
-            output_data = diff_view.render_output()
-            
-            return jsonify({
-                'success': True,
-                'template_diffs': template_data.get('line_diffs', []),
-                'current_template': template_data.get('current_template', ''),
-                'suggested_template': template_data.get('suggested_template', ''),
-                'current_output': output_data.get('current_output', ''),
-                'suggested_output': output_data.get('suggested_output', ''),
-                'output_diffs': compute_text_diff(
-                    output_data.get('current_output', ''),
-                    output_data.get('suggested_output', '')
-                )
-            })
-        else:
-            # For output-only diff
-            diffs = compute_text_diff(current_text, suggested_text)
-            return jsonify({
-                'success': True,
-                'output_diffs': diffs,
-                'current_output': current_text,
-                'suggested_output': suggested_text
-            })
-        
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
 
-def compute_text_diff(current_text, suggested_text):
-    """Helper function to compute line-by-line diff for any text."""
-    current_lines = current_text.split('\n')
-    suggested_lines = suggested_text.split('\n')
-    max_lines = max(len(current_lines), len(suggested_lines))
-    
-    diffs = []
-    for i in range(max_lines):
-        current_line = current_lines[i] if i < len(current_lines) else ''
-        suggested_line = suggested_lines[i] if i < len(suggested_lines) else ''
-        
-        if current_line != suggested_line:
-            diffs.append({
-                'line_index': i,
-                'current_line': current_line,
-                'suggested_line': suggested_line,
-                'change_type': 'modified' if current_line and suggested_line 
-                             else 'added' if not current_line 
-                             else 'removed'
-            })
-    
-    return diffs
 
-@app.route('/api/view-action', methods=['POST'])
-def handle_view_action():
-    """Handle view actions like accept/reject in diff view."""
-    try:
-        data = request.get_json()
-        action = data.get('action', '')
-        session_id = data.get('session_id', 'default')
-        
-        if session_id not in view_registry:
-            return jsonify({'error': 'No view found for session'}), 404
-        
-        view = view_registry[session_id]
-        
-        if isinstance(view, DiffView):
-            if action == 'accept':
-                new_view = view.accept_suggestion()
-                view_registry[session_id] = new_view
-                return jsonify({
-                    'success': True,
-                    'message': 'Suggestion accepted',
-                    'view_type': 'simple'
-                })
-            elif action == 'reject':
-                new_view = view.reject_suggestion()
-                view_registry[session_id] = new_view
-                return jsonify({
-                    'success': True,
-                    'message': 'Suggestion rejected',
-                    'view_type': 'simple'
-                })
-        
-        return jsonify({'error': 'Invalid action or view type'}), 400
-        
-    except Exception as e:
-        return jsonify({
-            'error': str(e),
-            'success': False
-        }), 500
-
-@app.route('/api/get-view', methods=['GET'])
-def get_current_view():
-    """Get the current view state."""
-    try:
-        session_id = request.args.get('session_id', 'default')
-        
-        if session_id not in view_registry:
-            return jsonify({
-                'view_type': 'simple',
-                'template_text': '',
-                'rendered_output': '',
-                'variables': {}
-            })
-        
-        view = view_registry[session_id]
-        template_data = view.render_template()
-        output_data = view.render_output()
-        
-        response = {
-            'view_type': output_data.get('view_type', 'simple'),
-            'template_text': template_data.get('template_text', ''),
-            'rendered_output': output_data.get('result', ''),
-            'variables': output_data.get('variables', {})
-        }
-        
-        # Add diff-specific data if it's a DiffView
-        if isinstance(view, DiffView):
-            response.update({
-                'current_template': template_data.get('current_template', ''),
-                'suggested_template': template_data.get('suggested_template', ''),
-                'line_diffs': template_data.get('line_diffs', []),
-                'current_output': output_data.get('current_output', ''),
-                'suggested_output': output_data.get('suggested_output', '')
-            })
-        
-        return jsonify(response)
-        
-    except Exception as e:
-        return jsonify({
-            'error': str(e),
-            'view_type': 'simple',
-            'template_text': '',
-            'rendered_output': '',
-            'variables': {}
-        }), 500
 
 @app.route('/api/chat/clear', methods=['POST'])
 def clear_chat_history():
@@ -816,128 +629,7 @@ def clear_chat_history():
             'success': False
         }), 500
 
-# File processing utility functions
-def process_excel_file(file_content, file_name):
-    """Process Excel file and extract text content."""
-    try:
-        # Create a BytesIO object from the content
-        file_buffer = io.BytesIO(base64.b64decode(file_content))
-        
-        # Read Excel file
-        if file_name.endswith('.xlsx'):
-            workbook = openpyxl.load_workbook(file_buffer)
-            content = f"Excel File: {file_name}\n\n"
-            
-            for sheet_name in workbook.sheetnames:
-                sheet = workbook[sheet_name]
-                content += f"Sheet: {sheet_name}\n"
-                content += "-" * 40 + "\n"
-                
-                for row in sheet.iter_rows(values_only=True):
-                    if any(cell is not None for cell in row):
-                        row_text = "\t".join(str(cell) if cell is not None else "" for cell in row)
-                        content += row_text + "\n"
-                content += "\n"
-        else:
-            # For .xls files, use pandas
-            df_dict = pd.read_excel(file_buffer, sheet_name=None)
-            content = f"Excel File: {file_name}\n\n"
-            
-            for sheet_name, df in df_dict.items():
-                content += f"Sheet: {sheet_name}\n"
-                content += "-" * 40 + "\n"
-                content += df.to_string(index=False) + "\n\n"
-        
-        return content
-        
-    except Exception as e:
-        return f"Error processing Excel file: {str(e)}"
 
-def process_pdf_file(file_content, file_name):
-    """Process PDF file and extract text content."""
-    try:
-        # Create a BytesIO object from the content
-        file_buffer = io.BytesIO(base64.b64decode(file_content))
-        
-        # Read PDF file
-        pdf_reader = PyPDF2.PdfReader(file_buffer)
-        content = f"PDF File: {file_name}\n"
-        content += f"Number of pages: {len(pdf_reader.pages)}\n\n"
-        
-        for page_num, page in enumerate(pdf_reader.pages, 1):
-            content += f"Page {page_num}:\n"
-            content += "-" * 40 + "\n"
-            try:
-                page_text = page.extract_text()
-                content += page_text + "\n\n"
-            except Exception as e:
-                content += f"Error extracting text from page {page_num}: {str(e)}\n\n"
-        
-        return content
-        
-    except Exception as e:
-        return f"Error processing PDF file: {str(e)}"
-
-def process_html_file(file_content, file_name):
-    """Process HTML file and extract text content."""
-    try:
-        # If content is base64 encoded, decode it
-        if isinstance(file_content, str) and len(file_content) > 100:
-            try:
-                html_content = base64.b64decode(file_content).decode('utf-8')
-            except:
-                html_content = file_content
-        else:
-            html_content = file_content
-        
-        # Parse HTML and extract text
-        soup = BeautifulSoup(html_content, 'html.parser')
-        
-        content = f"HTML File: {file_name}\n\n"
-        
-        # Extract title if available
-        title = soup.find('title')
-        if title:
-            content += f"Title: {title.get_text().strip()}\n\n"
-        
-        # Extract main content
-        # Remove script and style elements
-        for script in soup(["script", "style"]):
-            script.decompose()
-        
-        # Get text content
-        text = soup.get_text()
-        
-        # Clean up whitespace
-        lines = (line.strip() for line in text.splitlines())
-        chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
-        content += '\n'.join(chunk for chunk in chunks if chunk)
-        
-        return content
-        
-    except Exception as e:
-        return f"Error processing HTML file: {str(e)}"
-
-def process_pptx_file(file_path):
-    """
-    PPTX files are now processed client-side using PPTX2HTML JavaScript library.
-    This function returns a message indicating the file should be processed in the browser.
-    """
-    try:
-        # Get basic file info
-        file_size = os.path.getsize(file_path)
-        
-        return {
-            'success': True,
-            'content': f'PPTX file ready for client-side processing. File size: {file_size} bytes. This file will be processed using the PPTX2HTML JavaScript library in your browser for better visual fidelity.',
-            'file_type': 'pptx',
-            'processing_method': 'client-side'
-        }
-    except Exception as e:
-        return {
-            'success': False,
-            'error': f'Error accessing PPTX file: {str(e)}'
-        }
 
 @app.route('/api/process-file', methods=['POST'])
 def process_file():
@@ -1548,6 +1240,100 @@ JSON:"""
             'error': str(e)
         }), 500
 
+# Tools API endpoints
+@app.route('/api/tools', methods=['GET'])
+def get_tools():
+    """Get all tools"""
+    try:
+        return jsonify({
+            'success': True,
+            'tools': tools_storage
+        })
+    except Exception as e:
+        logger.error(f"❌ Error getting tools: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/tools', methods=['POST'])
+def save_tools_endpoint():
+    """Save tools to file"""
+    try:
+        data = request.get_json()
+        
+        if not data or 'tools' not in data:
+            return jsonify({
+                'success': False,
+                'error': 'Missing tools data'
+            }), 400
+        
+        tools = data['tools']
+        
+        # Validate tools structure
+        if not isinstance(tools, list):
+            return jsonify({
+                'success': False,
+                'error': 'Tools must be an array'
+            }), 400
+        
+        # Validate each tool has required fields
+        for tool in tools:
+            if not isinstance(tool, dict) or 'id' not in tool or 'name' not in tool:
+                return jsonify({
+                    'success': False,
+                    'error': 'Each tool must have id and name fields'
+                }), 400
+        
+        # Update global storage
+        global tools_storage
+        tools_storage = tools
+        
+        # Save to file
+        save_tools(tools)
+        
+        return jsonify({
+            'success': True,
+            'message': f'Successfully saved {len(tools)} tools'
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Error saving tools: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/tools/<tool_id>', methods=['DELETE'])
+def delete_tool(tool_id):
+    """Delete a specific tool"""
+    try:
+        global tools_storage
+        
+        # Find and remove the tool
+        original_count = len(tools_storage)
+        tools_storage = [tool for tool in tools_storage if tool.get('id') != tool_id]
+        
+        if len(tools_storage) == original_count:
+            return jsonify({
+                'success': False,
+                'error': 'Tool not found'
+            }), 404
+        
+        # Save updated tools
+        save_tools(tools_storage)
+        
+        return jsonify({
+            'success': True,
+            'message': f'Successfully deleted tool {tool_id}'
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Error deleting tool: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 if __name__ == '__main__':
     print("Starting Python backend server...")

@@ -16,7 +16,7 @@ import { initVerification } from './verification.js';
 import { initDataLake } from './data-lake.js';
 import { initTools } from './tools.js';
 import { addSampleTools } from './sample-tools.js';
-import { initOperators } from './code-instances.js';
+import { initOperators } from './operators.js';
 import './variables.js'; // Import variables module to initialize it
 
 let documentManager;
@@ -64,9 +64,8 @@ async function initApp() {
     // Start auto-refresh for shared documents
     documentManager.startAutoRefresh();
     
-    // Initialize main page functionality
     initMainPageFunctionality();
-    
+
     // Initialize collaboration features
     initCollaborationFeatures();
     
@@ -97,19 +96,11 @@ async function initializeCoreModules() {
     initContentMapping();
     initVerification();
     initDataLake(); // Initialize Data Lake functionality
-    initTools(); // Initialize Tools functionality
+    await initTools(); // Initialize Tools functionality
     initOperators(); // Initialize Operators functionality
     
     // Add sample tools for demonstration (only if no tools exist)
-    addSampleTools();
-    
-    // Initialize comment translation module
-    try {
-      await import('./comment-translation.js');
-      console.log('✅ Comment translation module loaded');
-    } catch (error) {
-      console.warn('⚠️ Comment translation module not available:', error);
-    }
+    await addSampleTools();
     
     console.log('Core modules initialized successfully');
   } catch (error) {
@@ -125,7 +116,6 @@ if (document.readyState === 'loading') {
   initApp();
 }
 
-// Initialize main page functionality
 function initMainPageFunctionality() {
   try {
     // Initialize clear comments functionality for when documents are active
@@ -151,6 +141,7 @@ function initMainPageFunctionality() {
     console.error('💥 Error in initMainPageFunctionality:', error);
   }
 }
+
 
 // Initialize collaboration features
 function initCollaborationFeatures() {

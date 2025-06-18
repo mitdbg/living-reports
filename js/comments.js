@@ -5,6 +5,128 @@ import { createFloatingAnnotation, showAnnotationForText, refreshAnnotationEleme
 import { addMessageToUI, addWaitingIndicator, removeWaitingIndicator } from './chat.js';
 import { getCurrentUser } from './auth.js';
 
+/**
+ * Parse structured LLM response for AI suggestions
+ * @param {string} suggestion - Raw AI suggestion text
+ * @param {string} fullContent - Full content context  
+ * @param {Object} context - Additional context (legacy parameter)
+ * @returns {Object|null} - Parsed suggestion with new_text, explanation, confidence
+ */
+function parseStructuredLLMResponse(suggestion, fullContent, context = {}) {
+  try {
+    console.log('Parsing structured LLM response:', { suggestion, fullContent, context });
+    
+    // Check if suggestion is already a parsed object
+    if (typeof suggestion === 'object' && suggestion !== null) {
+      console.log('Suggestion is already parsed object:', suggestion);
+      
+      // Validate required fields
+      if (suggestion && suggestion.new_text) {
+        return {
+          new_text: suggestion.new_text,
+          explanation: suggestion.explanation || 'AI suggestion',
+          confidence: suggestion.confidence || 0.8
+        };
+      } else {
+        console.warn('Parsed object missing required fields:', suggestion);
+        return null;
+      }
+    }
+    
+    // If not an object, treat as string and try to parse as JSON
+    if (typeof suggestion === 'string' && suggestion.trim().startsWith('{') && suggestion.trim().endsWith('}')) {
+      const parsed = JSON.parse(suggestion);
+      
+      // Validate required fields
+      if (parsed.new_text && parsed.explanation) {
+        return {
+          new_text: parsed.new_text,
+          explanation: parsed.explanation || 'AI suggestion',
+          confidence: parsed.confidence || 0.8
+        };
+      }
+    }
+    
+    // If not JSON, try to extract structured content from text (only if it's a string)
+    if (typeof suggestion !== 'string') {
+      console.warn('Suggestion is not a string and not a valid object:', suggestion);
+      return null;
+    }
+    
+    const lines = suggestion.split('\n').map(line => line.trim()).filter(line => line);
+    
+    // Look for common patterns in AI responses
+    let newText = '';
+    let explanation = '';
+    let confidence = 0.8;
+    
+    // Pattern 1: Look for "Replace with:" or "Change to:" patterns
+    const replaceMatch = suggestion.match(/(?:replace with|change to|new text):\s*["']?([^"'\n]+)["']?/i);
+    if (replaceMatch) {
+      newText = replaceMatch[1];
+    }
+    
+    // Pattern 2: Look for explanation patterns
+    const explanationMatch = suggestion.match(/(?:explanation|reason|because):\s*([^\n]+)/i);
+    if (explanationMatch) {
+      explanation = explanationMatch[1];
+    }
+    
+    // Pattern 3: Look for confidence patterns
+    const confidenceMatch = suggestion.match(/(?:confidence|certainty):\s*(\d+(?:\.\d+)?)/i);
+    if (confidenceMatch) {
+      confidence = parseFloat(confidenceMatch[1]);
+      if (confidence > 1) confidence = confidence / 100; // Convert percentage to decimal
+    }
+    
+    // If no structured patterns found, use the whole suggestion as new text
+    if (!newText) {
+      // Try to find the main suggestion content
+      const codeBlockMatch = suggestion.match(/```[\s\S]*?\n([\s\S]*?)```/);
+      if (codeBlockMatch) {
+        newText = codeBlockMatch[1].trim();
+      } else if (lines.length > 0) {
+        // Use the longest line as the main suggestion
+        newText = lines.reduce((longest, current) => 
+          current.length > longest.length ? current : longest, ''
+        );
+      } else {
+        newText = suggestion.trim();
+      }
+    }
+    
+    if (!explanation) {
+      explanation = 'AI-generated improvement suggestion';
+    }
+    
+    // Validate we have meaningful content
+    if (!newText || newText.length < 1) {
+      console.warn('parseStructuredLLMResponse: No meaningful content found in suggestion');
+      return null;
+    }
+    
+    return {
+      new_text: newText,
+      explanation: explanation,
+      confidence: Math.max(0.1, Math.min(1.0, confidence)) // Clamp between 0.1 and 1.0
+    };
+    
+  } catch (error) {
+    console.error('Error parsing LLM response:', error);
+    
+    // Fallback: use the raw suggestion
+    if (suggestion && suggestion.trim().length > 0) {
+      return {
+        new_text: suggestion.trim(),
+        explanation: 'AI suggestion (fallback parsing)',
+        confidence: 0.7
+      };
+    }
+    
+    return null;
+  }
+}
+
 // Create window-specific storage for initialization flags and handlers
 const COMMENTS_KEY = `comments_${windowId}`;
 if (!window[COMMENTS_KEY]) {
@@ -31,51 +153,84 @@ if (!window[COMMENTS_KEY]) {
 
 const commentsData = window[COMMENTS_KEY];
 
-
-
-/**
- * Shared function to delete a single comment (removes highlighting and annotation)
- * This consolidates the deletion logic in one place
- */
 function deleteSingleComment(commentId, comment) {
   console.log(`Deleting comment: ${commentId}`);
   
-  // Remove text highlighting for this comment
   const highlights = document.querySelectorAll(`.text-comment-highlight[data-comment-id="${commentId}"]`);
   highlights.forEach(highlight => {
     removeHighlightWrapper(highlight);
   });
   
-  // Remove floating annotation if it exists
   if (comment.ui && comment.ui.element) {
     console.log(`Removing floating annotation for comment: ${commentId}`);
     comment.ui.element.remove();
   }
   
-  // Remove from state
   delete state.comments[commentId];
 }
+
+export function clearAllComments() {
+  console.log('Clearing all comments (unified function)');
+  
+  // Get all comments to delete
+  const commentsToRemove = Object.entries(state.comments);
+  console.log(`Found ${commentsToRemove.length} comments to delete`);
+  
+  // Delete each comment using shared logic
+  commentsToRemove.forEach(([commentId, comment], index) => {
+    console.log(`Deleting comment ${index + 1}/${commentsToRemove.length}`);
+    deleteSingleComment(commentId, comment);
+  });
+  
+  // Reset comment counter
+  state.commentIdCounter = 0;
+  
+  // Trigger auto-save for comment changes
+  if (window.documentManager && commentsToRemove.length > 0) {
+    window.documentManager.onCommentChange();
+  }
+  
+  console.log('All comments cleared successfully');
+}
+
+// Clear only comments for the current mode (unified function)
+export function clearCurrentModeComments() {
+  console.log('Clearing comments for current mode:', state.currentMode);
+  console.log('Available comments:', Object.keys(state.comments));
+  
+  // Find comments for current mode
+  const commentsToRemove = Object.entries(state.comments).filter(([id, comment]) => 
+    comment.mode === state.currentMode
+  );
+  
+  console.log('Comments to remove:', commentsToRemove.map(([id, comment]) => ({ id, mode: comment.mode })));
+  
+  // Delete each comment using shared logic
+  commentsToRemove.forEach(([commentId, comment], index) => {
+    console.log(`Deleting comment ${index + 1}/${commentsToRemove.length}`);
+    deleteSingleComment(commentId, comment);
+  });
+  
+  // Trigger auto-save for comment changes
+  if (window.documentManager && commentsToRemove.length > 0) {
+    window.documentManager.onCommentChange();
+  }
+  
+  console.log(`Removed ${commentsToRemove.length} comments from current mode`);
+  return commentsToRemove.length;
+}
+
+// Keep old function name for backward compatibility
+export function clearCurrentModeTextComments() {
+  return clearCurrentModeComments();
+}
+
 
 // Text comment management functions
 export function createTextComment(selectedText, commentContent) {
   const commentId = `text-comment-${incrementCommentCounter()}`;
-  
-  // Get current user information
   const currentUser = getCurrentUser();
-  
-  // Get the stored selection range from the floating comment element (for live highlighting)
-  let selectionRange = null;
-  
-  if (elements.floatingComment && elements.floatingComment.storedSelectionRange) {
-    selectionRange = elements.floatingComment.storedSelectionRange;
-    console.log('Using stored selection range for highlighting');
-  } else {
-    console.warn('No stored selection range found, using text matching');
-  }
-  
-  // Create simplified comment data object
   const commentData = {
-    // Core comment data
     id: commentId,
     selectedText: selectedText,
     commentMessage: commentContent,
@@ -85,65 +240,42 @@ export function createTextComment(selectedText, commentContent) {
     authorEmoji: currentUser ? currentUser.emoji : '👤',
     authorColor: currentUser ? currentUser.color : '#666666',
     createdAt: new Date().toISOString(),
-    
-    // Conversation messages
     messages: [],
-    
-    // State flags
     isResolved: false,
     isActive: true,
-    
-    // UI state (annotation window)
     ui: {
-      position: null, // Will be set when annotation is created
-      element: null,  // Will be set when annotation is created
+      position: null,
+      element: null,
       isVisible: false,
       isDragging: false
     }
   };
   
-  // Store in unified comments structure
   state.comments[commentId] = commentData;
+
+  createTextHighlight({
+    selectedText: selectedText,
+    commentId: commentId,
+  });
   
-  // Apply highlighting to the selected text
-  highlightSelectedText(selectedText, commentId, selectionRange);
-  
-  // Create floating annotation window for the comment
   createFloatingAnnotation(selectedText, commentContent, commentData);
   
-  // Clear the stored range since we've used it
-  if (elements.floatingComment) {
-    elements.floatingComment.storedSelectionRange = null;
-  }
-  
-  // Show feedback message
   addMessageToUI('system', `Comment added: "${commentContent}" for text "${selectedText.substring(0, 30)}${selectedText.length > 30 ? '...' : ''}"`);
-  
-  // Trigger auto-save for comment changes
+
   if (window.documentManager) {
     window.documentManager.onCommentChange();
   }
 }
 
-function highlightSelectedText(selectedText, commentId, selectionRange) {
-  console.log('Highlighting text - Current mode from state:', state.currentMode);
-  
-  // Use the simplified highlighting function
-  return createTextHighlight({
-    selectedText: selectedText,
-    commentId: commentId,
-    selectionRange: selectionRange
-  });
-}
+/**
+ * Unified highlighting function for all HTML-based elements (preview, template editor, source editor)
+ */
+function highlightInHtmlElement(targetElement, selectedText, commentId) {
+  let content = targetElement.innerHTML;
 
-// Fallback method using text replacement (for cases where range highlighting fails)
-function highlightInPreviewFallback(selectedText, commentId, selectionRange) {
-  const previewElement = elements.previewContent;
-  let content = previewElement.innerHTML;
-
-  // For HTML selectedText (preview mode), do direct replacement
+  // For HTML content (with tags), do direct replacement
   if (/<[^>]*>/.test(selectedText)) {
-    console.log('Preview mode: Using direct HTML replacement for:', selectedText.substring(0, 100));
+    console.log('Using direct HTML replacement for:', selectedText.substring(0, 100));
     
     if (content.includes(selectedText)) {
       const replacement = `<div data-comment-id="${commentId}" title="Click to view comment" class="text-comment-highlight">${selectedText}</div>`;
@@ -151,11 +283,11 @@ function highlightInPreviewFallback(selectedText, commentId, selectionRange) {
       console.log('Direct HTML replacement successful');
     } else {
       console.warn('HTML selectedText not found in content');
-      return;
+      return false;
     }
   } else {
     // For plain text selectedText, use simple escaping
-    console.log('Preview mode: Using escaped text replacement');
+    console.log('Using escaped text replacement');
     const escapedText = escapeHtml(selectedText);
     
     if (content.includes(escapedText)) {
@@ -164,14 +296,14 @@ function highlightInPreviewFallback(selectedText, commentId, selectionRange) {
       console.log('Escaped text replacement successful');
     } else {
       console.warn('Escaped text not found in content');
-      return;
+      return false;
     }
   }
   
-  previewElement.innerHTML = content;
+  targetElement.innerHTML = content;
   
   // Add event listener to the newly created highlight
-  const newHighlight = previewElement.querySelector(`.text-comment-highlight[data-comment-id="${commentId}"]`);
+  const newHighlight = targetElement.querySelector(`.text-comment-highlight[data-comment-id="${commentId}"]`);
   if (newHighlight && !newHighlight.hasAttribute('data-listener-attached')) {
     newHighlight.addEventListener('click', (e) => {
       e.preventDefault();
@@ -180,6 +312,8 @@ function highlightInPreviewFallback(selectedText, commentId, selectionRange) {
     });
     newHighlight.setAttribute('data-listener-attached', 'true');
   }
+  
+  return true;
 }
 
 // Function to re-attach event listeners to all highlighted text elements
@@ -305,7 +439,6 @@ export function closeTextCommentPopup() {
 }
 
 export function getTextCommentsMap() {
-  // Return the current text comments map for external use
   return Object.fromEntries(
     Object.entries(state.comments).map(([id, comment]) => [
       id, 
@@ -323,63 +456,6 @@ export function getTextCommentsMap() {
   );
 }
 
-export function clearAllComments() {
-  console.log('Clearing all comments (unified function)');
-  
-  // Get all comments to delete
-  const commentsToRemove = Object.entries(state.comments);
-  console.log(`Found ${commentsToRemove.length} comments to delete`);
-  
-  // Delete each comment using shared logic
-  commentsToRemove.forEach(([commentId, comment], index) => {
-    console.log(`Deleting comment ${index + 1}/${commentsToRemove.length}`);
-    deleteSingleComment(commentId, comment);
-  });
-  
-  // Reset comment counter
-  state.commentIdCounter = 0;
-  
-  // Trigger auto-save for comment changes
-  if (window.documentManager && commentsToRemove.length > 0) {
-    window.documentManager.onCommentChange();
-  }
-  
-  console.log('All comments cleared successfully');
-}
-
-// Clear only comments for the current mode (unified function)
-export function clearCurrentModeComments() {
-  console.log('Clearing comments for current mode:', state.currentMode);
-  console.log('Available comments:', Object.keys(state.comments));
-  
-  // Find comments for current mode
-  const commentsToRemove = Object.entries(state.comments).filter(([id, comment]) => 
-    comment.mode === state.currentMode
-  );
-  
-  console.log('Comments to remove:', commentsToRemove.map(([id, comment]) => ({ id, mode: comment.mode })));
-  
-  // Delete each comment using shared logic
-  commentsToRemove.forEach(([commentId, comment], index) => {
-    console.log(`Deleting comment ${index + 1}/${commentsToRemove.length}`);
-    deleteSingleComment(commentId, comment);
-  });
-  
-  // Trigger auto-save for comment changes
-  if (window.documentManager && commentsToRemove.length > 0) {
-    window.documentManager.onCommentChange();
-  }
-  
-  console.log(`Removed ${commentsToRemove.length} comments from current mode`);
-  return commentsToRemove.length;
-}
-
-// Keep old function name for backward compatibility
-export function clearCurrentModeTextComments() {
-  return clearCurrentModeComments();
-}
-
-// Extract positioning logic into a reusable function
 function calculateCommentPosition(selectionRect, preferredSide = 'right') {
   const commentWidth = 320;
   const commentHeight = 150;
@@ -438,7 +514,6 @@ function calculateCommentPosition(selectionRect, preferredSide = 'right') {
   return { left: finalLeft, top: finalTop };
 }
 
-// Text selection handlers
 export function initTextSelection() {  
   if (!elements.previewContent || !elements.templateEditor || !elements.sourceEditor || !elements.floatingComment) {
     console.error(`[${windowId}] Text selection elements not found!`, {
@@ -615,8 +690,7 @@ function handleTextSelection(event) {
       }
     }
     
-    // Validate and clean the selected text before processing
-    const cleanedText = validateAndCleanSelectedText(selectedText);
+    const cleanedText = selectedText;
     
     if (!cleanedText) {
       console.warn('Invalid text selection, ignoring');
@@ -654,80 +728,15 @@ function handleTextSelection(event) {
   }
 }
 
-/**
- * Validate and clean selected text to prevent corruption while preserving line breaks
- */
-function validateAndCleanSelectedText(selectedText) {
-  if (!selectedText || typeof selectedText !== 'string') {
-    return null;
-  }
-
-  // Check if this is HTML content (contains tags)
-  const isHTML = /<[^>]*>/.test(selectedText);
-  
-  if (isHTML) {
-    // For HTML content (preview mode), don't strip tags - just basic validation
-    let cleaned = selectedText.trim();
-    
-    // Check for minimum and maximum length
-    if (cleaned.length < 1 || cleaned.length > 2000) {
-      return null;
-    }
-    
-    return cleaned;
-  } else {
-    // For plain text content (template/source mode), do normal cleaning
-    let cleaned = selectedText;
-
-    // Only trim leading and trailing whitespace from the entire selection
-    cleaned = cleaned.replace(/^\s+/, '').replace(/\s+$/, '');
-
-    // Preserve line breaks and normalize only excessive whitespace within lines
-    cleaned = cleaned
-      .split(/\r?\n/)
-      .map(line => line.replace(/[ \t]{2,}/g, ' '))
-      .join('\n');
-
-    // Remove any remaining carriage returns
-    cleaned = cleaned.replace(/\r/g, '');
-
-    // Check for minimum and maximum length
-    if (cleaned.length < 1) {
-      return null;
-    }
-    
-    // Remove any HTML tags if they somehow got included
-    cleaned = cleaned.replace(/<[^>]*>/g, '');
-
-    // Remove excessive punctuation repetition
-    cleaned = cleaned.replace(/([.!?]){3,}/g, '$1$1$1');
-
-    // Final validation
-    if (cleaned.length < 1 || cleaned.length > 1000) {
-      return null;
-    }
-
-    return cleaned;
-  }
-}
-
-// Update code editor highlights when content changes
 export function updateCodeHighlights() {
-  // For contenteditable div, we can use the same approach as preview mode
-  // Re-attach event listeners to highlighted text elements
   reattachtemplateEditorHighlightEventListeners();
 }
 
-// Update source editor highlights when content changes
 export function updateSourceHighlights() {
-  // For contenteditable div, we can use the same approach as preview mode
-  // Re-attach event listeners to highlighted text elements
   reattachSourceEditorHighlightEventListeners();
 }
 
-// Comment button event handlers
 export function initCommentButtons() {
-  // Check if elements exist
   if (!elements.addCommentBtn) {
     console.error(`[${windowId}] Add comment button not found!`);
     return;
@@ -751,52 +760,34 @@ export function initCommentButtons() {
     commentsData.currentCancelCommentBtn.removeEventListener('click', commentsData.cancelCommentHandler);
   }
   
-  // Ask AI button handler - simplified and mode-aware
   commentsData.askLLMHandler = async () => {
     console.log(`[${windowId}] Ask AI clicked - Mode: ${state.currentMode}`);
     const selectedText = elements.floatingComment.dataset.selectedText;
-    const commentContent = elements.commentText.value.trim();
-    
+    const commentContent = elements.commentText.value;
+
     if (!selectedText) {
       addMessageToUI('system', 'Please select some text first.');
       return;
     }
 
-    // Prepare user request message
     let userRequest = commentContent || 'Please provide suggestions for this content.';
     
     let waitingIndicatorAdded = false;
-    
+
     try {
-      // Add the message to chat UI first
       addMessageToUI('user', `🤖 Ask AI: "${userRequest}"\n📄 Context: "${selectedText.substring(0, 100)}${selectedText.length > 100 ? '...' : ''}"`);
 
-      // Add a waiting indicator
       addWaitingIndicator();
       waitingIndicatorAdded = true;
 
-             if (state.currentMode === 'template') {
-         // 1.1 Template mode + AskAI: Send to LLM and display inline diff in template
-         await handleTemplateAskAI(selectedText, userRequest);
-       } else if (state.currentMode === 'preview') {
-         // 2.1 Preview mode + AskAI: Send to LLM and display inline diff in preview
-         await handlePreviewAskAI(selectedText, userRequest);
-       } else if (state.currentMode === 'source') {
-         // 3.1 Source mode + AskAI: Send to LLM and display inline diff in source
-         await handleSourceAskAI(selectedText, userRequest);
-       } else {
-         // For other modes, fallback to template mode behavior
-         await handleTemplateAskAI(selectedText, userRequest);
-       }
+       await handleAskAI(selectedText, userRequest);
 
-      // Hide the floating comment window after sending
       elements.floatingComment.style.display = 'none';
-      
+
     } catch (error) {
       console.error('Error sending to AI:', error);
       addMessageToUI('system', 'Error: Failed to send message to AI. Please try again.');
     } finally {
-      // Always remove waiting indicator if it was added
       if (waitingIndicatorAdded) {
         try {
           removeWaitingIndicator();
@@ -807,10 +798,8 @@ export function initCommentButtons() {
     }
   };
   
-  // Add Ask AI button event listener
   const askLLMBtn = elements.floatingComment.querySelector('.ask-llm');
   if (askLLMBtn) {
-    // Remove existing listener from previous button if it exists
     if (commentsData.currentAskLLMBtn) {
       console.log(`[${windowId}] 🧹 Removing event listener from previous ask AI button`);
       commentsData.currentAskLLMBtn.removeEventListener('click', commentsData.askLLMHandler);
@@ -820,11 +809,10 @@ export function initCommentButtons() {
     commentsData.currentAskLLMBtn = askLLMBtn;
   }
   
-  // Add Comment button handler - simplified and mode-aware
   commentsData.addCommentHandler = async () => {
     console.log(`[${windowId}] Add comment clicked - Mode: ${state.currentMode}`);
     const selectedText = elements.floatingComment.dataset.selectedText;
-    const commentContent = elements.commentText.value.trim();
+    const commentContent = elements.commentText.value;
     
     if (!selectedText) {
       addMessageToUI('system', 'Please select some text first.');
@@ -832,25 +820,20 @@ export function initCommentButtons() {
     }
 
     try {
-             if (state.currentMode === 'template') {
-         // 1.2 Template mode + AddComment: Just add a regular comment
-         await handleTemplateAddComment(selectedText, commentContent);
+        if (state.currentMode === 'template') {
+         await handleAddComment(selectedText, commentContent);
        } else if (state.currentMode === 'preview') {
-         // 2.2 Preview mode + AddComment: Create annotation in preview only
-         await handlePreviewAddComment(selectedText, commentContent);
+         await handleAddComment(selectedText, commentContent);
        } else if (state.currentMode === 'source') {
-         // 3.2 Source mode + AddComment: Just add a regular comment
-         await handleSourceAddComment(selectedText, commentContent);
+         await handleAddComment(selectedText, commentContent);
        } else {
-         // For other modes, fallback to template mode behavior
-         await handleTemplateAddComment(selectedText, commentContent);
+         await handleAddComment(selectedText, commentContent);
        }
     } catch (error) {
       console.error('Error processing comment:', error);
       addMessageToUI('system', 'Error: Failed to process comment. Please try again.');
     }
-    
-    // Always hide the floating comment window, regardless of success/failure
+
     elements.floatingComment.style.display = 'none';
   };
 
@@ -873,27 +856,44 @@ export function initCommentButtons() {
   window[COMMENTS_KEY] = commentsData;
 }
 
-// Handler functions for different scenarios
-
 /**
- * 1.1 Template mode + AskAI: Send to LLM and display inline diff in template
+ * Unified AI suggestion handler for all modes (template, preview, source)
  */
-async function handleTemplateAskAI(selectedText, userRequest) {
-  console.log('Handling Template + AskAI scenario');
+async function handleAskAI(selectedText, userRequest, mode = null) {
+  // Determine mode if not provided
+  const actualMode = mode || state.currentMode;
+  console.log(`Handling ${actualMode} + AskAI scenario`);
   
-  // Get current template content
-  const templateContent = elements.templateEditor ? elements.templateEditor.textContent : '';
+  // Get content and element based on mode
+  let content = '';
+  let targetElement = null;
   
-  // Send request to new AI suggestion endpoint
+  switch (actualMode) {
+    case 'template':
+      content = elements.templateEditor ? elements.templateEditor.innerHTML : '';
+      targetElement = elements.templateEditor;
+      break;
+    case 'source':
+      content = elements.sourceEditor ? elements.sourceEditor.innerHTML : '';
+      targetElement = elements.sourceEditor;
+      break;
+    case 'preview':
+    default:
+      content = elements.previewContent ? elements.previewContent.innerHTML : '';
+      targetElement = elements.previewContent;
+      break;
+  }
+  
+  // Send request to AI suggestion endpoint
   try {
     const response = await fetch('http://127.0.0.1:5000/api/ai-suggestion', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
-        full_content: templateContent,
+        full_content: content,
         selected_text: selectedText,
         user_request: userRequest,
-        mode: 'template',
+        mode: actualMode,
         session_id: state.sessionId
       })
     });
@@ -906,21 +906,16 @@ async function handleTemplateAskAI(selectedText, userRequest) {
     
     // Check if we got a valid suggestion
     if (data.success && data.suggestion) {
-      // Use existing parseStructuredLLMResponse function
-      const { parseStructuredLLMResponse } = await import('./comment-translation.js');
-      
       // Parse the suggestion using existing logic
       const parsedSuggestion = parseStructuredLLMResponse(
         data.suggestion, 
-        templateContent, 
+        content, 
         { isVariable: false, varName: null, currentValue: null, instance: null }
       );
       
       if (parsedSuggestion) {
-        // Use existing template suggestion logic
-        const { createTemplateEditSuggestionComment } = await import('./comment-translation.js');
-        await createTemplateEditSuggestionComment(userRequest, selectedText, parsedSuggestion, 'template', false);
-        addMessageToUI('system', `✅ Template AI suggestion created`);
+        await createAISuggestionFromParsed(selectedText, userRequest, parsedSuggestion, actualMode);
+        addMessageToUI('system', `✅ AI suggestion created for ${actualMode} content`);
       } else {
         addMessageToUI('system', '🤖 AI provided feedback but no specific content changes suggested');
       }
@@ -929,136 +924,34 @@ async function handleTemplateAskAI(selectedText, userRequest) {
     }
     
   } catch (error) {
-    console.error('Error getting template AI suggestion:', error);
-    // Fallback to existing approach
-    try {
-      const { sendToBackend } = await import('./template-execution.js');
-      await sendToBackend(`Context: "${selectedText}"\n\nRequest: ${userRequest}\n\nPlease suggest improvements to the template.`, true);
-      addMessageToUI('system', '🔄 Analyzing template for AI suggestions (fallback after error)...');
-    } catch (fallbackError) {
-      addMessageToUI('system', `❌ Failed to get AI suggestion for template: ${error.message}`);
-    }
+    console.error(`Error getting ${actualMode} AI suggestion:`, error);
   }
   
   // SAFEGUARD: Re-enable text selection handling after AI processing
   window.aiProcessingInProgress = false;
 }
 
-/**
- * 2.1 Preview mode + AskAI: Send to LLM and display inline diff in preview
- */
-async function handlePreviewAskAI(selectedText, userRequest) {
-  console.log('Handling Preview + AskAI scenario');
-
-  // Get current preview content
-  const previewContent = elements.previewContent ? elements.previewContent.innerHTML : '';
-  
-  // Send request to new AI suggestion endpoint
-  try {
-    const response = await fetch('http://127.0.0.1:5000/api/ai-suggestion', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        full_content: previewContent,
-        selected_text: selectedText,
-        user_request: userRequest,
-        mode: 'preview',
-        session_id: state.sessionId
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error(`Backend responded with status: ${response.status}`);
-    }
-
-    const data = await response.json();
-    
-    // Check if we got a valid suggestion
-    if (data.success && data.suggestion) {
-      // Use existing parseStructuredLLMResponse function to validate and enhance the suggestion
-      const { parseStructuredLLMResponse } = await import('./comment-translation.js');
-      
-      // Parse the suggestion using existing logic
-      const parsedSuggestion = parseStructuredLLMResponse(
-        data.suggestion, 
-        previewContent, 
-        { isVariable: false, varName: null, currentValue: null, instance: null }
-      );
-      
-      if (parsedSuggestion) {
-        // Create AI suggestion comment with inline diff in preview using existing logic
-        await createPreviewAISuggestionFromParsed(selectedText, userRequest, parsedSuggestion);
-        addMessageToUI('system', `✅ AI suggestion created for preview content`);
-      } else {
-        addMessageToUI('system', '🤖 AI provided feedback but no specific content changes suggested');
-      } 
-    } else {
-      addMessageToUI('system', '🤖 AI provided feedback but no specific content changes suggested');
-    }
-  } catch (error) {
-    console.error('Error getting preview AI suggestion:', error);
-    addMessageToUI('system', `❌ Failed to get AI suggestion for preview: ${error.message}`);
-  }
-}
-
-/**
- * 1.2 Template mode + AddComment: Just add a regular comment
- */
-async function handleTemplateAddComment(selectedText, commentContent) {
-  console.log('Handling Template + AddComment scenario');
-  
-  const finalComment = commentContent || 'Comment on selected text';
-  
-  // Create a simple comment for the selected content
+async function handleAddComment(selectedText, commentContent) {  
+  const finalComment = commentContent;
   createTextComment(selectedText, finalComment);
-  
   addMessageToUI('system', `📝 Comment added: "${finalComment}"`);
 }
 
 /**
- * 2.2 Preview mode + AddComment: Create annotation in preview AND AI suggestion in template
+ * Unified function to create AI suggestion with inline diff for any mode
  */
-async function handlePreviewAddComment(selectedText, commentContent) {
-  console.log('Handling Preview + AddComment scenario');
-  
-  const finalComment = commentContent || 'Comment on selected text';
-  
-  // First, create a regular comment annotation in preview mode
-  createTextComment(selectedText, finalComment);
-  
-  // Then, use the existing comment translation service to generate template suggestions
-  try {
-    const { askAIWithCommentTranslation } = await import('./comment-translation.js');
-    
-    // Add a system message indicating we're analyzing for template changes
-    addMessageToUI('system', '🔄 Analyzing comment for template edit suggestions...');
-    
-    // Use the existing comment translation service (this is what was working before)
-    await askAIWithCommentTranslation(selectedText, finalComment, 'preview');
-    
-  } catch (error) {
-    console.error('Error generating template suggestions:', error);
-    addMessageToUI('system', `⚠️ Comment created, but template analysis failed: ${error.message}`);
-  }
-}
-
-
-
-/**
- * Create AI suggestion with inline diff in preview based on parsed suggestion
- */
-async function createPreviewAISuggestionFromParsed(selectedText, userRequest, parsedSuggestion) {
+async function createAISuggestionFromParsed(selectedText, userRequest, parsedSuggestion, mode) {
   try {
     const { incrementCommentCounter } = await import('./state.js');
     const currentUser = getCurrentUser();
-    const commentId = `preview-ai-suggestion-${incrementCommentCounter()}`;
+    const commentId = `${mode}-ai-suggestion-${incrementCommentCounter()}`;
     
-    // Create comment data for preview AI suggestion
+    // Create comment data for AI suggestion
     const commentData = {
       id: commentId,
       selectedText: selectedText,
-      commentMessage: `🤖 AI Preview Suggestion\n📝 Request: "${userRequest}"\n🎯 Change: ${parsedSuggestion.explanation}`,
-      mode: 'preview',
+      commentMessage: `🤖 AI ${mode.charAt(0).toUpperCase() + mode.slice(1)} Suggestion\n📝 Request: "${userRequest}"\n🎯 Change: ${parsedSuggestion.explanation}`,
+      mode: mode,
       author: 'ai-assistant',
       authorName: `AI Assistant → ${currentUser?.name || 'User'}`,
       authorEmoji: '🤖',
@@ -1067,7 +960,7 @@ async function createPreviewAISuggestionFromParsed(selectedText, userRequest, pa
       isResolved: false,
       isActive: true,
       isAISuggestion: true,
-      isPreviewSuggestion: true,
+      [`is${mode.charAt(0).toUpperCase() + mode.slice(1)}Suggestion`]: true,
       originalRequest: userRequest,
       aiSuggestion: parsedSuggestion,
       ui: { position: null, element: null, isVisible: true, isDragging: false }
@@ -1076,213 +969,77 @@ async function createPreviewAISuggestionFromParsed(selectedText, userRequest, pa
     // Store in comments state
     state.comments[commentId] = commentData;
     
-    // Create inline diff in preview content using parsed suggestion
-    await createPreviewInlineDiffFromParsed(selectedText, parsedSuggestion, commentId);
-
-  } catch (error) {
-    console.error('Error creating preview AI suggestion from parsed data:', error);
-    addMessageToUI('system', `❌ Failed to create preview suggestion: ${error.message}`);
-  }
-}
-
-/**
- * Create inline diff in preview content from parsed AI suggestion
- */
-async function createPreviewInlineDiffFromParsed(selectedText, parsedSuggestion, commentId) {
-  try {
-    const previewElement = elements.previewContent;
-    if (!previewElement) {
-      console.warn('Preview element not found');
-      return;
+    // Create inline diff using the unified function
+    await createInlineDiffFromParsed(parsedSuggestion, commentId, mode);
+    
+    // Create floating annotation for the suggestion (only for source mode in original code)
+    if (mode === 'source') {
+      const { createAISuggestionAnnotation } = await import('./annotations.js');
+      createAISuggestionAnnotation(commentData);
     }
-    
-    // Safeguard: Ensure we're working with the preview element, not template
-    if (previewElement.classList.contains('template-editor')) {
-      console.error('🚨 ERROR: previewElement is actually the template editor! Aborting to prevent data loss.');
-      addMessageToUI('system', '❌ Internal error: Preview element reference is incorrect');
-      return;
-    }
-    
-    // Use the generic createInlineDiff function from the library
-    const { createInlineDiff } = await import('./inline_diff.js');
-    
-    const success = createInlineDiff({
-      selectedText,
-      parsedSuggestion,
-      commentId,
-      targetElement: previewElement,
-      escapeHtml: escapeHtml,  // Pass escapeHtml for preview content security
-      documentId: window.documentManager?.activeDocumentId || null
-    });
-    
-    if (!success) {
-      console.warn('Failed to create inline diff in preview content');
-      addMessageToUI('system', '❌ Failed to create preview diff');
-    }
-    
-  } catch (error) {
-    console.error('Error creating preview inline diff from parsed suggestion:', error);
-    addMessageToUI('system', `❌ Failed to create preview diff: ${error.message}`);
-  }
-}
-
-
-
-/**
- * 3.1 Source mode + AskAI: Send to LLM and display inline diff in source
- */
-async function handleSourceAskAI(selectedText, userRequest) {
-  console.log('Handling Source + AskAI scenario');
-  
-  // Get current source content
-  const sourceContent = elements.sourceEditor ? elements.sourceEditor.textContent : '';
-  
-  // Send request to new AI suggestion endpoint
-  try {
-    const response = await fetch('http://127.0.0.1:5000/api/ai-suggestion', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        full_content: sourceContent,
-        selected_text: selectedText,
-        user_request: userRequest,
-        mode: 'source',
-        session_id: state.sessionId
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error(`Backend responded with status: ${response.status}`);
-    }
-
-    const data = await response.json();
-    
-    // Check if we got a valid suggestion
-    if (data.success && data.suggestion) {
-      // Use existing parseStructuredLLMResponse function
-      const { parseStructuredLLMResponse } = await import('./comment-translation.js');
-      
-      // Parse the suggestion using existing logic
-      const parsedSuggestion = parseStructuredLLMResponse(
-        data.suggestion, 
-        sourceContent, 
-        { isVariable: false, varName: null, currentValue: null, instance: null }
-      );
-      
-      if (parsedSuggestion) {
-        // Create AI suggestion comment with inline diff in source using existing logic
-        await createSourceAISuggestionFromParsed(selectedText, userRequest, parsedSuggestion);
-        addMessageToUI('system', `✅ AI suggestion created for source code`);
-      } else {
-        addMessageToUI('system', '🤖 AI provided feedback but no specific code changes suggested');
-      }
-    } else {
-      addMessageToUI('system', '🤖 AI provided feedback but no specific code changes suggested');
-    }
-    
-  } catch (error) {
-    console.error('Error getting source AI suggestion:', error);
-    addMessageToUI('system', `❌ Failed to get AI suggestion for source: ${error.message}`);
-  }
-}
-
-/**
- * 3.2 Source mode + AddComment: Just add a regular comment
- */
-async function handleSourceAddComment(selectedText, commentContent) {
-  console.log('Handling Source + AddComment scenario');
-  
-  const finalComment = commentContent || 'Comment on selected code';
-  
-  // Create a simple comment for the selected content
-  createTextComment(selectedText, finalComment);
-  
-  addMessageToUI('system', `📝 Source comment added: "${finalComment}"`);
-}
-
-/**
- * Create AI suggestion with inline diff in source based on parsed suggestion
- */
-async function createSourceAISuggestionFromParsed(selectedText, userRequest, parsedSuggestion) {
-  try {
-    const { incrementCommentCounter } = await import('./state.js');
-    const currentUser = getCurrentUser();
-    const commentId = `source-ai-suggestion-${incrementCommentCounter()}`;
-    
-    // Create comment data for source AI suggestion
-    const commentData = {
-      id: commentId,
-      selectedText: selectedText,
-      commentMessage: `🤖 AI Source Suggestion\n📝 Request: "${userRequest}"\n🎯 Change: ${parsedSuggestion.explanation}`,
-      mode: 'source',
-      author: 'ai-assistant',
-      authorName: `AI Assistant → ${currentUser?.name || 'User'}`,
-      authorEmoji: '🤖',
-      authorColor: '#007bff',
-      createdAt: new Date().toISOString(),
-      isResolved: false,
-      isActive: true,
-      isAISuggestion: true,
-      isSourceSuggestion: true,
-      originalRequest: userRequest,
-      aiSuggestion: parsedSuggestion,
-      ui: { position: null, element: null, isVisible: true, isDragging: false }
-    };
-    
-    // Store in comments state
-    state.comments[commentId] = commentData;
-    
-    // Create inline diff in source content using parsed suggestion
-    await createSourceInlineDiffFromParsed(selectedText, parsedSuggestion, commentId);
-    
-    // Create floating annotation for the source suggestion
-    const { createAISuggestionAnnotation } = await import('./annotations.js');
-    createAISuggestionAnnotation(commentData);
     
     // Trigger auto-save
     if (window.documentManager) {
       window.documentManager.onCommentChange();
     }
-    
+
   } catch (error) {
-    console.error('Error creating source AI suggestion from parsed data:', error);
-    addMessageToUI('system', `❌ Failed to create source suggestion: ${error.message}`);
+    console.error(`Error creating ${mode} AI suggestion from parsed data:`, error);
+    addMessageToUI('system', `❌ Failed to create ${mode} suggestion: ${error.message}`);
   }
 }
 
 /**
- * Create inline diff in source content from parsed AI suggestion
+ * Unified function to create inline diff for any mode
  */
-async function createSourceInlineDiffFromParsed(selectedText, parsedSuggestion, commentId) {
+async function createInlineDiffFromParsed(parsedSuggestion, commentId, mode) {
   try {
-    const sourceElement = elements.sourceEditor;
-    if (!sourceElement) {
-      console.warn('Source element not found');
+    // Get the target element based on mode
+    let targetElement;
+    switch (mode) {
+      case 'template':
+        targetElement = elements.templateEditor;
+        break;
+      case 'source':
+        targetElement = elements.sourceEditor;
+        break;
+      case 'preview':
+      default:
+        targetElement = elements.previewContent;
+        break;
+    }
+    
+    if (!targetElement) {
+      console.warn(`${mode} element not found`);
       return;
     }
+    
+
     
     // Use the generic createInlineDiff function from the library
     const { createInlineDiff } = await import('./inline_diff.js');
     
     const success = createInlineDiff({
-      selectedText,
       parsedSuggestion,
       commentId,
-      targetElement: sourceElement,
-      escapeHtml: escapeHtml,  // Pass escapeHtml for source content security
+      targetElement: targetElement,
+      escapeHtml: escapeHtml,
       documentId: window.documentManager?.activeDocumentId || null
     });
     
     if (!success) {
-      console.warn('Failed to create inline diff in source content');
-      addMessageToUI('system', '❌ Failed to create source diff');
+      console.warn(`Failed to create inline diff in ${mode} content`);
+      addMessageToUI('system', `❌ Failed to create ${mode} diff`);
     }
     
   } catch (error) {
-    console.error('Error creating source inline diff from parsed suggestion:', error);
-    addMessageToUI('system', `❌ Failed to create source diff: ${error.message}`);
+    console.error(`Error creating ${mode} inline diff from parsed suggestion:`, error);
+    addMessageToUI('system', `❌ Failed to create ${mode} diff: ${error.message}`);
   }
 }
+
+
+
 
 
 
@@ -1343,7 +1100,7 @@ window.closeTextCommentPopup = closeTextCommentPopup;
  * @returns {boolean} - Success status
  */
 export function createTextHighlight(options) {
-  const { selectedText, commentId, selectionRange, mode, targetElement } = options;
+  const { selectedText, commentId, mode, targetElement } = options;
   
   if (!selectedText || !commentId) {
     console.error('createTextHighlight: selectedText and commentId are required');
@@ -1354,25 +1111,6 @@ export function createTextHighlight(options) {
   let actualMode = mode || state.currentMode;
   let target = targetElement;
   
-  // Auto-detect mode from selectionRange if available (for new comments)
-  if (selectionRange && !mode && !targetElement) {
-    const templateEditor = elements.templateEditor;
-    const sourceEditor = elements.sourceEditor;
-    const previewContent = elements.previewContent;
-    
-    if (templateEditor && templateEditor.contains(selectionRange.commonAncestorContainer)) {
-      actualMode = 'template';
-      target = templateEditor;
-    } else if (sourceEditor && sourceEditor.contains(selectionRange.commonAncestorContainer)) {
-      actualMode = 'source';
-      target = sourceEditor;
-    } else if (previewContent && previewContent.contains(selectionRange.commonAncestorContainer)) {
-      actualMode = 'preview';
-      target = previewContent;
-    }
-  }
-  
-  // Set target element based on mode if not provided
   if (!target) {
     if (actualMode === 'template') {
       target = elements.templateEditor;
@@ -1387,154 +1125,7 @@ export function createTextHighlight(options) {
     console.error('createTextHighlight: Could not determine target element');
     return false;
   }
-
-  // Try live range first for new comments
-  if (selectionRange && target.contains(selectionRange.commonAncestorContainer)) {
-    try {
-      // Create highlight div
-      const highlightDiv = document.createElement('div');
-      highlightDiv.className = 'text-comment-highlight';
-      highlightDiv.setAttribute('data-comment-id', commentId);
-      highlightDiv.setAttribute('title', 'Click to view comment');
-      highlightDiv.setAttribute('data-listener-attached', 'true');
-      
-      // Add click event listener immediately
-      highlightDiv.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        showAnnotationForText(selectedText);
-      });
-      
-      // Surround the selected range with the highlight div
-      selectionRange.surroundContents(highlightDiv);
-      
-      console.log('Successfully highlighted text using live range:', selectedText);
-      return true;
-      
-    } catch (error) {
-      console.error('Error highlighting text using live range, falling back to text matching:', error);
-    }
-  }
   
-  // Use text matching for all other cases (including restoration)
-  return createHighlightFromTextSearch(target, selectedText, commentId);
+  return highlightInHtmlElement(target, selectedText, commentId);
 }
 
-/**
- * Create highlight using text search and replacement
- */
-function createHighlightFromTextSearch(targetElement, selectedText, commentId) {
-  const istemplateEditor = targetElement.classList.contains('template-editor');
-  const isSourceEditor = targetElement.classList.contains('source-editor');
-  
-  if (istemplateEditor) {
-    highlightInEditorFallback(elements.templateEditor, selectedText, commentId, null);
-    return true;
-  } else if (isSourceEditor) {
-    highlightInEditorFallback(elements.sourceEditor, selectedText, commentId, null);
-    return true;
-  } else {
-    highlightInPreviewFallback(selectedText, commentId, null);
-    return true;
-  }
-}
-
-// Text replacement method for highlighting in source editor
-function highlightInEditorFallback(editor, selectedText, commentId, selectionRange) {
-  let content = editor.innerHTML;
-  
-  // Create a div with yellow background for the selected text
-  const replacement = `<div class="text-comment-highlight" data-comment-id="${commentId}" title="Click to view comment">${selectedText}</div>`;
-  
-  // For multi-line text, we need to handle HTML representation of line breaks
-  // Convert the selected text to match how it might appear in HTML
-  const normalizedSelectedText = selectedText.replace(/\n/g, '<br>');
-  const escapedNormalizedText = escapeHtml(selectedText).replace(/\n/g, '<br>');
-  
-  // Try multiple approaches to find and replace the text
-  const escapedText = escapeHtml(selectedText);
-  
-  // First try: exact match with escaped HTML and normalized line breaks
-  if (content.includes(escapedNormalizedText)) {
-    content = content.replace(escapedNormalizedText, replacement);
-    console.log('Highlighted text in source editor using normalized HTML match:', selectedText.substring(0, 30));
-  } else if (content.includes(escapedText)) {
-    // Second try: exact match with escaped HTML
-    content = content.replace(escapedText, replacement);
-    console.log('Highlighted text in source editor using exact match fallback:', selectedText.substring(0, 30));
-  } else {
-    // Third try: use regex with multiline flag for multi-line selections
-    const regexPattern = escapeRegExp(escapedText).replace(/\n/g, '\\s*(?:<br>|</div><div>|</p><p>)\\s*');
-    const regex = new RegExp(regexPattern, 'im');
-    if (regex.test(content)) {
-      const match = content.match(regex);
-      console.log('- match result:', match ? match[0].substring(0, 100) + '...' : 'null');
-      
-      if (match) {
-        // Simple approach: wrap entire match in a highlight div
-        const replacement = `<div class="text-comment-highlight" data-comment-id="${commentId}" title="Click to view comment">${match[0]}</div>`;
-        content = content.replace(regex, replacement);
-        console.log('Simple multi-line replacement successful');
-      } else {
-        console.warn('Multi-line pattern not found');
-        return;
-      }
-    } else {
-      // Fourth try: Simple string replacement
-      const lines = selectedText.split('\n');
-      if (lines.length > 1) {
-        // Multi-line: match from first to last line
-        const firstLine = escapeHtml(lines[0]);
-        const lastLine = escapeHtml(lines[lines.length - 1]);
-        
-        console.log('Multi-line debug:');
-        console.log('- selectedText lines:', lines);
-        console.log('- firstLine escaped:', firstLine);
-        console.log('- lastLine escaped:', lastLine);
-        
-        // Escape regex special characters in the lines
-        const firstLineRegex = escapeRegExp(firstLine);
-        const lastLineRegex = escapeRegExp(lastLine);
-        
-        const pattern = firstLineRegex + '[\\s\\S]*?' + lastLineRegex;
-        console.log('- pattern:', pattern);
-        
-        const regex = new RegExp(pattern, 'i');
-        
-        const match = content.match(regex);
-        console.log('- match result:', match ? match[0].substring(0, 100) + '...' : 'null');
-        
-        if (match) {
-          content = content.replace(regex, `<div class="text-comment-highlight" data-comment-id="${commentId}" title="Click to view comment">${match[0]}</div>`);
-          console.log('Multi-line replacement successful');
-        } else {
-          console.warn('Multi-line pattern not found');
-          return;
-        }
-      } else {
-        // Single line
-        const escaped = escapeHtml(selectedText.trim());
-        if (content.includes(escaped)) {
-          content = content.replace(escaped, `<div class="text-comment-highlight" data-comment-id="${commentId}" title="Click to view comment">${escaped}</div>`);
-          console.log('Single line replacement successful');
-        } else {
-          console.warn('Single line text not found');
-          return;
-        }
-      }
-    }
-  }
-  
-  editor.innerHTML = content;
-  
-  // Add event listener to the newly created highlight immediately
-  const newHighlight = editor.querySelector(`.text-comment-highlight[data-comment-id="${commentId}"]`);
-  if (newHighlight && !newHighlight.hasAttribute('data-listener-attached')) {
-    newHighlight.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      showAnnotationForText(selectedText);
-    });
-    newHighlight.setAttribute('data-listener-attached', 'true');
-  }
-}
