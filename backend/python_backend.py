@@ -1240,6 +1240,269 @@ JSON:"""
             'error': str(e)
         }), 500
 
+@app.route('/api/suggest-operator-config', methods=['POST'])
+def suggest_operator_config():
+    """Get LLM-powered operator configuration suggestions based on tool code analysis."""
+    try:
+        data = request.get_json()
+        
+        # Extract request data
+        tool_name = data.get('tool_name', '')
+        tool_description = data.get('tool_description', '')
+        tool_code = data.get('tool_code', '')
+        document_id = data.get('document_id', 'default')
+        
+        # Validate required fields
+        if not tool_code:
+            return jsonify({
+                'success': False,
+                'error': 'Tool code is required'
+            }), 400
+            
+        if not tool_name:
+            return jsonify({
+                'success': False,
+                'error': 'Tool name is required'
+            }), 400
+        
+        # Check if LLM client is available
+        if client is None:
+            return jsonify({
+                'success': False,
+                'error': 'AI service not available (API key not configured)'
+            })
+        
+        # Create structured prompt for LLM
+        prompt = f"""Analyze this Python tool code and suggest operator configuration:
+
+Tool Name: {tool_name}
+Tool Description: {tool_description or 'No description provided'}
+
+Code:
+```python
+{tool_code}
+```
+
+Please analyze the code and provide suggestions in JSON format with the following structure:
+{{
+  "operatorName": "suggested name for this operator instance (based on tool name)",
+  "parameters": [
+    {{
+      "name": "parameter_name",
+      "type": "literal|dataset", 
+      "description": "what this parameter does",
+      "defaultValue": "suggested default value if any, or empty string"
+    }}
+  ],
+  "outputs": [
+    {{
+      "config": "output path (e.g., 'output', 'output.data', 'output.result')",
+      "variable": "suggested_variable_name",
+      "description": "what this output represents"
+    }}
+  ]
+}}
+
+Guidelines:
+1. For operatorName: Create a descriptive name based on the tool's purpose
+2. For parameters: Look for function parameters, configurable values, input requirements
+   - Use "dataset" type for data inputs (DataFrames, files, etc.)
+   - Use "literal" type for configuration values (numbers, strings, booleans)
+3. For outputs: **CAREFULLY ANALYZE RETURN STATEMENTS AND OUTPUT STRUCTURE**
+   - Look at all return statements in the code
+   - If the function returns a dictionary, suggest one output for each dictionary key
+   - Use config paths like "output.key_name" for dictionary fields
+   - If the function returns a simple value, use "output" as the config
+   - If the function returns a list/array, consider "output" or "output.items" based on context
+   - Create meaningful variable names that reflect what each output field represents
+   - Example: if code returns {{"summary": df.describe(), "correlation": df.corr()}}, suggest:
+     * config: "output.summary", variable: "data_summary"
+     * config: "output.correlation", variable: "correlation_matrix"
+4. Only include parameters and outputs that make sense based on the code analysis
+5. If you cannot determine good suggestions for any section, use empty arrays
+
+**PAY SPECIAL ATTENTION TO:**
+- What the function actually returns (dict, list, single value, object)
+- Dictionary keys and their meanings
+- Variable names used in return statements
+- Data types being returned (DataFrames, numbers, strings, etc.)
+
+IMPORTANT: Respond with ONLY a JSON object in the exact format above, no additional text or explanation.
+
+JSON:"""
+        
+        try:
+            # Call LLM for suggestion
+            if hasattr(client, 'chat'):
+                # OpenAI client
+                response = client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.3,
+                    max_tokens=800
+                )
+                suggestion_text = response.choices[0].message.content.strip()
+            else:
+                # Together client
+                response = client.chat.completions.create(
+                    model="Qwen/Qwen2.5-Coder-32B-Instruct",
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.3,
+                    max_tokens=800
+                )
+                suggestion_text = response.choices[0].message.content.strip()
+            
+            print(f"Operator Config Suggestion Raw Response: {suggestion_text}")
+            
+            # Parse LLM response with multiple fallback strategies
+            try:
+                import json
+                import re
+                
+                suggestions = None
+                
+                # Try multiple approaches to extract JSON
+                try:
+                    # First, try to parse the entire response as JSON
+                    suggestions = json.loads(suggestion_text)
+                except json.JSONDecodeError:
+                    # If that fails, try to extract JSON block
+                    json_match = re.search(r'\{[\s\S]*\}', suggestion_text)
+                    if json_match:
+                        try:
+                            suggestions = json.loads(json_match.group())
+                        except json.JSONDecodeError:
+                            # If JSON parsing still fails, try to find the largest JSON-like structure
+                            json_matches = re.findall(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', suggestion_text)
+                            if json_matches:
+                                for match in json_matches:
+                                    try:
+                                        suggestions = json.loads(match)
+                                        break  # Use the first valid JSON we find
+                                    except json.JSONDecodeError:
+                                        continue
+                
+                if suggestions and isinstance(suggestions, dict):
+                    # Validate and clean the suggestion structure
+                    validated_suggestion = {
+                        'operatorName': str(suggestions.get('operatorName', '')).strip(),
+                        'parameters': [],
+                        'outputs': []
+                    }
+                    
+                    # Validate parameters
+                    if 'parameters' in suggestions and isinstance(suggestions['parameters'], list):
+                        for param in suggestions['parameters']:
+                            if isinstance(param, dict) and param.get('name'):
+                                # Clean parameter name to be a valid identifier
+                                param_name = re.sub(r'[^a-zA-Z0-9_]', '_', str(param['name']))
+                                if param_name and (param_name[0].isalpha() or param_name[0] == '_'):
+                                    validated_param = {
+                                        'name': param_name,
+                                        'type': param.get('type', 'literal') if param.get('type') in ['literal', 'dataset'] else 'literal',
+                                        'description': str(param.get('description', '')).strip(),
+                                        'defaultValue': str(param.get('defaultValue', '')).strip()
+                                    }
+                                    validated_suggestion['parameters'].append(validated_param)
+                    
+                    # Validate outputs
+                    if 'outputs' in suggestions and isinstance(suggestions['outputs'], list):
+                        for output in suggestions['outputs']:
+                            if isinstance(output, dict) and output.get('variable'):
+                                # Clean variable name to be a valid identifier
+                                var_name = re.sub(r'[^a-zA-Z0-9_]', '_', str(output['variable']))
+                                if var_name and (var_name[0].isalpha() or var_name[0] == '_'):
+                                    validated_output = {
+                                        'config': str(output.get('config', 'output')).strip(),
+                                        'variable': var_name,
+                                        'description': str(output.get('description', '')).strip()
+                                    }
+                                    validated_suggestion['outputs'].append(validated_output)
+                    
+                    logger.info(f"Generated operator config suggestion for tool '{tool_name}': {validated_suggestion}")
+                    
+                    return jsonify({
+                        'success': True,
+                        'suggestion': validated_suggestion,
+                        'analysis': {
+                            'tool_name': tool_name,
+                            'code_length': len(tool_code),
+                            'parameters_count': len(validated_suggestion['parameters']),
+                            'outputs_count': len(validated_suggestion['outputs']),
+                            'document_id': document_id
+                        }
+                    })
+                else:
+                    raise ValueError("No valid JSON structure found in LLM response")
+                    
+            except Exception as parse_error:
+                print(f"Error parsing LLM response: {parse_error}")
+                print(f"Raw response: {suggestion_text}")
+                
+                # Provide fallback suggestion based on tool name
+                fallback_suggestion = {
+                    'operatorName': f"{tool_name} Instance",
+                    'parameters': [],
+                    'outputs': [
+                        {
+                            'config': 'output',
+                            'variable': f"{re.sub(r'[^a-zA-Z0-9_]', '_', tool_name.lower())}_result",
+                            'description': f"Output from {tool_name}"
+                        }
+                    ]
+                }
+                
+                return jsonify({
+                    'success': True,
+                    'suggestion': fallback_suggestion,
+                    'warning': 'Used fallback suggestion due to LLM parsing error',
+                    'analysis': {
+                        'tool_name': tool_name,
+                        'code_length': len(tool_code),
+                        'parameters_count': 0,
+                        'outputs_count': 1,
+                        'document_id': document_id,
+                        'fallback_used': True
+                    }
+                })
+                
+        except Exception as llm_error:
+            print(f"Error calling LLM: {llm_error}")
+            
+            # Provide fallback suggestion
+            fallback_suggestion = {
+                'operatorName': f"{tool_name} Instance",
+                'parameters': [],
+                'outputs': [
+                    {
+                        'config': 'output',
+                        'variable': f"{re.sub(r'[^a-zA-Z0-9_]', '_', tool_name.lower())}_result",
+                        'description': f"Output from {tool_name}"
+                    }
+                ]
+            }
+
+            return jsonify({
+                'success': True,
+                'suggestion': fallback_suggestion,
+                'warning': 'Used fallback suggestion due to LLM error',
+                'analysis': {
+                    'tool_name': tool_name,
+                    'code_length': len(tool_code),
+                    'parameters_count': 0,
+                    'outputs_count': 1,
+                    'document_id': document_id,
+                    'fallback_used': True
+                }
+            })
+        
+    except Exception as e:
+        logger.error(f"Error in suggest_operator_config: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 # Tools API endpoints
 @app.route('/api/tools', methods=['GET'])
 def get_tools():

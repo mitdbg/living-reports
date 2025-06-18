@@ -652,6 +652,16 @@ function setupAutoStyling() {
 
 // Setup event listeners
 function setupOperatorEventListeners() {
+  // Listen for tool selection changes to auto-populate fields
+  document.addEventListener('change', (event) => {
+    if (event.target.id === 'embedded-instance-tool') {
+      const toolId = event.target.value;
+      if (toolId) {
+        autoPopulateOperatorFields(toolId);
+      }
+    }
+  });
+
   // Listen for operator buttons
   document.addEventListener('click', (event) => {
     if (event.target.matches('.operators-btn') || event.target.closest('.operators-btn')) {
@@ -1227,7 +1237,18 @@ async function addOutputField(outputConfig = '', outputVariable = '') {
   
   // Set the selected value if provided
   if (outputVariable) {
-    select.value = outputVariable;
+    console.log(`🔧 Setting output variable selection to: "${outputVariable}"`);
+    
+    // Check if the variable exists in the dropdown
+    const optionExists = select.querySelector(`option[value="${outputVariable}"]`);
+    if (optionExists) {
+      select.value = outputVariable;
+      console.log(`  ✅ Variable "${outputVariable}" found and selected`);
+    } else {
+      console.log(`  ⚠️ Variable "${outputVariable}" not found in existing variables. Skipping auto-selection.`);
+      console.log(`  Available variables:`, Array.from(select.options).map(opt => opt.value).filter(v => v));
+      // Don't create new variables - only use existing ones
+    }
   }
 }
 
@@ -1293,6 +1314,222 @@ async function populateVariablesDropdown(select) {
   } catch (error) {
     console.error('Error populating variables dropdown:', error);
   }
+}
+
+// Show loading indicator in operator dialog
+function showOperatorLoadingIndicator() {
+  const container = getActiveDocumentContainer();
+  if (!container) return;
+  
+  // Show AI indicator
+  const aiIndicator = container.querySelector('#operator-ai-indicator');
+  if (aiIndicator) {
+    aiIndicator.style.display = 'flex';
+  }
+  
+  // Disable form fields during loading
+  const nameInput = container.querySelector('#embedded-instance-name');
+  const toolSelect = container.querySelector('#embedded-instance-tool');
+  
+  if (nameInput) nameInput.disabled = true;
+  if (toolSelect) toolSelect.disabled = true;
+  
+  console.log('🔄 Showing operator loading indicator');
+}
+
+// Hide loading indicator in operator dialog
+function hideOperatorLoadingIndicator() {
+  const container = getActiveDocumentContainer();
+  if (!container) return;
+  
+  // Hide AI indicator
+  const aiIndicator = container.querySelector('#operator-ai-indicator');
+  if (aiIndicator) {
+    aiIndicator.style.display = 'none';
+  }
+  
+  // Re-enable form fields
+  const nameInput = container.querySelector('#embedded-instance-name');
+  const toolSelect = container.querySelector('#embedded-instance-tool');
+  
+  if (nameInput) nameInput.disabled = false;
+  if (toolSelect) toolSelect.disabled = false;
+  
+  console.log('✅ Hiding operator loading indicator');
+}
+
+// Auto-populate operator fields using LLM
+async function autoPopulateOperatorFields(toolId) {
+  console.log(`[${windowId}] Auto-populating fields for tool: ${toolId}`);
+  
+  try {
+    // Get the tool
+    const tool = await operatorManager.getTool(toolId);
+    if (!tool) {
+      console.error('Tool not found for auto-population');
+      return;
+    }
+
+    // Show loading indicator
+    showOperatorLoadingIndicator();
+    addMessageToUI('system', `🤖 Analyzing tool "${tool.name}" to suggest operator configuration...`);
+
+    // Call LLM to analyze the tool and suggest configurations
+    const suggestions = await callLLMForToolAnalysis(tool);
+    
+    if (suggestions) {
+      // Populate the suggested fields (force repopulation since this is auto-triggered by tool selection)
+      await populateSuggestedFields(suggestions, true);
+      addMessageToUI('system', `✅ Auto-populated operator fields based on "${tool.name}"`);
+    }
+
+  } catch (error) {
+    console.error('Error auto-populating operator fields:', error);
+    addMessageToUI('system', `⚠️ Could not auto-populate fields: ${error.message}`);
+  } finally {
+    // Always hide loading indicator, even if there was an error
+    hideOperatorLoadingIndicator();
+  }
+}
+
+async function callLLMForToolAnalysis(tool) {
+  try {
+    // Convert HTML code to plain text for analysis
+    const plainTextCode = operatorManager.convertHtmlCodeToPlainText(tool.code);
+    
+    // Call the dedicated operator config suggestion API
+    const response = await fetch('http://127.0.0.1:5000/api/suggest-operator-config', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        tool_name: tool.name,
+        tool_description: tool.description || '',
+        tool_code: plainTextCode,
+        document_id: window.documentManager?.activeDocumentId || 'default'
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Operator config API error: ${response.status}`);
+    }
+
+    const result = await response.json();
+    console.log('Operator config suggestion response:', result);
+
+    if (result.success && result.suggestion) {
+      const suggestions = result.suggestion;
+      
+      // Validate the structure (the backend already validates, but double-check)
+      if (typeof suggestions === 'object' && suggestions !== null) {
+        // Ensure required fields have defaults
+        suggestions.operatorName = suggestions.operatorName || '';
+        suggestions.parameters = Array.isArray(suggestions.parameters) ? suggestions.parameters : [];
+        suggestions.outputs = Array.isArray(suggestions.outputs) ? suggestions.outputs : [];
+        
+        console.log('Validated suggestions:', suggestions);
+        
+        // Show warning if fallback was used
+        if (result.warning) {
+          console.warn('Warning from API:', result.warning);
+          addMessageToUI('system', `⚠️ ${result.warning}`);
+        }
+        
+        return suggestions;
+      }
+      
+      throw new Error('Invalid suggestion structure from API');
+    } else {
+      throw new Error(result.error || 'API request failed');
+    }
+
+  } catch (error) {
+    console.error('Error calling API for tool analysis:', error);
+    throw error;
+  }
+}
+
+async function populateSuggestedFields(suggestions, forceRepopulate = false) {
+  // Get the active document container
+  const container = getActiveDocumentContainer();
+  if (!container) return;
+
+  console.log('🔧 Populating suggested fields:', {
+    operatorName: suggestions.operatorName,
+    parametersCount: suggestions.parameters?.length || 0,
+    outputsCount: suggestions.outputs?.length || 0,
+    forceRepopulate: forceRepopulate
+  });
+
+  // 1. Populate operator name
+  if (suggestions.operatorName && suggestions.operatorName.trim()) {
+    const nameInput = container.querySelector('#embedded-instance-name');
+    if (nameInput && (!nameInput.value.trim() || forceRepopulate)) {
+      nameInput.value = suggestions.operatorName.trim();
+      console.log(`✅ Set operator name: "${suggestions.operatorName}"`);
+    }
+  }
+
+  // 2. Append suggested parameters (don't clear existing ones)
+  const parametersContainer = container.querySelector('#embedded-instance-parameters');
+  if (parametersContainer && suggestions.parameters && suggestions.parameters.length > 0) {
+    const existingParams = parametersContainer.querySelectorAll('.parameter-field');
+    
+    console.log(`🔧 Appending ${suggestions.parameters.length} suggested parameters to ${existingParams.length} existing parameters`);
+    
+    let addedCount = 0;
+    // Add suggested parameters (append, don't clear)
+    for (const param of suggestions.parameters) {
+      if (param.name && param.name.trim()) {
+        addParameterField(
+          param.name.trim(), 
+          param.defaultValue || '', 
+          param.type || 'literal'
+        );
+        console.log(`  ✅ Added parameter: ${param.name} (${param.type})`);
+        addedCount++;
+      } else {
+        console.log(`  ⚠️ Skipping parameter with missing name:`, param);
+      }
+    }
+    
+    console.log(`✅ Added ${addedCount} parameter fields (${addedCount + existingParams.length} total)`);
+  }
+
+  // 3. Append suggested outputs (don't clear existing ones)
+  const outputsContainer = container.querySelector('#embedded-instance-outputs');
+  if (outputsContainer) {
+    const existingOutputs = outputsContainer.querySelectorAll('.output-config-field');
+    
+    if (suggestions.outputs && suggestions.outputs.length > 0) {
+      console.log(`🔧 Appending ${suggestions.outputs.length} suggested outputs to ${existingOutputs.length} existing outputs:`, suggestions.outputs);
+      
+      let addedCount = 0;
+      // Add suggested outputs (append, don't clear)
+      for (const output of suggestions.outputs) {
+        if (output.variable && output.variable.trim()) {
+          console.log(`  ✓ Adding output field: config="${output.config}", variable="${output.variable}"`);
+          await addOutputField(output.config || 'output', output.variable.trim());
+          addedCount++;
+        } else {
+          console.log(`  ⚠️ Skipping output with missing variable:`, output);
+        }
+      }
+      
+      console.log(`✅ Added ${addedCount} output fields (${addedCount + existingOutputs.length} total)`);
+    } else if (existingOutputs.length === 0) {
+      // If no outputs suggested and no existing outputs, ensure at least one empty output field
+      console.log('🔧 No outputs suggested, adding empty output field');
+      await addOutputField();
+    } else {
+      console.log('🔧 No outputs to add, keeping existing outputs');
+    }
+  } else {
+    console.error('❌ Output container not found');
+  }
+
+  console.log('✅ Successfully populated suggested fields');
 }
 
 async function loadVariablesFromBackend() {
@@ -1759,7 +1996,10 @@ export {
   showInstanceEditor,
   addParameterField,
   addOutputField,
-  executeRequiredOperatorsForTemplate
+  executeRequiredOperatorsForTemplate,
+  autoPopulateOperatorFields,
+  callLLMForToolAnalysis,
+  populateSuggestedFields
 };
 
 // Template-Operator Integration Functions
@@ -2074,5 +2314,10 @@ window.operatorsModule = {
   styleInstanceReferences,
   executeRequiredOperatorsForTemplate,
   refreshOperatorsToolsList,
-  setupToolsSidebarEventListeners
+  setupToolsSidebarEventListeners,
+  autoPopulateOperatorFields,
+  callLLMForToolAnalysis,
+  populateSuggestedFields,
+  showOperatorLoadingIndicator,
+  hideOperatorLoadingIndicator
 }; 
