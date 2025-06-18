@@ -25,6 +25,7 @@ class Operator {
     this.toolName = options.toolName || '';
     this.inputDatasets = options.inputDatasets || []; // Array of dataset references
     this.parameters = options.parameters || {};
+    this.outputs = options.outputs || []; // Array of output assignments
     this.outputConfig = options.outputConfig || ''; // Output configuration (e.g., output.name)
     this.outputVariable = options.outputVariable || ''; // Variable name to store output
     this.outputFormat = options.outputFormat || ['result'];
