@@ -279,10 +279,12 @@ class ToolsManager {
   }
 
   refreshOperatorsToolsIfOpen() {
-    // Check if operators dialog is open
+    // Check if operators panel is open (either as dialog or embedded in document)
     const operatorsDialog = document.getElementById('operators-dialog');
-    if (operatorsDialog && operatorsDialog.style.display !== 'none') {
-      // Refresh the tools sidebar in operators dialog
+    const operatorsPanel = document.querySelector('.operators-panel.active');
+    
+    if ((operatorsDialog && operatorsDialog.style.display !== 'none') || operatorsPanel) {
+      // Refresh the tools sidebar in operators dialog/panel
       if (window.operatorsModule && window.operatorsModule.refreshOperatorsToolsList) {
         window.operatorsModule.refreshOperatorsToolsList();
       }

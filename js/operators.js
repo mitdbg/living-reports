@@ -1979,8 +1979,13 @@ function createOperatorsSidebarToolElement(tool) {
   toolDiv.dataset.toolId = tool.id;
   
   toolDiv.innerHTML = `
-    <div class="sidebar-tool-name">${escapeHtml(tool.name)}</div>
-    <div class="sidebar-tool-description">${escapeHtml(tool.description || 'No description')}</div>
+    <div class="sidebar-tool-content">
+      <div class="sidebar-tool-name">${escapeHtml(tool.name)}</div>
+      <div class="sidebar-tool-description">${escapeHtml(tool.description || 'No description')}</div>
+    </div>
+    <div class="sidebar-tool-actions">
+      <button class="sidebar-tool-delete-btn" data-tool-id="${tool.id}" title="Delete tool">✕</button>
+    </div>
   `;
   
   return toolDiv;
@@ -2008,12 +2013,21 @@ function setupToolsSidebarEventListeners() {
         }
       }
     }
+    
+    // Delete tool button
+    if (e.target.classList.contains('sidebar-tool-delete-btn')) {
+      e.stopPropagation(); // Prevent triggering tool selection
+      const toolId = e.target.getAttribute('data-tool-id');
+      if (window.toolsManager) {
+        window.toolsManager.removeTool(toolId);
+      }
+    }
   });
   
   // Tool selection in sidebar - show tool editor
   document.addEventListener('click', (e) => {
     const toolItem = e.target.closest('.operators-sidebar-tool-item');
-    if (toolItem) {
+    if (toolItem && !e.target.classList.contains('sidebar-tool-delete-btn')) {
       const toolId = toolItem.dataset.toolId;
       showToolEditor(toolId);
     }
@@ -2025,13 +2039,18 @@ function filterOperatorsTools(searchTerm) {
   const term = searchTerm.toLowerCase();
   
   toolItems.forEach(item => {
-    const name = item.querySelector('.sidebar-tool-name').textContent.toLowerCase();
-    const description = item.querySelector('.sidebar-tool-description').textContent.toLowerCase();
+    const nameElement = item.querySelector('.sidebar-tool-name');
+    const descriptionElement = item.querySelector('.sidebar-tool-description');
     
-    if (name.includes(term) || description.includes(term)) {
-      item.classList.remove('filtered-out');
-    } else {
-      item.classList.add('filtered-out');
+    if (nameElement && descriptionElement) {
+      const name = nameElement.textContent.toLowerCase();
+      const description = descriptionElement.textContent.toLowerCase();
+      
+      if (name.includes(term) || description.includes(term)) {
+        item.classList.remove('filtered-out');
+      } else {
+        item.classList.add('filtered-out');
+      }
     }
   });
 }
