@@ -152,7 +152,7 @@ class OperatorManager {
       this.notifyInstanceUpdate(instance);
 
       // Get the tool
-      const tool = this.getTool(instance.toolId);
+      const tool = await this.getTool(instance.toolId);
       if (!tool) {
         throw new Error(`Tool not found: ${instance.toolId}`);
       }
@@ -255,18 +255,45 @@ class OperatorManager {
   }
 
   async getTool(toolId) {
+    console.log(`[${windowId}] Getting tool with ID: ${toolId}`);
+    
     // Get tool from the existing tools system
     if (window.toolsManager) {
-      return window.toolsManager.tools.find(tool => tool.id === toolId);
+      console.log(`[${windowId}] Using toolsManager, available tools:`, window.toolsManager.tools.length);
+      const tool = window.toolsManager.tools.find(tool => tool.id === toolId);
+      if (tool) {
+        console.log(`[${windowId}] Found tool in toolsManager:`, {
+          id: tool.id, 
+          name: tool.name, 
+          hasCode: !!tool.code,
+          toolKeys: Object.keys(tool)
+        });
+        return tool;
+      } else {
+        console.log(`[${windowId}] Tool not found in toolsManager. Available tool IDs:`, 
+          window.toolsManager.tools.map(t => t.id));
+      }
+    } else {
+      console.log(`[${windowId}] No toolsManager available`);
     }
     
     // Fallback to API
     try {
-      const response = await fetch('/api/tools');
+      const response = await fetch('http://127.0.0.1:5000/api/tools');
       const result = await response.json();
       if (result.success) {
         const tools = result.tools || [];
-        return tools.find(tool => tool.id === toolId);
+        console.log(`[${windowId}] API returned ${tools.length} tools`);
+        const tool = tools.find(tool => tool.id === toolId);
+        if (tool) {
+          console.log(`[${windowId}] Found tool in API:`, {
+            id: tool.id, 
+            name: tool.name, 
+            hasCode: !!tool.code,
+            toolKeys: Object.keys(tool)
+          });
+        }
+        return tool;
       }
     } catch (error) {
       console.error('Error loading tools:', error);
@@ -331,9 +358,12 @@ class OperatorManager {
         }
       }
 
+      // Convert HTML code back to plain text for backend execution
+      const plainTextCode = this.convertHtmlCodeToPlainText(tool.code);
+      
       // Prepare the execution payload
       const executionPayload = {
-        code: tool.code,
+        code: plainTextCode,
         datasets: datasetsFromParams, // Datasets from parameters
         parameters: processedParameters // Literal values
       };
@@ -357,7 +387,7 @@ class OperatorManager {
           'ngrok-skip-browser-warning': 'true' // Skip ngrok warning page
         },
         body: JSON.stringify({
-          code: tool.code,
+          code: plainTextCode,
           parameters: executionPayload.parameters
         })
       });
@@ -457,6 +487,41 @@ class OperatorManager {
     
     // Return as string
     return trimmed;
+  }
+
+  convertHtmlCodeToPlainText(htmlCode) {
+    if (!htmlCode) {
+      return '';
+    }
+
+    // If the code doesn't contain HTML tags, return as is
+    if (!htmlCode.includes('<')) {
+      return htmlCode;
+    }
+
+    // First, replace <br> tags with newlines before parsing
+    let processedCode = htmlCode
+      .replace(/<br\s*\/?>/gi, '\n')  // Replace <br> and <br/> with newlines
+      .replace(/<div>/gi, '\n')       // Replace <div> with newlines
+      .replace(/<\/div>/gi, '')       // Remove closing </div> tags
+      .replace(/<p>/gi, '\n')         // Replace <p> with newlines  
+      .replace(/<\/p>/gi, '');        // Remove closing </p> tags
+
+    // Create a temporary div to parse any remaining HTML
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = processedCode;
+
+    // Get the plain text content
+    let plainText = tempDiv.textContent || tempDiv.innerText || '';
+
+    // Clean up extra whitespace and normalize line endings
+    plainText = plainText
+      .replace(/\r\n/g, '\n')         // Normalize Windows line endings
+      .replace(/\r/g, '\n')           // Normalize Mac line endings
+      .replace(/\n{3,}/g, '\n\n')     // Replace multiple newlines with double newlines
+      .trim();                        // Remove leading/trailing whitespace
+
+    return plainText;
   }
 
   extractValueFromOutput(result, outputConfig) {
@@ -664,10 +729,7 @@ function setupOperatorEventListeners() {
       hideOperatorsDialog();
     }
     
-    if (event.target.matches('.instance-insert-btn')) {
-      const instanceId = event.target.getAttribute('data-instance-id');
-      insertInstanceReference(instanceId);
-    }
+
   });
   
   // Setup tools sidebar event listeners
@@ -956,7 +1018,7 @@ async function populateToolsDropdown() {
   } else {
     // Fallback to API
     try {
-      const response = await fetch('/api/tools');
+      const response = await fetch('http://127.0.0.1:5000/api/tools');
       const result = await response.json();
       if (result.success) {
         tools = result.tools || [];
@@ -1363,7 +1425,6 @@ function createInstanceElement(instance) {
         </div>
       </div>
       <div class="instance-item-actions">
-        <button class="instance-item-btn instance-insert-btn" data-instance-id="${instance.id}">Insert</button>
         <button class="instance-item-btn instance-execute-btn" data-instance-id="${instance.id}" ${instance.status === 'running' ? 'disabled' : ''}>
           ${instance.status === 'running' ? 'Running...' : 'Execute'}
         </button>
@@ -1374,76 +1435,7 @@ function createInstanceElement(instance) {
   `;
 }
 
-// Insert instance reference into template
-function insertInstanceReference(instanceId) {
-  const instance = operatorManager.getInstance(instanceId);
-  if (!instance) {
-    addMessageToUI('system', 'Instance not found');
-    return;
-  }
 
-  // Find the currently active template editor
-  let templateEditor = null;
-  
-  // Try to get the template editor from the active document
-  if (window.documentManager?.activeDocumentId) {
-    const container = document.getElementById(`document-${window.documentManager.activeDocumentId}`);
-    templateEditor = container?.querySelector('.template-editor');
-  }
-  
-  // Fallback to global template editor
-  if (!templateEditor) {
-    templateEditor = elements.templateEditor;
-  }
-  
-  if (!templateEditor) {
-    addMessageToUI('system', 'No template editor found');
-    return;
-  }
-
-  // Use $$ prefix to distinguish from data sources (which use $)
-  const instanceReference = `$$${instance.name.replace(/\s+/g, '_')}`;
-  
-  // Focus the template editor
-  templateEditor.focus();
-  
-  // Get current cursor position or insert at end
-  const selection = window.getSelection();
-  let range;
-  
-  if (selection.rangeCount > 0 && templateEditor.contains(selection.anchorNode)) {
-    // Insert at cursor position
-    range = selection.getRangeAt(0);
-  } else {
-    // Insert at end of template
-    range = document.createRange();
-    range.selectNodeContents(templateEditor);
-    range.collapse(false);
-  }
-  
-  // Insert the instance reference
-  const text = templateEditor.textContent;
-  const needsNewline = text.length > 0 && !text.endsWith('\n') && range.startOffset === text.length;
-  const textToInsert = needsNewline ? `\n${instanceReference}` : instanceReference;
-  
-  range.deleteContents();
-  range.insertNode(document.createTextNode(textToInsert));
-  
-  // Move cursor after the inserted text
-  range.collapse(false);
-  selection.removeAllRanges();
-  selection.addRange(range);
-  
-  // Apply styling to make instance references clickable
-  setTimeout(() => {
-    styleInstanceReferences(templateEditor);
-  }, 100);
-  
-  addMessageToUI('system', `Inserted instance reference: ${instanceReference}`);
-  
-  // Close instances dialog
-  hideOperatorsDialog();
-}
 
 // Open instance details from a clicked reference
 async function openInstanceFromReference(instanceName) {
@@ -1613,7 +1605,7 @@ async function saveTool() {
       }
     } else {
       // Fallback API call
-      const response = await fetch('/api/tools', {
+      const response = await fetch('http://127.0.0.1:5000/api/tools', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1976,7 +1968,7 @@ async function refreshOperatorsToolsList() {
   } else {
     // Fallback to API
     try {
-      const response = await fetch('/api/tools');
+      const response = await fetch('http://127.0.0.1:5000/api/tools');
       const result = await response.json();
       if (result.success) {
         tools = result.tools || [];
@@ -2088,7 +2080,6 @@ window.operatorsModule = {
   deleteInstance,
   addParameterField,
   addOutputField,
-  insertInstanceReference,
   openInstanceFromReference,
   styleInstanceReferences,
   executeRequiredOperatorsForTemplate,
