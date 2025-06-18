@@ -155,6 +155,18 @@ async function sendMessage() {
   const message = elements.messageInput.value.trim();
   if (!message) return;
   
+  // Check if this is an agent command first
+  if (window.codingAssistant) {
+    const agentCommand = window.codingAssistant.detectAgentCommand(message);
+    if (agentCommand.isAgentCommand) {
+      // Clear input
+      elements.messageInput.value = '';
+      // Handle through coding assistant
+      await window.codingAssistant.handleAgentCommand(agentCommand.agentType, agentCommand.prompt);
+      return;
+    }
+  }
+  
   // Add user message to UI
   addMessageToUI('user', message);
   

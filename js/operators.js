@@ -32,6 +32,7 @@ class Operator {
     this.error = options.error || null;
     this.createdAt = options.createdAt || new Date().toISOString();
     this.updatedAt = options.updatedAt || new Date().toISOString();
+    // Always use current active document ID for new operators, or specified documentId for loaded ones
     this.documentId = options.documentId || (window.documentManager?.activeDocumentId || 'default');
     this.createdBy = options.createdBy || getCurrentUser()?.id || 'unknown';
   }
@@ -73,11 +74,16 @@ class OperatorManager {
   }
 
   createInstance(options) {
+    // Ensure new instances are created for the active document
+    if (!options.documentId) {
+      options.documentId = window.documentManager?.activeDocumentId || 'default';
+    }
+    
     const instance = new Operator(options);
     this.instances.set(instance.id, instance);
     this.saveInstances();
     
-    console.log(`[${windowId}] Created operator: ${instance.name}`);
+    console.log(`[${windowId}] Created operator: ${instance.name} for document: ${instance.documentId}`);
     addMessageToUI('system', `Created operator: ${instance.name}`);
     
     return instance;
@@ -115,8 +121,10 @@ class OperatorManager {
   }
 
   getInstanceByName(name) {
+    // Only search within the current document's operators
+    const currentDocumentId = window.documentManager?.activeDocumentId || 'default';
     for (const instance of this.instances.values()) {
-      if (instance.name === name) {
+      if (instance.name === name && instance.documentId === currentDocumentId) {
         return instance;
       }
     }
@@ -129,6 +137,12 @@ class OperatorManager {
 
   getInstancesForDocument(documentId) {
     return this.getAllInstances().filter(instance => instance.documentId === documentId);
+  }
+
+  // Get instances for the current active document
+  getCurrentDocumentInstances() {
+    const currentDocumentId = window.documentManager?.activeDocumentId || 'default';
+    return this.getInstancesForDocument(currentDocumentId);
   }
 
   async executeInstance(instanceId) {
@@ -578,11 +592,22 @@ class OperatorManager {
 
   saveInstances() {
     try {
+      // Get current document ID for storage key
+      const currentDocumentId = window.documentManager?.activeDocumentId || 'default';
       const instancesData = {};
+      
+      // Only save instances for the current document
       for (const [id, instance] of this.instances) {
-        instancesData[id] = instance.toJSON();
+        if (instance.documentId === currentDocumentId) {
+          instancesData[id] = instance.toJSON();
+        }
       }
-      localStorage.setItem(`code_instances_${windowId}`, JSON.stringify(instancesData));
+      
+      // Use document-specific storage key
+      const storageKey = `code_instances_${windowId}_${currentDocumentId}`;
+      localStorage.setItem(storageKey, JSON.stringify(instancesData));
+      
+      console.log(`[${windowId}] Saved ${Object.keys(instancesData).length} operators for document: ${currentDocumentId}`);
     } catch (error) {
       console.error('Error saving operators:', error);
     }
@@ -590,18 +615,136 @@ class OperatorManager {
 
   loadInstances() {
     try {
-      const saved = localStorage.getItem(`code_instances_${windowId}`);
+      // Get current document ID for storage key
+      const currentDocumentId = window.documentManager?.activeDocumentId || 'default';
+      const storageKey = `code_instances_${windowId}_${currentDocumentId}`;
+      const saved = localStorage.getItem(storageKey);
+      
       if (saved) {
         const instancesData = JSON.parse(saved);
+        
+        // Clear existing instances for this document only
+        this.clearInstancesForDocument(currentDocumentId);
+        
+        // Load instances for this document
         for (const [id, data] of Object.entries(instancesData)) {
+          // Ensure the instance has the correct documentId
+          data.documentId = currentDocumentId;
           const instance = Operator.fromJSON(data);
           this.instances.set(id, instance);
         }
-        console.log(`[${windowId}] Loaded ${this.instances.size} operators`);
+        
+        console.log(`[${windowId}] Loaded ${Object.keys(instancesData).length} operators for document: ${currentDocumentId}`);
+      } else {
+        // Clear instances for this document if no saved data
+        this.clearInstancesForDocument(currentDocumentId);
+        console.log(`[${windowId}] No saved operators found for document: ${currentDocumentId}`);
       }
     } catch (error) {
       console.error('Error loading operators:', error);
     }
+  }
+
+  // Clear instances for a specific document
+  clearInstancesForDocument(documentId) {
+    const instancesToRemove = [];
+    for (const [id, instance] of this.instances) {
+      if (instance.documentId === documentId) {
+        instancesToRemove.push(id);
+      }
+    }
+    
+    instancesToRemove.forEach(id => {
+      this.instances.delete(id);
+    });
+    
+    console.log(`[${windowId}] Cleared ${instancesToRemove.length} operators for document: ${documentId}`);
+  }
+
+  // Method to refresh operators when switching documents
+  async refreshForDocument(documentId) {
+    console.log(`[${windowId}] Refreshing operators for document: ${documentId}`);
+    
+    // Load instances for the new document
+    this.loadInstances();
+    
+    // Validate variable assignments for loaded operators
+    await this.validateVariableAssignments();
+  }
+
+  // Validate that operator output variable assignments still exist in variables manager
+  async validateVariableAssignments() {
+    console.log(`[${windowId}] Validating variable assignments for operators...`);
+    
+    try {
+      // Get current valid variables from variables manager and backend
+      const validVariables = await this.getValidVariables();
+      const validVariableNames = new Set(Object.keys(validVariables));
+      
+      console.log(`[${windowId}] Found ${validVariableNames.size} valid variables:`, Array.from(validVariableNames));
+      
+      let invalidAssignmentsFound = 0;
+      
+      // Check all operators in current document
+      const currentInstances = this.getCurrentDocumentInstances();
+      for (const instance of currentInstances) {
+        if (instance.outputs && Array.isArray(instance.outputs)) {
+          let hasInvalidAssignments = false;
+          
+          for (const output of instance.outputs) {
+            if (output.variable && !validVariableNames.has(output.variable)) {
+              console.warn(`[${windowId}] Operator "${instance.name}" has invalid variable assignment: ${output.variable}`);
+              hasInvalidAssignments = true;
+              invalidAssignmentsFound++;
+            }
+          }
+          
+          // Mark instance with validation issues (for UI display)
+          instance.hasInvalidVariableAssignments = hasInvalidAssignments;
+        }
+      }
+      
+      if (invalidAssignmentsFound > 0) {
+        console.warn(`[${windowId}] Found ${invalidAssignmentsFound} invalid variable assignments`);
+        addMessageToUI('system', `⚠️ ${invalidAssignmentsFound} operator output assignments point to non-existent variables`);
+        
+        // Save the updated instances with validation flags
+        this.saveInstances();
+      } else {
+        console.log(`[${windowId}] All variable assignments are valid`);
+      }
+      
+    } catch (error) {
+      console.error(`[${windowId}] Error validating variable assignments:`, error);
+    }
+  }
+
+  // Get valid variables from variables manager and backend
+  async getValidVariables() {
+    const validVariables = {};
+    
+    try {
+      // Get variables from variables manager
+      if (window.variablesManager && window.variablesManager.variables) {
+        const variables = window.variablesManager.variables;
+        variables.forEach((variable, name) => {
+          validVariables[name] = variable;
+        });
+        console.log(`[${windowId}] Loaded ${variables.size} variables from variables manager`);
+      }
+      
+      // Also load from backend vars.json
+      const backendVariables = await loadVariablesFromBackend();
+      if (backendVariables && typeof backendVariables === 'object') {
+        Object.assign(validVariables, backendVariables);
+        console.log(`[${windowId}] Loaded ${Object.keys(backendVariables).length} variables from backend`);
+      }
+      
+    } catch (error) {
+      console.error(`[${windowId}] Error loading valid variables:`, error);
+    }
+    
+    return validVariables;
   }
 }
 
@@ -621,7 +764,49 @@ export function initOperators() {
   // Set up auto-styling for template editors
   setupAutoStyling();
   
+  // Set up document switching listener to refresh operators
+  setupDocumentSwitchingListener();
+  
   console.log(`[${windowId}] operators initialized`);
+}
+
+// Setup listener for document switching to refresh operators
+function setupDocumentSwitchingListener() {
+  // Listen for document tab changes
+  document.addEventListener('click', async (event) => {
+    // Check if a document tab was clicked
+    if (event.target.matches('.document-tab') || event.target.closest('.document-tab')) {
+      // Wait a bit for the document manager to update activeDocumentId
+      setTimeout(async () => {
+        if (operatorManager && window.documentManager?.activeDocumentId) {
+          const newDocumentId = window.documentManager.activeDocumentId;
+          console.log(`[${windowId}] Document switched to: ${newDocumentId}, refreshing operators`);
+          await operatorManager.refreshForDocument(newDocumentId);
+          
+          // If operators panel is currently open, refresh its content
+          const container = getActiveDocumentContainer();
+          if (container && container.querySelector('.operators-panel.active')) {
+            refreshInstancesList();
+          }
+        }
+      }, 100);
+    }
+  });
+  
+  // Also listen for programmatic document changes
+  document.addEventListener('documentChanged', async (event) => {
+    if (operatorManager && event.detail?.documentId) {
+      const newDocumentId = event.detail.documentId;
+      console.log(`[${windowId}] Document changed event to: ${newDocumentId}, refreshing operators`);
+      await operatorManager.refreshForDocument(newDocumentId);
+      
+      // If operators panel is currently open, refresh its content
+      const container = getActiveDocumentContainer();
+      if (container && container.querySelector('.operators-panel.active')) {
+        refreshInstancesList();
+      }
+    }
+  });
 }
 
 // Setup automatic styling for instance references
@@ -765,7 +950,7 @@ function getActiveDocumentContainer() {
 }
 
 // UI Functions
-function showOperatorsDialog() {
+async function showOperatorsDialog() {
   // Get the active document container
   const container = getActiveDocumentContainer();
   if (!container) {
@@ -794,6 +979,10 @@ function showOperatorsDialog() {
     
     // Ensure we're showing the list view, not editor views
     showOperatorsListView();
+    
+    // Refresh operators for current document and validate variables
+    const currentDocumentId = window.documentManager?.activeDocumentId || 'default';
+    await operatorManager.refreshForDocument(currentDocumentId);
     
     // Refresh the content
     refreshInstancesList();
@@ -1245,9 +1434,9 @@ async function addOutputField(outputConfig = '', outputVariable = '') {
       select.value = outputVariable;
       console.log(`  ✅ Variable "${outputVariable}" found and selected`);
     } else {
-      console.log(`  ⚠️ Variable "${outputVariable}" not found in existing variables. Skipping auto-selection.`);
+      console.log(`  ⚠️ Variable "${outputVariable}" not found in existing variables. Skipping assignment.`);
       console.log(`  Available variables:`, Array.from(select.options).map(opt => opt.value).filter(v => v));
-      // Don't create new variables - only use existing ones
+      // Just skip - don't set any value, leave it unselected
     }
   }
 }
@@ -1503,21 +1692,54 @@ async function populateSuggestedFields(suggestions, forceRepopulate = false) {
     const existingOutputs = outputsContainer.querySelectorAll('.output-config-field');
     
     if (suggestions.outputs && suggestions.outputs.length > 0) {
-      console.log(`🔧 Appending ${suggestions.outputs.length} suggested outputs to ${existingOutputs.length} existing outputs:`, suggestions.outputs);
+      console.log(`🔧 Processing ${suggestions.outputs.length} suggested outputs...`);
       
-      let addedCount = 0;
-      // Add suggested outputs (append, don't clear)
-      for (const output of suggestions.outputs) {
-        if (output.variable && output.variable.trim()) {
+      // Get valid variables to filter out non-existent ones
+      try {
+        const validVariables = await operatorManager.getValidVariables();
+        const validVariableNames = new Set(Object.keys(validVariables));
+        
+        // Filter outputs to only include those with existing variables
+        const validOutputs = suggestions.outputs.filter(output => {
+          if (!output.variable || !output.variable.trim()) {
+            console.log(`  ⚠️ Skipping output with missing variable:`, output);
+            return false;
+          }
+          
+          const varName = output.variable.trim();
+          if (!validVariableNames.has(varName)) {
+            console.log(`  ⚠️ Skipping output with non-existent variable: ${varName}`);
+            return false;
+          }
+          
+          return true;
+        });
+        
+        console.log(`🔧 Filtered to ${validOutputs.length} valid outputs (from ${suggestions.outputs.length} suggested)`);
+        
+        let addedCount = 0;
+        // Add only valid outputs (append, don't clear)
+        for (const output of validOutputs) {
           console.log(`  ✓ Adding output field: config="${output.config}", variable="${output.variable}"`);
           await addOutputField(output.config || 'output', output.variable.trim());
           addedCount++;
-        } else {
-          console.log(`  ⚠️ Skipping output with missing variable:`, output);
         }
+        
+        console.log(`✅ Added ${addedCount} output fields (${addedCount + existingOutputs.length} total)`);
+        
+      } catch (error) {
+        console.error('❌ Error filtering suggested outputs:', error);
+        // Fallback: just add all suggested outputs (the addOutputField function will handle validation)
+        let addedCount = 0;
+        for (const output of suggestions.outputs) {
+          if (output.variable && output.variable.trim()) {
+            console.log(`  ✓ Adding output field (fallback): config="${output.config}", variable="${output.variable}"`);
+            await addOutputField(output.config || 'output', output.variable.trim());
+            addedCount++;
+          }
+        }
+        console.log(`✅ Added ${addedCount} output fields (fallback mode)`);
       }
-      
-      console.log(`✅ Added ${addedCount} output fields (${addedCount + existingOutputs.length} total)`);
     } else if (existingOutputs.length === 0) {
       // If no outputs suggested and no existing outputs, ensure at least one empty output field
       console.log('🔧 No outputs suggested, adding empty output field');
@@ -1589,7 +1811,8 @@ function refreshInstancesList() {
   const container = documentContainer.querySelector('#instances-items');
   if (!container) return;
 
-  const instances = operatorManager.getAllInstances();
+  // Get only instances for the current document
+  const instances = operatorManager.getCurrentDocumentInstances();
 
   if (instances.length === 0) {
     container.innerHTML = `
@@ -1616,29 +1839,42 @@ function createInstanceElement(instance) {
     ? instance.inputDatasets.join(', ')
     : 'No datasets';
 
-  // Handle multiple outputs display
+  // Handle multiple outputs display with validation warnings
   let outputText = 'No output assignment';
+  let hasInvalidOutputs = false;
   
   if (instance.outputs && instance.outputs.length > 0) {
-    const outputDescriptions = instance.outputs.map(output => 
-      `${output.config || 'result'} → \${${output.variable}}`
-    );
+    const outputDescriptions = instance.outputs.map(output => {
+      let outputDesc = `${output.config || 'result'} → \${${output.variable}}`;
+      // Check if this specific output has invalid variable assignment
+      if (instance.hasInvalidVariableAssignments) {
+        outputDesc += ' ⚠️';
+        hasInvalidOutputs = true;
+      }
+      return outputDesc;
+    });
     outputText = `Output: ${outputDescriptions.join(', ')}`;
   }
 
+  // Add validation warning if there are invalid variable assignments
+  const validationWarning = instance.hasInvalidVariableAssignments 
+    ? `<div class="instance-validation-warning">⚠️ Warning: Some output variables no longer exist</div>` 
+    : '';
+
   return `
-    <div class="instance-item ${statusClass}" data-instance-id="${instance.id}">
+    <div class="instance-item ${statusClass} ${instance.hasInvalidVariableAssignments ? 'has-validation-issues' : ''}" data-instance-id="${instance.id}">
       <div class="instance-item-info">
         <div class="instance-item-icon">🔧</div>
         <div class="instance-item-details">
           <div class="instance-item-name">${escapeHtml(instance.name)}</div>
           <div class="instance-item-tool">Tool: ${escapeHtml(instance.toolName || instance.toolId)}</div>
           <div class="instance-item-datasets">Datasets: ${escapeHtml(datasetsText)}</div>
-          <div class="instance-item-output">${escapeHtml(outputText)}</div>
+          <div class="instance-item-output ${hasInvalidOutputs ? 'has-invalid-outputs' : ''}">${escapeHtml(outputText)}</div>
           <div class="instance-item-meta">
             <span>Status: ${statusText}</span>
             <span>Last run: ${lastExecuted}</span>
           </div>
+          ${validationWarning}
           ${instance.error ? `<div class="instance-error">Error: ${escapeHtml(instance.error)}</div>` : ''}
         </div>
       </div>
@@ -2065,10 +2301,11 @@ function extractVariablesFromTemplate(templateContent) {
 }
 
 function identifyRequiredOperators(requiredVariables) {
-  const allOperators = operatorManager.getAllInstances();
+  // Only check operators from the current document
+  const currentDocumentOperators = operatorManager.getCurrentDocumentInstances();
   const requiredOperators = [];
   
-  for (const operator of allOperators) {
+  for (const operator of currentDocumentOperators) {
     const outputVariables = getOperatorOutputVariables(operator);
     
     // Check if any of this operator's outputs are needed by the template

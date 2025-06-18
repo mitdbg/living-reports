@@ -17,6 +17,7 @@ import { initDataLake } from './data-lake.js';
 import { initTools } from './tools.js';
 import { addSampleTools } from './sample-tools.js';
 import { initOperators } from './operators.js';
+import { initCodingAssistant } from './coding_assistant.js';
 import './variables.js'; // Import variables module to initialize it
 
 let documentManager;
@@ -98,6 +99,7 @@ async function initializeCoreModules() {
     initDataLake(); // Initialize Data Lake functionality
     await initTools(); // Initialize Tools functionality
     initOperators(); // Initialize Operators functionality
+    await initCodingAssistant(); // Initialize Coding Assistant functionality
     
     // Add sample tools for demonstration (only if no tools exist)
     await addSampleTools();

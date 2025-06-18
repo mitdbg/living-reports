@@ -87,7 +87,7 @@ googledoc_demo/
 
 
 # NOTES
-- The system uses GPT-3.5-turbo by default
+- The system uses GPT-4.1-mini by default
 - The system uses `https://6bd2-89-213-179-161.ngrok-free.app/execute_code` endpoint to execute code, you also can set your own local server
 
 

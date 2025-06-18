@@ -167,7 +167,7 @@ class Template:
     def _call_llm(client: Any, prompt: str):
             if isinstance(client, OpenAI):
                 return client.chat.completions.create(
-                    model="gpt-3.5-turbo",
+                    model="gpt-4.1-mini",
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.7,
                 )

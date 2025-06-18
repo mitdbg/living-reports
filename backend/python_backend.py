@@ -529,7 +529,7 @@ JSON:"""
             # Call LLM for suggestion
             if hasattr(client, 'chat'):
                 response = client.chat.completions.create(
-                    model="gpt-3.5-turbo",
+                    model="gpt-4.1-mini",
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.3,
                     max_tokens=2000
@@ -1126,7 +1126,7 @@ JSON:"""
             if hasattr(client, 'chat'):
                 # OpenAI client
                 response = client.chat.completions.create(
-                    model="gpt-3.5-turbo",
+                    model="gpt-4.1-mini",
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.3,
                     max_tokens=400
@@ -1336,7 +1336,7 @@ JSON:"""
             if hasattr(client, 'chat'):
                 # OpenAI client
                 response = client.chat.completions.create(
-                    model="gpt-3.5-turbo",
+                    model="gpt-4.1-mini",
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.3,
                     max_tokens=800
@@ -1597,6 +1597,88 @@ def delete_tool(tool_id):
             'success': False,
             'error': str(e)
         }), 500
+
+
+# Coding Agent Integration
+@app.route('/api/agents/coding', methods=['POST'])
+def execute_coding_agent():
+    """Execute coding agent with user prompt and context"""
+    try:
+        data = request.get_json()
+        prompt = data.get('prompt', '')
+        context = data.get('context', {})
+        agent_type = data.get('agent_type', 'coding_agent')
+        
+        if not prompt:
+            return jsonify({
+                "success": False, 
+                "error": "Prompt is required"
+            })
+        
+        logger.info(f"🤖 Executing {agent_type} with prompt: {prompt[:100]}...")
+        
+        # Import and call the coding agent
+        try:
+            import sys
+            import os
+            from pathlib import Path
+            
+            # Add the coding agent directory to Python path
+            coding_agent_dir = Path(__file__).parent / 'agents' / 'code_agent'
+            sys.path.insert(0, str(coding_agent_dir))
+            
+            from coding_agent import run_coding_agent_for_chat
+            
+            # Build enhanced prompt with context
+            enhanced_prompt = build_enhanced_prompt(prompt, context)
+            
+            # Execute the agent
+            import asyncio
+            if hasattr(asyncio, 'run'):
+                # Python 3.7+
+                result = asyncio.run(run_coding_agent_for_chat(enhanced_prompt, context, agent_type))
+            else:
+                # Fallback for older Python versions
+                loop = asyncio.get_event_loop()
+                result = loop.run_until_complete(run_coding_agent_for_chat(enhanced_prompt, context, agent_type))
+            
+            return jsonify(result)
+            
+        except ImportError as e:
+            logger.error(f"❌ Failed to import coding agent: {e}")
+            return jsonify({
+                "success": False,
+                "error": f"Coding agent not available: {str(e)}"
+            })
+            
+    except Exception as e:
+        logger.error(f"❌ Error executing coding agent: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        })
+
+
+def build_enhanced_prompt(user_prompt, context):
+    """Build an enhanced prompt with context information"""
+    enhanced_parts = [user_prompt]
+    
+    if context:
+        if context.get('current_source_code'):
+            enhanced_parts.append(f"\nCurrent source code in editor:\n```python\n{context['current_source_code']}\n```")
+        
+        if context.get('variables'):
+            enhanced_parts.append(f"\nAvailable variables: {context['variables']}")
+        
+        if context.get('available_datasets'):
+            datasets = ', '.join(context['available_datasets'])
+            enhanced_parts.append(f"\nAvailable datasets: {datasets}")
+        
+        if context.get('document_type'):
+            enhanced_parts.append(f"\nDocument type: {context['document_type']}")
+    
+    return '\n'.join(enhanced_parts)
+
 
 if __name__ == '__main__':
     print("Starting Python backend server...")
