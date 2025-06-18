@@ -5013,6 +5013,7 @@ p {
 /* Contenteditable div styling for tool code editor */
 .form-group .source-editor {
   min-height: 200px;
+  max-height: 400px;
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
   border: 1px solid #555;
   border-radius: 6px;
@@ -6777,17 +6778,6 @@ p {
   background: #5a6268;
 }
 
-/* Hide the old floating operators dialog */
-.operators-dialog {
-  display: none !important;
-}
-
-/* Hide the old floating add-tool and add-instance dialogs */
-.add-tool-dialog,
-.add-instance-dialog {
-  display: none !important;
-}
-
 /* ... existing code ... */
 
 /* operators Panel (Embedded) */
@@ -7016,110 +7006,4 @@ p {
 .instances-actions .add-instance-btn:disabled {
   background: #6c757d;
   cursor: not-allowed;
-}
-
-/* Tool Editor View */
-.operators-tool-editor-view,
-.operators-instance-editor-view {
-  display: none;
-  flex-direction: column;
-  height: 100%;
-}
-
-.operators-tool-editor-view.active,
-.operators-instance-editor-view.active {
-  display: flex;
-}
-
-.tool-editor-header,
-.instance-editor-header {
-  display: flex;
-  align-items: center;
-  gap: 15px;
-  margin-bottom: 20px;
-  padding-bottom: 15px;
-  border-bottom: 2px solid #f0f0f0;
-}
-
-.back-to-operators-btn {
-  background: #6c757d;
-  color: white;
-  border: none;
-  padding: 8px 16px;
-  border-radius: 4px;
-  font-size: 14px;
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-.back-to-operators-btn:hover {
-  background: #5a6268;
-}
-
-.tool-editor-header h4,
-.instance-editor-header h4 {
-  margin: 0;
-  color: #333;
-  font-size: 20px;
-}
-
-.tool-editor-form,
-.instance-editor-form {
-  flex: 1;
-  overflow-y: auto;
-  margin-bottom: 20px;
-}
-
-.tool-editor-actions,
-.instance-editor-actions {
-  display: flex;
-  gap: 15px;
-  justify-content: flex-end;
-  padding-top: 15px;
-  border-top: 1px solid #dee2e6;
-}
-
-.tool-editor-actions .btn-primary,
-.tool-editor-actions .btn-secondary,
-.instance-editor-actions .btn-primary,
-.instance-editor-actions .btn-secondary {
-  padding: 10px 20px;
-  border-radius: 6px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-  border: none;
-}
-
-.tool-editor-actions .btn-primary,
-.instance-editor-actions .btn-primary {
-  background: #28a745;
-  color: white;
-}
-
-.tool-editor-actions .btn-primary:hover,
-.instance-editor-actions .btn-primary:hover {
-  background: #218838;
-}
-
-.tool-editor-actions .btn-secondary,
-.instance-editor-actions .btn-secondary {
-  background: #6c757d;
-  color: white;
-}
-
-.tool-editor-actions .btn-secondary:hover,
-.instance-editor-actions .btn-secondary:hover {
-  background: #5a6268;
-}
-
-/* Hide the old floating operators dialog */
-.operators-dialog {
-  display: none !important;
-}
-
-/* Hide the old floating add-tool and add-instance dialogs */
-.add-tool-dialog,
-.add-instance-dialog {
-  display: none !important;
 }

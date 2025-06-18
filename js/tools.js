@@ -160,8 +160,8 @@ class ToolsManager {
     
     const name = nameInput.value.trim();
     const description = descriptionInput.value.trim();
-    // Preserve formatting for source code - use proper line break extraction
-    const code = getTextContentWithLineBreaks(codeInput);
+    // Preserve formatting for source code - save innerHTML to preserve <br> tags and formatting
+    const code = codeInput.innerHTML;
     
     // Validation
     if (!name) {
@@ -170,8 +170,11 @@ class ToolsManager {
       return;
     }
     
-    // Check if code has any meaningful content (not just whitespace)
-    if (!code.trim()) {
+    // Check if code has any meaningful content (not just whitespace or empty HTML tags)
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = code;
+    const textContent = tempDiv.textContent || tempDiv.innerText || '';
+    if (!textContent.trim()) {
       addMessageToUI('system', 'Please enter source code for the tool.');
       codeInput.focus();
       return;
@@ -236,7 +239,8 @@ class ToolsManager {
     
     const sourceEditor = container.querySelector('.source-editor');
     if (sourceEditor) {
-      sourceEditor.textContent = tool.code;
+      // Load innerHTML to preserve formatting including <br> tags
+      sourceEditor.innerHTML = tool.code;
       addMessageToUI('system', `Loaded tool "${tool.name}" into source editor.`);
       
       // Close tools dialog
@@ -369,9 +373,14 @@ class ToolsManager {
       return;
     }
     
-    // Convert newlines to <br> tags for proper display in contenteditable div
-    const htmlContent = content.replace(/\n/g, '<br>');
-    codeInput.innerHTML = htmlContent;
+    // If content already contains HTML (like <br> tags), use it directly
+    // Otherwise, convert newlines to <br> tags for proper display in contenteditable div
+    if (content.includes('<br>') || content.includes('<div>') || content.includes('<p>')) {
+      codeInput.innerHTML = content;
+    } else {
+      const htmlContent = content.replace(/\n/g, '<br>');
+      codeInput.innerHTML = htmlContent;
+    }
   }
 
   escapeHtml(text) {
