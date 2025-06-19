@@ -809,20 +809,53 @@ def get_shared_document(document_id):
 
 @app.route('/api/documents/<document_id>', methods=['DELETE'])
 def delete_document(document_id):
-    """Delete a document."""
+    """Delete a document and perform cascading cleanup of related data."""
     try:
         if document_id in documents:
             document_title = documents[document_id]['title']
-            del documents[document_id]
+            session_id = documents[document_id].get('sessionId', '')
             
-            # Persist changes
+            # Delete main document
+            del documents[document_id]
             save_documents()
             
-            logger.info(f"Deleted document: {document_title}")
+            # Cascading cleanup - remove related data
+            cleanup_summary = []
+            
+            # Clean up variables for this document
+            if document_id in variables_storage:
+                variables_count = len(variables_storage[document_id])
+                del variables_storage[document_id]
+                save_variables(variables_storage)
+                cleanup_summary.append(f"{variables_count} variables")
+                logger.info(f"📊 Cleaned up {variables_count} variables for document {document_id}")
+            
+            # Clean up data lake entries for this document
+            if document_id in data_lake_storage:
+                data_lake_count = len(data_lake_storage[document_id])
+                del data_lake_storage[document_id]
+                save_data_lake(data_lake_storage)
+                cleanup_summary.append(f"{data_lake_count} data lake items")
+                logger.info(f"🗂️ Cleaned up {data_lake_count} data lake items for document {document_id}")
+            
+            # Clean up verifications for this document (using session_id)
+            if session_id and session_id in verifications:
+                verifications_count = sum(len(user_verifications) for user_verifications in verifications[session_id].values())
+                del verifications[session_id]
+                save_verifications(verifications)
+                cleanup_summary.append(f"{verifications_count} verifications")
+                logger.info(f"📋 Cleaned up {verifications_count} verifications for document {document_id} (session {session_id})")
+            
+            cleanup_message = f'Document "{document_title}" has been deleted'
+            if cleanup_summary:
+                cleanup_message += f" along with {', '.join(cleanup_summary)}"
+            
+            logger.info(f"✅ Complete deletion of document: {document_title} ({document_id})")
             
             return jsonify({
                 'success': True,
-                'message': f'Document "{document_title}" has been deleted'
+                'message': cleanup_message,
+                'cleanup_summary': cleanup_summary
             })
         else:
             return jsonify({
@@ -1038,6 +1071,118 @@ def save_variables_endpoint():
         
     except Exception as e:
         logger.error(f"Error saving variables: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/variables', methods=['DELETE'])
+def delete_variables():
+    """Delete variables for a specific document."""
+    try:
+        document_id = request.args.get('documentId')
+        
+        if not document_id:
+            return jsonify({
+                'success': False,
+                'error': 'Missing documentId parameter'
+            }), 400
+        
+        # Remove variables for this document
+        if document_id in variables_storage:
+            variables_count = len(variables_storage[document_id])
+            del variables_storage[document_id]
+            
+            # Persist changes
+            save_variables(variables_storage)
+            
+            logger.info(f"📊 Deleted {variables_count} variables for document {document_id}")
+            
+            return jsonify({
+                'success': True,
+                'message': f'Variables deleted for document {document_id}',
+                'documentId': document_id,
+                'deleted_count': variables_count
+            })
+        else:
+            return jsonify({
+                'success': True,
+                'message': f'No variables found for document {document_id}',
+                'documentId': document_id,
+                'deleted_count': 0
+            })
+        
+    except Exception as e:
+        logger.error(f"Error deleting variables for document: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/data-lake', methods=['DELETE'])
+def delete_data_lake():
+    """Delete data lake entries for a specific document."""
+    try:
+        document_id = request.args.get('documentId')
+        
+        if not document_id:
+            return jsonify({
+                'success': False,
+                'error': 'Missing documentId parameter'
+            }), 400
+        
+        # Remove data lake entries for this document
+        if document_id in data_lake_storage:
+            entries_count = len(data_lake_storage[document_id])
+            del data_lake_storage[document_id]
+            
+            # Persist changes
+            save_data_lake(data_lake_storage)
+            
+            logger.info(f"🗂️ Deleted {entries_count} data lake entries for document {document_id}")
+            
+            return jsonify({
+                'success': True,
+                'message': f'Data lake entries deleted for document {document_id}',
+                'documentId': document_id,
+                'deleted_count': entries_count
+            })
+        else:
+            return jsonify({
+                'success': True,
+                'message': f'No data lake entries found for document {document_id}',
+                'documentId': document_id,
+                'deleted_count': 0
+            })
+        
+    except Exception as e:
+        logger.error(f"Error deleting data lake entries for document: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/get-verification/<session_id>', methods=['DELETE'])
+def delete_verification(session_id):
+    """Delete verification history for a document (by session_id)."""
+    try:
+        # Remove verifications for this session
+        if session_id in verifications:
+            verifications_count = sum(len(user_verifications) for user_verifications in verifications[session_id].values())
+            del verifications[session_id]
+            
+            # Persist changes
+            save_verifications(verifications)
+            
+            logger.info(f"📋 Deleted {verifications_count} verifications for session {session_id}")
+            
+            return jsonify({
+                'success': True,
+                'message': f'Verifications deleted for session {session_id}',
+                'session_id': session_id,
+                'deleted_count': verifications_count
+            })
+        else:
+            return jsonify({
+                'success': True,
+                'message': f'No verifications found for session {session_id}',
+                'session_id': session_id,
+                'deleted_count': 0
+            })
+        
+    except Exception as e:
+        logger.error(f"Error deleting verifications for session {session_id}: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 

@@ -1,23 +1,29 @@
 // Data Lake Module
 import { state, elements, updateState, windowId } from './state.js';
 import { addMessageToUI } from './chat.js';
+import { createDocumentDialog, createDocumentElementId, getDocumentElement, registerElement } from './element-id-manager.js';
 
 // Data Lake state
 let dataLake = [];
 let autocompleteWidget = null;
 let autocompletePosition = { x: 0, y: 0 };
 let selectedAutocompleteIndex = -1;
-let currentDocumentId = null;
 
-// Set current document ID
-export async function setCurrentDocument(documentId) {
-  console.log(`[${windowId}] Setting current document for Data Lake: ${documentId}`);
-  currentDocumentId = documentId;
+// Get current document ID from DocumentManager
+function getCurrentDocumentId() {
+  return window.documentManager?.activeDocumentId || null;
+}
+
+// Set current document ID and load data lake
+export async function loadDataLake(documentId) {
+  console.log(`[${windowId}] Loading Data Lake for document: ${documentId}`);
   await loadDataLakeForCurrentDocument();
 }
 
 // Load data lake for current document from backend
 async function loadDataLakeForCurrentDocument() {
+  const currentDocumentId = getCurrentDocumentId();
+  
   if (!currentDocumentId) {
     console.warn(`[${windowId}] Cannot load data lake: no current document set`);
     return;
@@ -57,6 +63,8 @@ async function loadDataLakeForCurrentDocument() {
 
 // Save data lake for current document to backend
 async function saveDataLake() {
+  const currentDocumentId = getCurrentDocumentId();
+  
   if (!currentDocumentId) {
     console.warn(`[${windowId}] Cannot save data lake: no current document set`);
     return;
@@ -136,42 +144,17 @@ function setupDataLakeEventListeners() {
   });
 }
 
-// Initialize Data Lake UI components
+// Initialize Data Lake UI components (legacy - now handled by dynamic dialog creation)
 function initDataLakeUI() {
-  const dataLakeBtn = document.getElementById('data-lake-btn');
-  const dataLakeDialog = document.getElementById('data-lake-dialog');
-  const closeDataLakeBtn = document.getElementById('close-data-lake-btn');
-  const closeDataLakeBottomBtn = document.getElementById('close-data-lake-bottom-btn');
-  const dataLakeSearch = document.getElementById('data-lake-search');
-  
-  if (dataLakeBtn) {
-    dataLakeBtn.addEventListener('click', openDataLakeDialog);
-  }
-  
-  if (closeDataLakeBtn) {
-    closeDataLakeBtn.addEventListener('click', closeDataLakeDialog);
-  }
-  
-  if (closeDataLakeBottomBtn) {
-    closeDataLakeBottomBtn.addEventListener('click', closeDataLakeDialog);
-  }
-  
-  if (dataLakeSearch) {
-    dataLakeSearch.addEventListener('input', filterDataLakeItems);
-  }
-  
-  // Close dialog when clicking overlay
-  if (dataLakeDialog) {
-    dataLakeDialog.addEventListener('click', (e) => {
-      if (e.target === dataLakeDialog || e.target.classList.contains('dialog-overlay')) {
-        closeDataLakeDialog();
-      }
-    });
-  }
+  // This function is now obsolete since we create dialogs dynamically
+  // All event listeners are handled in setupDataLakeEventListeners
+  console.log('initDataLakeUI: Using dynamic dialog creation instead of static elements');
 }
 
 // Add item to Data Lake
 export async function addToDataLake(file) {
+  const currentDocumentId = getCurrentDocumentId();
+  
   console.log(`[${windowId}] 🔍 DEBUG: addToDataLake called with file:`, file);
   console.log(`[${windowId}] 🔍 DEBUG: currentDocumentId:`, currentDocumentId);
   
@@ -274,8 +257,43 @@ function setupAutocompleteListeners() {
   });
 }
 
+// Set up event listeners for the data lake dialog
+function setupDataLakeDialogEventListeners(dialog) {
+  console.log('Setting up data lake dialog event listeners');
+  
+  // Use event delegation on the dialog itself
+  dialog.addEventListener('click', (e) => {
+    // Get document-specific button elements for comparison
+    const closeBtn = getDocumentElement('close-data-lake-btn');
+    const closeBottomBtn = getDocumentElement('close-data-lake-bottom-btn');
+    
+    if (e.target === closeBtn || e.target.id === closeBtn?.id ||
+        e.target === closeBottomBtn || e.target.id === closeBottomBtn?.id) {
+      hideDataLakeDialog();
+    } else if (e.target.matches('.data-item-btn.insert-btn')) {
+      const referenceName = e.target.getAttribute('data-reference-name');
+      insertDataReference(referenceName);
+    } else if (e.target.matches('.data-item-btn.remove-btn')) {
+      const itemId = e.target.getAttribute('data-item-id');
+      removeDataItem(itemId);
+    } else if (e.target.classList.contains('dialog-overlay')) {
+      hideDataLakeDialog();
+    }
+  });
+  
+  // Set up search input listener
+  const searchInput = getDocumentElement('data-lake-search');
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+      filterDataLakeItems(e.target.value);
+    });
+  }
+}
+
 // Show Data Lake dialog
 function showDataLakeDialog() {
+  const currentDocumentId = getCurrentDocumentId();
+  
   console.log(`[${windowId}] 🔍 DEBUG: showDataLakeDialog called`);
   console.log(`[${windowId}] 🔍 DEBUG: currentDocumentId:`, currentDocumentId);
   
@@ -287,7 +305,7 @@ function showDataLakeDialog() {
   console.log(`[${windowId}] 🔍 DEBUG: dataLake array at dialog open:`, dataLake);
   console.log(`[${windowId}] 🔍 DEBUG: dataLake length:`, dataLake.length);
   
-  const dialog = document.getElementById('data-lake-dialog');
+  const dialog = getOrCreateDataLakeDialog();
   if (dialog) {
     dialog.style.display = 'flex';
     refreshDataLakeDialog();
@@ -298,7 +316,7 @@ function showDataLakeDialog() {
 
 // Hide Data Lake dialog
 function hideDataLakeDialog() {
-  const dialog = document.getElementById('data-lake-dialog');
+  const dialog = getDocumentElement('data-lake-dialog');
   if (dialog) {
     dialog.style.display = 'none';
   }
@@ -308,8 +326,8 @@ function hideDataLakeDialog() {
 function refreshDataLakeDialog() {
   console.log(`[${windowId}] 🔍 DEBUG: refreshDataLakeDialog called`);
   
-  const itemsContainer = document.getElementById('data-lake-items');
-  const noDataMessage = document.getElementById('no-data-message');
+  const itemsContainer = getDocumentElement('data-lake-items');
+  const noDataMessage = getDocumentElement('no-data-message');
   
   console.log(`[${windowId}] 🔍 DEBUG: itemsContainer found:`, !!itemsContainer);
   console.log(`[${windowId}] 🔍 DEBUG: noDataMessage found:`, !!noDataMessage);
@@ -400,13 +418,13 @@ function getFileExtension(filename) {
 
 // Open Data Lake dialog
 function openDataLakeDialog() {
-  const dialog = document.getElementById('data-lake-dialog');
+  const dialog = getOrCreateDataLakeDialog();
   if (dialog) {
     dialog.style.display = 'flex';
     updateDataLakeDisplay();
     
     // Focus search input
-    const searchInput = document.getElementById('data-lake-search');
+    const searchInput = getDocumentElement('data-lake-search');
     if (searchInput) {
       setTimeout(() => searchInput.focus(), 100);
     }
@@ -415,7 +433,7 @@ function openDataLakeDialog() {
 
 // Close Data Lake dialog
 function closeDataLakeDialog() {
-  const dialog = document.getElementById('data-lake-dialog');
+  const dialog = getDocumentElement('data-lake-dialog');
   if (dialog) {
     dialog.style.display = 'none';
   }
@@ -423,14 +441,14 @@ function closeDataLakeDialog() {
 
 // Check if Data Lake dialog is open
 function isDataLakeDialogOpen() {
-  const dialog = document.getElementById('data-lake-dialog');
+  const dialog = getDocumentElement('data-lake-dialog');
   return dialog && dialog.style.display === 'flex';
 }
 
 // Update Data Lake display
 function updateDataLakeDisplay() {
-  const itemsContainer = document.getElementById('data-lake-items');
-  const noDataMessage = document.getElementById('no-data-message');
+  const itemsContainer = getDocumentElement('data-lake-items');
+  const noDataMessage = getDocumentElement('no-data-message');
   
   if (!itemsContainer) return;
   
@@ -542,7 +560,8 @@ window.removeFromDataLake = function(itemId) {
 
 // Initialize autocomplete functionality
 function initAutocomplete() {
-  autocompleteWidget = document.getElementById('autocomplete-widget');
+  // Try to get autocomplete widget using document-specific ID first, fall back to global
+  autocompleteWidget = getDocumentElement('autocomplete-widget') || document.getElementById('autocomplete-widget');
   
   // Add event listeners to all template editors (current and future)
   document.addEventListener('input', handleTemplateInput);
@@ -848,4 +867,58 @@ window.dataLakeModule = {
   getAllDataSources,
   insertDataReference: window.insertDataReference,
   removeFromDataLake: window.removeFromDataLake
-}; 
+};
+
+// Function to reset data lake state (for DocumentManager)
+export function resetDataLakeInitialization() {
+  console.log(`[${windowId}] Resetting data lake initialization`);
+  // Clear data lake array to force re-initialization
+  dataLake = [];
+}
+
+// Create or get the data lake dialog with document-specific IDs
+function getOrCreateDataLakeDialog() {
+  let dialog = getDocumentElement('data-lake-dialog');
+  
+  if (!dialog) {
+    const dialogHtml = `
+      <div class="dialog-overlay">
+        <div class="dialog-content data-lake-content">
+          <div class="dialog-header">
+            <h3>🗄️ Data Lake</h3>
+            <button class="close-btn" id="close-data-lake-btn">✕</button>
+          </div>
+          
+          <div class="data-lake-search">
+            <input type="text" id="data-lake-search" placeholder="Search data sources..." />
+          </div>
+          
+          <div class="data-lake-items" id="data-lake-items">
+            <div class="no-data-message" id="no-data-message">
+              <p>No data sources in your lake yet.</p>
+              <p>Use "Load Context" to add files to your data lake.</p>
+            </div>
+          </div>
+          
+          <div class="dialog-actions">
+            <button class="btn-secondary" id="close-data-lake-bottom-btn">Close</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    console.log('Creating data lake dialog with document-specific IDs');
+    
+    // Create dialog with document-specific IDs (all IDs in HTML will be auto-prefixed and registered)
+    dialog = createDocumentDialog('data-lake-dialog', dialogHtml, 'data-lake');
+    dialog.className = 'data-lake-dialog';
+    dialog.style.display = 'none';
+    
+    document.body.appendChild(dialog);
+
+    // Set up event listeners for the new dialog
+    setupDataLakeDialogEventListeners(dialog);
+  }
+  
+  return dialog;
+}

@@ -1,6 +1,8 @@
 // Coding Assistant Module - AI Agent Integration for Chat
 import { addMessageToUI } from './chat.js';
 import { getTextContentWithLineBreaks } from './utils.js';
+import { createDocumentElement, createDocumentElementId, getDocumentElement } from './element-id-manager.js';
+import { getElements } from './state.js';
 
 class CodingAssistant {
   constructor() {
@@ -30,7 +32,7 @@ class CodingAssistant {
   setupAutoComplete() {
     // Set up auto-complete on a timer to ensure elements exist
     const setupAutoCompleteForInput = () => {
-      const chatInput = document.querySelector('.message-input');
+      const chatInput = getElements.messageInput;
       if (!chatInput) {
         setTimeout(setupAutoCompleteForInput, 100);
         return;
@@ -41,7 +43,7 @@ class CodingAssistant {
         chatInput.removeEventListener('input', this.autoCompleteListener);
       }
 
-            this.autoCompleteListener = (e) => {
+      this.autoCompleteListener = (e) => {
         const value = e.target.value;
         
         // Show suggestions when user types @
@@ -67,20 +69,20 @@ class CodingAssistant {
 
       chatInput.addEventListener('input', this.autoCompleteListener);
 
-    // Handle suggestion selection
-    document.addEventListener('click', (e) => {
-      if (e.target.classList.contains('agent-suggestion')) {
-        const agentName = e.target.dataset.agent;
-        const currentValue = chatInput.value;
-        const atIndex = currentValue.lastIndexOf('@');
-        
-        chatInput.value = currentValue.substring(0, atIndex) + `@${agentName} `;
-        chatInput.focus();
-        this.hideSuggestions();
-      }
-    });
+      // Handle suggestion selection
+      document.addEventListener('click', (e) => {
+        if (e.target.classList.contains('agent-suggestion')) {
+          const agentName = e.target.dataset.agent;
+          const currentValue = chatInput.value;
+          const atIndex = currentValue.lastIndexOf('@');
+          
+          chatInput.value = currentValue.substring(0, atIndex) + `@${agentName} `;
+          chatInput.focus();
+          this.hideSuggestions();
+        }
+      });
 
-          // Hide suggestions when clicking outside
+      // Hide suggestions when clicking outside
       document.addEventListener('click', (e) => {
         if (!e.target.closest('.agent-suggestions') && !e.target.closest('.message-input')) {
           this.hideSuggestions();
@@ -96,7 +98,7 @@ class CodingAssistant {
   showSuggestions(chatInput, suggestions, atIndex) {
     this.hideSuggestions(); // Remove existing suggestions
 
-    const suggestionsList = document.createElement('div');
+    const suggestionsList = createDocumentElement('div', `agent-suggestions-${Date.now()}`, 'coding-assistant', window.documentManager.getCurrentDocumentId());
     suggestionsList.className = 'agent-suggestions';
     suggestionsList.style.cssText = `
       position: absolute;
@@ -283,8 +285,7 @@ class CodingAssistant {
     };
     
     if (activeDocumentId) {
-      const container = document.getElementById(`document-${activeDocumentId}`);
-      const sourceEditor = container?.querySelector('.source-editor');
+      const sourceEditor = getElements.sourceEditor;
       
       if (sourceEditor) {
         const currentCode = getTextContentWithLineBreaks(sourceEditor);
@@ -319,14 +320,8 @@ class CodingAssistant {
       return false; // No active document
     }
     
-    const container = document.getElementById(`document-${activeDocumentId}`);
-    if (!container) {
-      console.log('❌ Document container not found');
-      return false;
-    }
-    
-    // First priority: Try to find the embedded tool code editor in the active document's operators panel
-    const embeddedToolCode = container.querySelector('#embedded-tool-code');
+    // First priority: Try to find the embedded tool code editor using document-specific ID
+    const embeddedToolCode = getDocumentElement('embedded-tool-code');
     if (embeddedToolCode) {
       console.log('📝 Loading code into embedded tool editor for active document');
       // Convert newlines to <br> for contenteditable div
@@ -336,8 +331,8 @@ class CodingAssistant {
       return true;
     }
     
-    // Fallback: Use the regular source editor in the active document
-    const sourceEditor = container.querySelector('.source-editor');
+    // Fallback: Use the regular source editor
+    const sourceEditor = getElements.sourceEditor;
     if (!sourceEditor) {
       console.log('❌ No source editor found in active document');
       return false; // No source editor
@@ -348,8 +343,8 @@ class CodingAssistant {
     const htmlContent = code.replace(/\n/g, '<br>');
     sourceEditor.innerHTML = htmlContent;
     
-    // Switch to source mode if not already active
-    const sourceModeBtn = container.querySelector('.source-mode-btn');
+    // Switch to source mode if not already active using document-specific elements
+    const sourceModeBtn = getElements.sourceModeBtn;
     if (sourceModeBtn && !sourceModeBtn.classList.contains('active')) {
       sourceModeBtn.click();
     }
@@ -361,65 +356,49 @@ class CodingAssistant {
   }
 
   offerSaveAsTool(code, agentType) {
-    // Create a subtle offer to save as tool
-    setTimeout(() => {
-      const suggestion = document.createElement('div');
-      suggestion.className = 'save-tool-suggestion';
-      suggestion.style.cssText = `
-        background: #e3f2fd;
-        border: 1px solid #2196f3;
-        border-radius: 4px;
-        padding: 12px;
-        margin: 8px 0;
-        font-size: 14px;
-      `;
-      suggestion.innerHTML = `
-        💡 <strong>Tip:</strong> Save this generated code as a reusable tool?
-        <button onclick="window.codingAssistant.saveGeneratedCodeAsTool('${this.escapeForAttribute(code)}', '${agentType}')" 
-                style="margin-left: 8px; padding: 4px 8px; background: #2196f3; color: white; border: none; border-radius: 3px; cursor: pointer;">
-          Save as Tool
-        </button>
-      `;
-      
-      // Add to chat area
-      const chatMessages = document.querySelector('.chat-messages');
-      if (chatMessages) {
-        chatMessages.appendChild(suggestion);
-        chatMessages.scrollTop = chatMessages.scrollHeight;
-        
-        // Auto-remove after 10 seconds
-        setTimeout(() => {
-          if (suggestion.parentNode) {
-            suggestion.remove();
-          }
-        }, 10000);
-      }
-    }, 1000);
+    // Suggest tool name based on code analysis
+    const suggestedName = this.generateToolName(code, agentType);
+    
+    const suggestion = createDocumentElement('div', `save-tool-suggestion-${Date.now()}`, 'coding-assistant', window.documentManager.getCurrentDocumentId());
+    suggestion.className = 'save-tool-suggestion';
+    suggestion.innerHTML = `
+      <p>💡 Would you like to save this code as a reusable tool?</p>
+      <button onclick="window.codingAssistant.saveGeneratedCodeAsTool(\`${this.escapeForAttribute(code)}\`, '${agentType}')" class="btn-primary">
+        💾 Save as Tool: "${suggestedName}"
+      </button>
+    `;
+    
+    addMessageToUI('system', suggestion.outerHTML);
   }
 
   saveGeneratedCodeAsTool(code, agentType) {
-    // Generate a suggested name based on the agent type and code content
+    console.log('Saving generated code as tool...');
+    
+    // Generate a good tool name
     const suggestedName = this.generateToolName(code, agentType);
     
-    if (window.toolsManager) {
-      // Open the add tool dialog with pre-filled code
-      const addToolDialog = document.getElementById('add-tool-dialog');
-      if (addToolDialog) {
-        addToolDialog.style.display = 'flex';
+    // Open the operators panel and switch to tool editor
+    if (window.operatorsModule && window.operatorsModule.showToolEditor) {
+      window.operatorsModule.showToolEditor();
+      
+      // Wait a bit for the UI to update, then pre-fill the form using document-specific elements
+      setTimeout(() => {
+        const toolNameInput = getDocumentElement('embedded-tool-name');
+        const toolDescInput = getDocumentElement('embedded-tool-description');
+        const codeEditor = getDocumentElement('embedded-tool-code');
         
-        // Pre-fill the form
-        document.getElementById('tool-name').value = suggestedName;
-        document.getElementById('tool-description').value = `Generated by ${agentType}`;
-        
-        const codeEditor = document.getElementById('tool-code');
-        if (codeEditor) {
+        if (toolNameInput && toolDescInput && codeEditor) {
+          toolNameInput.value = suggestedName;
+          toolDescInput.value = `Generated by ${agentType}`;
           codeEditor.innerHTML = code.replace(/\n/g, '<br>');
+          
+          addMessageToUI('system', '🛠️ Tool creation dialog opened with generated code');
+        } else {
+          addMessageToUI('system', '❌ Could not open tool editor - operators panel not found');
         }
-        
-        addMessageToUI('system', '🛠️ Tool creation dialog opened with generated code');
-      }
+      }, 100);
     } else {
-      addMessageToUI('system', '❌ Tools manager not available');
+      addMessageToUI('system', '❌ Operators module not available - cannot open tool editor');
     }
   }
 

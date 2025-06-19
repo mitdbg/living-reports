@@ -2,19 +2,21 @@
 import { state, elements, updateState, windowId } from './state.js';
 import { initModes, resetModesInitialization, switchToTemplate, switchToPreview, switchToSource } from './modes.js';
 import { initTemplateExecution, resetTemplateExecutionInitialization } from './template-execution.js';
-import { initSourceExecution, resetSourceExecutionInitialization } from './source-execution.js';
 import { initChat, initAskLLMButton, resetChatInitialization } from './chat.js';
 import { initTextSelection, initCommentButtons, resetTextSelectionInitialization, resetCommentButtonsInitialization } from './comments.js';
 import { initFileOperations, resetFileOperationsInitialization } from './file-operations.js';
 import { initSharing, resetSharingInitialization } from './sharing.js';
 import { initContentMapping, resetContentMappingInitialization } from './content-mapping.js';
-import { variablesManager } from './variables.js';
-import { hideAllAnnotations, clearAnnotationsForDocument, updateAnnotationsVisibility, refreshAnnotationElements } from './annotations.js';
+import { initDataLake } from './data-lake.js';
+import { initOperators, resetOperatorsInitialization } from './operators.js';
+import { initCodingAssistant } from './coding_assistant.js';
+import { initVerification } from './verification.js';
+import { refreshAnnotationElements, updateAnnotationsVisibility, hideAllAnnotations, clearAnnotationsForDocument } from './annotations.js';
 import { addMessageToUI } from './chat.js';
 import { getCurrentUser } from './auth.js';
 import { getTextContentWithLineBreaks } from './utils.js';
-import { setCurrentDocument } from './data-lake.js';
 import { clearAllComments } from './comments.js';
+import { resetVariablesInitialization, initVariablesForDocument, variablesManager } from './variables.js';
 
 // Export the class instead of singleton instance
 export class DocumentManager {
@@ -29,7 +31,6 @@ export class DocumentManager {
     this.mainPage = null;
     this.contentPanel = null;
     this.documentTitleInput = null;
-    this.newDocumentDialog = null;
     this.recentDocuments = null;
     
     // Auto-save functionality
@@ -52,23 +53,18 @@ export class DocumentManager {
   }
 
   async init() {
-    // Clear old localStorage data on startup
-    this.clearOldLocalStorageData();
-    
     // Initialize DOM elements
     this.mainPage = document.getElementById('main-page');
     this.contentPanel = document.getElementById('content-panel');
     this.createDocumentBtn = document.getElementById('create-document-btn');
     this.documentList = document.getElementById('document-list');
-    this.documentTitleInput = document.getElementById('document-title');
-    this.newDocumentDialog = document.getElementById('new-document-dialog');
     this.tabList = document.getElementById('tab-list');
     this.newDocumentBtn = document.getElementById('new-document-btn');
     
     // Set up event listeners
     if (this.createDocumentBtn) {
-      this.createDocumentBtn.addEventListener('click', () => {
-        this.createNewDocument();
+      this.createDocumentBtn.addEventListener('click', async () => {
+        await this.createNewDocument();
       });
     } else {
       console.error('Create document button not found!');
@@ -83,26 +79,8 @@ export class DocumentManager {
     
     // Set up new document button in tab navigation
     if (this.newDocumentBtn) {
-      this.newDocumentBtn.addEventListener('click', () => {
-        this.createNewDocument();
-      });
-    }
-    
-    // Close dialog when clicking outside
-    if (this.newDocumentDialog) {
-      this.newDocumentDialog.addEventListener('click', (e) => {
-        if (e.target === this.newDocumentDialog) {
-          this.hideNewDocumentDialog();
-        }
-      });
-    }
-    
-    // Handle Enter key in title input
-    if (this.documentTitleInput) {
-      this.documentTitleInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-          this.createNewDocument();
-        }
+      this.newDocumentBtn.addEventListener('click', async () => {
+        await this.createNewDocument();
       });
     }
     
@@ -132,22 +110,22 @@ export class DocumentManager {
     }
     
     // Use event delegation on the document list container
-    this.documentList.addEventListener('click', (e) => {
+    this.documentList.addEventListener('click', async (e) => {
       const documentId = e.target.getAttribute('data-document-id');
       const action = e.target.getAttribute('data-action');
       
       if (action === 'open' && documentId) {
-        this.openExistingDocument(documentId);
+        await this.openExistingDocument(documentId);
       } else if (action === 'delete' && documentId) {
-        this.deleteDocument(documentId);
+        await this.deleteDocument(documentId);
       } else if (action === 'share' && documentId) {
-        this.shareDocument(documentId);
+        await this.shareDocument(documentId);
       } else if (e.target.closest('.document-item') && !action) {
         // Click on document item itself
         const item = e.target.closest('.document-item');
         const docId = item.getAttribute('data-document-id');
         if (docId) {
-          this.openExistingDocument(docId);
+          await this.openExistingDocument(docId);
         }
       }
     });
@@ -156,52 +134,12 @@ export class DocumentManager {
     console.log('Document list event delegation set up');
   }
 
-  /**
-   * Clear old localStorage data related to documents
-   * This removes any cached document data from previous sessions
-   * while keeping user authentication data intact
-   */
-  clearOldLocalStorageData() {
-    const keysToRemove = [];
-    
-    // Find all localStorage keys related to documents
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && key.startsWith('easypipe_documents_')) {
-        keysToRemove.push(key);
-      }
-    }
-    
-    // Remove old document data
-    keysToRemove.forEach(key => {
-      localStorage.removeItem(key);
-    });
-  }
-
   generateSessionId() {
     return 'doc_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
   }
 
-  showNewDocumentDialog() {
-    if (this.newDocumentDialog) {
-      this.newDocumentDialog.style.display = 'flex';
-      if (this.documentTitleInput) {
-        this.documentTitleInput.focus();
-        this.documentTitleInput.value = '';
-      }
-    }
-  }
 
-  hideNewDocumentDialog() {
-    if (this.newDocumentDialog) {
-      this.newDocumentDialog.style.display = 'none';
-    }
-  }
-
-  createNewDocument(title = null) {
-    // Hide dialog if it was open
-    this.hideNewDocumentDialog();
-    
+  async createNewDocument() {
     // Get current user for ownership
     const currentUser = getCurrentUser();
     if (!currentUser) {
@@ -213,19 +151,17 @@ export class DocumentManager {
     // Generate globally unique document ID by including user ID
     const documentId = `${currentUser.id}-doc-${this.documentCounter}`;
     const sessionId = this.generateSessionId();
-    const documentTitle = title || this.documentTitleInput?.value?.trim() || `Document ${this.documentCounter}`;
     
     const doc = {
       id: documentId,
       sessionId: sessionId,
-      title: documentTitle,
+      title: documentId,
       source_content: '',  // Content in code mode
       template_content: '',  // Content in template mode
       preview_content: '', // Content in preview mode
       createdAt: new Date().toISOString(),
       lastModified: new Date().toISOString(),
       chatHistory: [],
-      variables: {},
       contextFiles: [],
       author: currentUser.id, // Document author (creator)
       authorName: currentUser.name, // Author display name
@@ -242,15 +178,15 @@ export class DocumentManager {
     this.createTab(doc);
     
     // Create document content area
-    this.createDocumentContent(doc);
+    this.createAllElement(doc.id)
     
     // Switch to new document
-    this.switchToDocument(documentId);
+    await this.switchToDocument(documentId);
     
     // Save new document to backend
     this.saveDocumentToBackend(documentId).then(success => {
       if (!success) {
-        console.error(`Failed to save new document to backend: ${documentTitle}`);
+        console.error(`Failed to save new document to backend: ${documentId}`);
       }
     });
     
@@ -288,42 +224,32 @@ export class DocumentManager {
     // Set up close button handler
     const closeBtn = tabItem.querySelector('.tab-close');
     if (closeBtn) {
-      closeBtn.addEventListener('click', (e) => {
+      closeBtn.addEventListener('click', async (e) => {
         e.stopPropagation(); // Prevent tab click
-        this.closeDocument(doc.id);
+        await this.closeDocument(doc.id);
       });
     }
   }
 
-  createDocumentContent(doc) {
-    const template = document.getElementById('document-tab-template');
-    if (!template) {
-      console.error('Document tab template not found!');
-      return;
-    }
-    
-    const documentContent = template.cloneNode(true);
-    
-    // Update IDs to be unique for this document
-    documentContent.id = `document-${doc.id}`;
-    documentContent.className = 'tab-content';
-    documentContent.style.display = 'none';
-
-    // Update element targeting for this document
-    this.updateElementIds(documentContent, doc.id);
-
-    // Insert after the template
-    template.parentNode.insertBefore(documentContent, template.nextSibling);
-
-    // // Initialize functionality for this document immediately
-    // this.initializeDocumentFunctionality(doc.id);
+  /**
+   * Get a document-specific element ID
+   * @param {string} docId - The document ID
+   * @param {string} elementName - The element name (e.g., 'content-panel', 'instances-items')
+   * @returns {string} The document-specific element ID
+   */
+  getDocumentElementId(docId, elementName) {
+    return `${docId}-${elementName}`;
   }
 
-  updateElementIds(container, documentId) {
-    // Since we're using class selectors, we don't need to update IDs
-    // But we should ensure the container has proper document-specific IDs for targeting
-    // Just add a data attribute for document identification
-    container.setAttribute('data-document-id', documentId);
+  /**
+   * Get a document-specific element by name
+   * @param {string} docId - The document ID
+   * @param {string} elementName - The element name (e.g., 'content-panel', 'instances-items')
+   * @returns {HTMLElement|null} The element or null if not found
+   */
+  getDocumentElement(docId, elementName) {
+    const elementId = this.getDocumentElementId(docId, elementName);
+    return document.getElementById(elementId);
   }
 
   /**
@@ -367,7 +293,12 @@ export class DocumentManager {
     }
   }
 
-  initializeDocumentFunctionality(documentId) {
+  async initializeDocumentFunctionality(documentId) {
+    /*
+    Initialize the document functionality for a given document ID.
+    This function is called when a document is opened or created.
+    It initializes the document-specific modules and sets up the document-specific elements. 
+    */
     const doc = this.documents.get(documentId);
     if (!doc) return;
 
@@ -381,105 +312,75 @@ export class DocumentManager {
       return;
     }
     
-    // Import elements state synchronously and update it
-    import('./state.js').then(({ elements }) => {
-      // Update global elements to point to this document's elements
-      elements.sourceModeBtn = container.querySelector('.source-mode-btn');
-      elements.templateModeBtn = container.querySelector('.template-mode-btn');
-      elements.previewModeBtn = container.querySelector('.preview-mode-btn');
-      elements.executeSourceBtn = container.querySelector('.execute-source-btn');
-      elements.executeTemplateBtn = container.querySelector('.execute-template-btn');
-      elements.executionStatus = container.querySelector('.execution-status');
-      elements.sourceExecutionStatus = container.querySelector('.source-execution-status');
-      elements.templateExecutionStatus = container.querySelector('.template-execution-status');
-      elements.sendButton = container.querySelector('.send-button');
-      elements.clearChatBtn = container.querySelector('.clear-chat-btn');
-      elements.messageInput = container.querySelector('.message-input');
-      elements.chatMessages = container.querySelector('.chat-messages');
-      elements.previewContent = container.querySelector('.preview-content');
-      elements.sourceEditor = container.querySelector('.source-editor');
-      elements.templateEditor = container.querySelector('.template-editor');
-      elements.openFileBtn = container.querySelector('.open-file-btn');
-      elements.clearContextBtn = container.querySelector('.clear-context-btn');
-      elements.shareBtn = container.querySelector('.share-btn');
-      elements.floatingComment = container.querySelector('.floating-comment');
-      elements.commentText = container.querySelector('.comment-text');
-      elements.askLLMBtn = container.querySelector('.ask-llm');
-      elements.addCommentBtn = container.querySelector('.add-comment');
-      elements.cancelCommentBtn = container.querySelector('.cancel-comment');
-      elements.previewPanel = container.querySelector('.preview-panel');
-      elements.sourcePanel = container.querySelector('.source-panel');
-      elements.templatePanel = container.querySelector('.template-panel');
-      elements.diffView = container.querySelector('.diff-view');
-      elements.variablesDisplay = container.querySelector('.variables-display');
-      elements.variablesList = container.querySelector('.variables-list');
-      elements.acceptSuggestionBtn = container.querySelector('.accept-suggestion');
-      elements.rejectSuggestionBtn = container.querySelector('.reject-suggestion');
-      elements.diffCurrentContent = container.querySelector('.diff-current-content');
-      elements.diffSuggestedContent = container.querySelector('.diff-suggested-content');
-      // elements.clearCommentsBtn = container.querySelector('.clear-comments-btn');
-      elements.contextFilesSection = container.querySelector('.context-files-section');
-      elements.contextFilesList = container.querySelector('.context-files-list');
-      elements.contentTitle = container.querySelector('#content-title') || container.querySelector('.content-title');
+    // Determine if we need to initialize modules
+    // We should always initialize modules when switching to a document
+    // to ensure elements are properly connected to the current document's DOM
+    const wasPreviouslyActive = this.activeDocumentId !== null;
+    const isReopeningDocument = this.activeDocumentId === null && this.documentCounter > 0;
+    
+    // Track the active document - this enables getElements to automatically return correct elements
+    this.activeDocumentId = documentId;
+    
+    // Initialize DOCUMENT-SPECIFIC modules (tied to this document's DOM elements)
+    console.log(`🔄 Initializing document-specific modules for: ${doc.title} (switch: ${wasPreviouslyActive}, reopen: ${isReopeningDocument})`);
+    
+    try {
+      // Reset ALL module initialization flags first to allow clean reinitialization
+      resetModesInitialization();
+      resetTemplateExecutionInitialization();
+      resetTextSelectionInitialization();
+      resetCommentButtonsInitialization();
+      resetChatInitialization();
+      resetContentMappingInitialization();
+      resetFileOperationsInitialization();
+      resetSharingInitialization();
+      resetOperatorsInitialization();
+      resetVariablesInitialization();
+      // Note: Other modules may not have reset functions yet, but should be added as needed
       
-      // Determine if we need to initialize modules
-      // We should always initialize modules when switching to a document
-      // to ensure elements are properly connected to the current document's DOM
-      const wasPreviouslyActive = this.activeDocumentId !== null;
-      const isReopeningDocument = this.activeDocumentId === null && this.documentCounter > 0;
+      // Initialize ALL DOM-RELATED modules (work with this document's prefixed elements)
+      initModes();            // ✅ docID-source-mode-btn, docID-template-mode-btn, etc.
+      initTemplateExecution(); // ✅ docID-execute-template-btn, docID-template-execution-status
+      initChat();             // ✅ docID-chat-messages, docID-message-input, docID-send-button
+      initTextSelection();    // ✅ Works within docID-template-editor, docID-preview-content
+      initCommentButtons();   // ✅ docID-add-comment, docID-floating-comment, docID-cancel-comment
+      initAskLLMButton();     // ✅ docID-ask-llm button
+      initContentMapping();   // ✅ Works with docID-prefixed content elements
+      initFileOperations();   // ✅ docID-open-file-btn, docID-clear-context-btn, docID-context-files-list
+      initSharing();          // ✅ docID-share-btn and sharing dialogs  
+      initDataLake();         // ✅ docID-data-lake panels, buttons, UI elements
+      initOperators();        // ✅ docID-operators-btn, docID-instances-items, operator panels
+      initCodingAssistant();  // ✅ docID-coding-assistant elements and dialogs
+      initVerification();     // ✅ docID-verification panels and controls
       
-      // Track the active document
-      this.activeDocumentId = documentId;
-      
-      // Always initialize modules to ensure proper element binding
-      console.log(`🔄 Initializing modules for document: ${doc.title} (switch: ${wasPreviouslyActive}, reopen: ${isReopeningDocument})`);
-      
-      try {
-        // Reset initialization flags first to allow clean reinitialization
-        resetModesInitialization();
-        resetTemplateExecutionInitialization();
-        resetSourceExecutionInitialization();
-        resetTextSelectionInitialization();
-        resetCommentButtonsInitialization();
-        resetChatInitialization();
-        resetFileOperationsInitialization();
-        resetSharingInitialization();
-        resetContentMappingInitialization();
-
-        
-        // Now initialize all modules
-        initModes();
-        initTemplateExecution();
-        initSourceExecution();
-        initChat();
-        initTextSelection();
-        initCommentButtons();
-        initAskLLMButton();
-        initFileOperations();
-        initSharing();
-        initContentMapping();
-        
-        // Initialize variables manager once if not already initialized
-        if (variablesManager && !variablesManager.initialized) {
-          variablesManager.init();
-        }
-
-        // Configure role-based UI after all modules are initialized
-        this.configureRoleBasedUI(container);
-        
-      } catch (error) {
-        console.error(`Error initializing document functionality:`, error);
+      // Initialize variables manager once if not already initialized
+      if (variablesManager && !variablesManager.initialized) {
+        variablesManager.init();
       }
       
-      // Ensure the document is visible and in source mode by default
-      if (elements.templatePanel && elements.previewPanel) {
-        elements.sourcePanel.classList.remove('active');
-        elements.templatePanel.classList.remove('active');
-        elements.previewPanel.classList.remove('active');
-        elements.templatePanel.classList.add('active');
+      // Initialize variables for this specific document
+      initVariablesForDocument();
+      // Configure role-based UI after all modules are initialized
+      this.configureRoleBasedUI(container);
+      
+    } catch (error) {
+      console.error(`Error initializing document functionality:`, error);
+    }
+    
+    // Import state to access elements and set default mode
+    import('./state.js').then(({ getElements, state }) => {
+      // Ensure the document is visible and in template mode by default
+      const templatePanel = getElements.templatePanel;
+      const previewPanel = getElements.previewPanel;
+      const sourcePanel = getElements.sourcePanel;
+      
+      if (templatePanel && previewPanel && sourcePanel) {
+        sourcePanel.classList.remove('active');
+        templatePanel.classList.remove('active');
+        previewPanel.classList.remove('active');
+        templatePanel.classList.add('active');
         state.currentMode = 'template';
       }
-      
     }).catch(error => {
       console.error('Error importing state module:', error);
     });
@@ -497,13 +398,12 @@ export class DocumentManager {
     // Update state
     this.activeDocumentId = documentId;
     
-    // Set current document for data lake
-    await setCurrentDocument(documentId);
-    
     // Update UI
     this.updateTabsUI();
-    this.showDocumentContent(documentId);
-    
+
+    // show all elements for the document
+    await this.showDocumentContent(documentId);
+
     console.log(`[${windowId}] Switched to document:`, documentId);
   }
 
@@ -528,25 +428,29 @@ export class DocumentManager {
   }
 
   // Show document content
-  showDocumentContent(documentId) {
-    // Hide all other document contents
-    document.querySelectorAll('.tab-content[data-document-id]').forEach(content => {
-      content.classList.remove('active');
-      content.style.display = 'none';
+  async showDocumentContent(documentId) {
+    // hide all other document contents
+    const allDocuments = Array.from(this.documents.keys());
+    allDocuments.forEach(docId => {
+      if (docId !== documentId) {
+        // Only hide if the document container actually exists in DOM
+        const container = document.getElementById(`document-${docId}`);
+        if (container) {
+          this.hideAllElement(docId);
+        }
+      }
     });
     
     // Show selected document content
+    this.showAllElement(documentId);
+    
     const documentContent = document.getElementById(`document-${documentId}`);
     if (!documentContent) {
       console.error('Document content not found:', `document-${documentId}`);
       return;
     }
-    
-    documentContent.classList.add('active');
-    documentContent.style.display = 'flex'; // Use flex for the new layout
-    
     // Initialize document functionality
-    this.initializeDocumentFunctionality(documentId);
+    await this.initializeDocumentFunctionality(documentId);
     
     // Refresh and show annotations for this document after a short delay
     setTimeout(() => {
@@ -574,13 +478,7 @@ export class DocumentManager {
     }, 500);
   }
 
-  // Save current state
-  saveState() {
-    // This method can be implemented later if needed for state persistence
-    // For now, it's a placeholder to prevent errors
-  }
-
-  closeDocument(documentId) {
+  async closeDocument(documentId) {
     const doc = this.documents.get(documentId);
     if (!doc) return;
     
@@ -592,48 +490,23 @@ export class DocumentManager {
       
       // Stop auto-save immediately
       this.stopAutoSave();
-      
-      // Clear all document-specific state and UI elements
-      this.performCompleteDocumentCleanup(documentId).catch(error => {
-        console.error('Error during document cleanup:', error);
-      });
 
-      // Reset all module initialization flags to ensure clean state
+      // Reset ALL module initialization flags to ensure clean state
       resetModesInitialization();
       resetTemplateExecutionInitialization();
-      resetSourceExecutionInitialization();
       resetTextSelectionInitialization();
       resetCommentButtonsInitialization();
       resetChatInitialization();
       resetFileOperationsInitialization();
       resetSharingInitialization();
-      resetContentMappingInitialization();
+      resetOperatorsInitialization();
+      resetVariablesInitialization();
+      // Note: Other modules may not have reset functions yet, but should be added as needed
     }
-    
-    // Step 2: Clear all annotations and comments specific to this document
-    clearAnnotationsForDocument(documentId);
-    
-    // Step 3: Remove DOM elements
+
+    // Step 3: Remove DOM elements using cleanAllElement
     console.log('Removing DOM elements...');
-    
-    // Remove tab
-    const tab = document.querySelector(`[data-tab="${documentId}"]`);
-    if (tab) {
-      console.log('Removing tab element');
-      tab.remove();
-    }
-    
-    // Remove content container and all its children
-    const content = document.getElementById(`document-${documentId}`);
-    if (content) {
-      console.log('Removing document content container');
-      
-      // Additional cleanup: remove any lingering event listeners on child elements
-      this.removeAllEventListenersFromContainer(content);
-      
-      // Remove the entire container
-      content.remove();
-    }
+    this.cleanAllElement(documentId);
     
     // Step 5: Determine where to switch if this was the active document
     if (this.activeDocumentId === documentId) {
@@ -644,7 +517,7 @@ export class DocumentManager {
         // Verify the target document still exists in DOM before switching
         const targetExists = document.getElementById(`document-${remainingDocs[0]}`);
         if (targetExists) {
-          this.switchToDocument(remainingDocs[0]);
+          await this.switchToDocument(remainingDocs[0]);
         } else {
           this.switchToMain();
         }
@@ -660,64 +533,12 @@ export class DocumentManager {
     console.log(`✅ Document ${documentId} closed and cleaned up completely`);
   }
 
-  /**
-   * Perform complete cleanup of all document-specific state and UI elements
-   */
-  async performCompleteDocumentCleanup(documentId) {
-    try {
-      // Clear all comments from global state 
-      // (this will be restored when document is reopened)
-      const { state } = await import('./state.js');
-      if (state.comments) {
-        console.log(`Clearing ${Object.keys(state.comments).length} comments from global state`);
-        state.comments = {};
-        state.commentIdCounter = 0;
-      }
-      
-      // Remove all floating annotation elements from DOM
-      const annotations = document.querySelectorAll('.floating-annotation');
-      console.log(`Removing ${annotations.length} floating annotations`);
-      annotations.forEach(annotation => {
-        annotation.remove();
-      });
-      
-      // Remove all comment highlights from DOM
-      const highlights = document.querySelectorAll('.text-comment-highlight');
-      console.log(`Removing ${highlights.length} text highlights`);
-      highlights.forEach(highlight => {
-        highlight.replaceWith(document.createTextNode(highlight.textContent));
-      });
-      
-    } catch (error) {
-      console.error('Error during document cleanup:', error);
-    }
-  }
-
-  /**
-   * Remove all event listeners from a container and its children
-   */
-  removeAllEventListenersFromContainer(container) {
-    try {
-      // Clone and replace the container to remove all event listeners
-      // This is the most reliable way to ensure all listeners are removed
-      const parent = container.parentNode;
-      const newContainer = container.cloneNode(true);
-      
-      // Don't actually replace - just log that we would clean up listeners
-      // The container will be removed entirely anyway
-      console.log('Event listeners would be cleaned up by container removal');
-      
-    } catch (error) {
-      console.error('Error cleaning up event listeners:', error);
-    }
-  }
-
   switchToMain() {
-    // Hide all annotation windows when switching to main page (but don't delete them)
-    hideAllAnnotations();
-    
-    // Stop auto-save when switching to main
-    this.stopAutoSave();
+    // Hide all document elements
+    const allDocuments = Array.from(this.documents.keys());
+    allDocuments.forEach(docId => {
+      this.hideAllElement(docId);
+    });
     
     // Update tab active states
     document.querySelectorAll('.tab-item').forEach(tab => {
@@ -729,12 +550,6 @@ export class DocumentManager {
       mainTabItem.classList.add('active');
     }
     
-    // Hide all document contents
-    document.querySelectorAll('.tab-content[data-document-id]').forEach(content => {
-      content.classList.remove('active');
-      content.style.display = 'none';
-    });
-    
     // Show main tab content
     const mainTab = document.getElementById('main-tab');
     if (mainTab) {
@@ -745,7 +560,7 @@ export class DocumentManager {
     this.activeDocumentId = null;
   }
 
-  handleTabClick(e) {
+  async handleTabClick(e) {
     const tabItem = e.target.closest('.tab-item');
     if (!tabItem) return;
     
@@ -756,8 +571,8 @@ export class DocumentManager {
     
     if (tabId === 'main') {
       this.switchToMain();
-    } else {
-      this.switchToDocument(tabId);
+    } else if (this.activeDocumentId != tabId) {
+      await this.switchToDocument(tabId);
     }
   }
 
@@ -795,14 +610,16 @@ export class DocumentManager {
     if (sharedWithMe.length > 0) {
       documentsHTML += '<div class="document-list">';
       documentsHTML += sharedWithMe.map(doc => {
-        const preview = doc.template_content ? doc.template_content.substring(0, 100) : 'Empty document';
+        // Extract plain text content and escape HTML to prevent layout breaks
+        const rawPreview = doc.template_content ? doc.template_content.substring(0, 100) : 'Empty document';
+        const preview = this.escapeHtml(this.extractPlainText(rawPreview));
         const lastModified = new Date(doc.lastModified).toLocaleDateString();
         
         return `
           <div class="document-item shared-document" data-document-id="${doc.id}">
-            <h4>🌐 ${doc.title}</h4>
+            <h4>🌐 ${this.escapeHtml(doc.title)}</h4>
             <div class="document-meta">
-              Last modified: ${lastModified} • Author: ${doc.authorName || 'Unknown'}
+              Last modified: ${lastModified} • Author: ${this.escapeHtml(doc.authorName || 'Unknown')}
               ${doc.editors.includes(currentUser?.id) ? ' • <span class="editor-badge">Can Edit</span>' : ''}
               ${doc.viewers.includes(currentUser?.id) && !doc.editors.includes(currentUser?.id) ? ' • <span class="viewer-badge">View Only</span>' : ''}
             </div>
@@ -829,14 +646,16 @@ export class DocumentManager {
     if (myDocuments.length > 0) {
       documentsHTML += '<div class="document-list">';
       documentsHTML += myDocuments.map(doc => {
-        const preview = doc.template_content ? doc.template_content.substring(0, 100) : 'Empty document';
+        // Extract plain text content and escape HTML to prevent layout breaks
+        const rawPreview = doc.template_content ? doc.template_content.substring(0, 100) : 'Empty document';
+        const preview = this.escapeHtml(this.extractPlainText(rawPreview));
         const lastModified = new Date(doc.lastModified).toLocaleDateString();
         
         return `
           <div class="document-item ${doc.isShared ? 'shared-document' : ''}" data-document-id="${doc.id}">
-            <h4>${doc.isShared ? '🌐' : '📄'} ${doc.title}</h4>
+            <h4>${doc.isShared ? '🌐' : '📄'} ${this.escapeHtml(doc.title)}</h4>
             <div class="document-meta">
-              Last modified: ${lastModified} • Session: ${doc.sessionId}
+              Last modified: ${lastModified} • Session: ${this.escapeHtml(doc.sessionId)}
               ${doc.isShared ? ` • <span class="shared-indicator">Shared with ${doc.editors.length + doc.viewers.length} user${doc.editors.length + doc.viewers.length !== 1 ? 's' : ''}</span>` : ''}
               ${doc.editors.length > 0 ? ` • <span class="editors-count">${doc.editors.length} editor${doc.editors.length !== 1 ? 's' : ''}</span>` : ''}
               ${doc.viewers.length > 0 ? ` • <span class="viewers-count">${doc.viewers.length} viewer${doc.viewers.length !== 1 ? 's' : ''}</span>` : ''}
@@ -867,7 +686,7 @@ export class DocumentManager {
     this.documentList.innerHTML = documentsHTML;
   }
 
-  openExistingDocument(documentId) {
+  async openExistingDocument(documentId) {
     const doc = this.documents.get(documentId);
     if (!doc) {
       console.error(`Document ${documentId} not found in documents map`);
@@ -880,7 +699,7 @@ export class DocumentManager {
     const existingTab = document.querySelector(`[data-tab="${documentId}"]`);
     if (existingTab) {
       console.log(`Tab already exists for document ${documentId}, switching to it`);
-      this.switchToDocument(documentId);
+      await this.switchToDocument(documentId);
       return;
     }
     
@@ -889,43 +708,115 @@ export class DocumentManager {
     this.loadDocumentFromBackend(documentId);
   }
 
-  deleteDocument(documentId) {
+  async deleteDocument(documentId) {
     const doc = this.documents.get(documentId);
     if (!doc) return;
     
-    if (confirm(`Delete "${doc.title}"? This action cannot be undone.`)) {
+    // Prevent double execution by checking if deletion is already in progress
+    if (doc._deletionInProgress) {
+      console.log(`⚠️ Deletion already in progress for document: ${documentId}`);
+      return;
+    }
+    
+    if (confirm(`Delete "${doc.title}"? This action cannot be undone. All associated data (variables, operators, verifications, etc.) will also be deleted.`)) {
+      // Mark deletion as in progress
+      doc._deletionInProgress = true;
       // Close if currently open
       if (this.activeDocumentId === documentId) {
         this.closeDocument(documentId);
-      } else {
-        // Delete from backend first, then remove from local storage
-        fetch(`http://127.0.0.1:5000/api/documents/${documentId}`, {
+      }
+      
+      // Ensure ALL DOM elements are cleaned up (even if document wasn't active)
+      await this.cleanAllElement(documentId);
+      
+      console.log(`🗑️ Starting complete deletion of document: ${doc.title} (${documentId})`);
+      
+      try {
+        // 1. Delete main document from backend (backend now handles cascading cleanup automatically)
+        const documentResponse = await fetch(`http://127.0.0.1:5000/api/documents/${documentId}`, {
           method: 'DELETE',
           headers: { 'Content-Type': 'application/json' }
-        }).then(response => {
-          if (response.ok) {
-            console.log(` Document deleted from backend: ${doc.title}`);
-            // Only remove from local storage after successful backend deletion
-            this.documents.delete(documentId);
-            this.updateDocumentList();
-          } else {
-            console.error(` Failed to delete document from backend: ${doc.title} (Status: ${response.status})`);
-            // Still remove from local storage even if backend deletion fails
-            this.documents.delete(documentId);
-            this.updateDocumentList();
-          }
-        }).catch(error => {
-          console.error(` Error deleting document from backend:`, error);
-          // Still remove from local storage even if backend deletion fails
-          this.documents.delete(documentId);
-          this.updateDocumentList();
         });
+        
+        let backendSuccessful = false;
+        let cleanupSummary = [];
+        
+        if (documentResponse.ok) {
+          const result = await documentResponse.json();
+          backendSuccessful = true;
+          cleanupSummary = result.cleanup_summary || [];
+          console.log(`✅ Document and related data deleted from backend: ${doc.title}`);
+          if (cleanupSummary.length > 0) {
+            console.log(`📋 Backend cleaned up: ${cleanupSummary.join(', ')}`);
+          }
+        } else {
+          console.warn(`⚠️ Failed to delete document from backend: ${doc.title} (Status: ${documentResponse.status})`);
+        }
+
+        // 2. Remove from local document storage
+        this.documents.delete(documentId);
+        this.updateDocumentList();
+        
+        // 3. Show appropriate success message
+        console.log(`✅ Complete deletion finished for document: ${doc.title}`);
+        
+        if (backendSuccessful) {
+          let message = `🗑️ Document "${doc.title}" has been completely deleted.`;
+          if (cleanupSummary.length > 0) {
+            message += ` Cleaned up: ${cleanupSummary.join(', ')}.`;
+          }
+          console.log(message);
+        }
+        
+      } catch (error) {
+        console.error(`❌ Error during document deletion:`, error);
+        
+        // Still remove from local storage even if backend deletion fails
+        this.documents.delete(documentId);
+        this.updateDocumentList();
+        
+        console.log(`⚠️ Document "${doc.title}" removed locally, but backend cleanup may have failed.`);
+      } finally {
+        // Clear the deletion flag regardless of success/failure
+        // Note: doc might be deleted from this.documents by now, so we can't clear the flag
+        // But that's okay since the document object will be garbage collected
       }
     }
   }
 
   getActiveDocument() {
     return this.activeDocumentId ? this.documents.get(this.activeDocumentId) : null;
+  }
+
+  /**
+   * Extract plain text from HTML content
+   */
+  extractPlainText(htmlContent) {
+    if (!htmlContent) return '';
+    
+    // Create a temporary element to parse HTML and extract text
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = htmlContent;
+    
+    // Get text content and clean up extra whitespace
+    return tempDiv.textContent || tempDiv.innerText || '';
+  }
+
+  /**
+   * Escape HTML to prevent XSS and layout issues
+   */
+  escapeHtml(text) {
+    if (!text) return '';
+    
+    const map = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#039;'
+    };
+    
+    return text.replace(/[&<>"']/g, function(m) { return map[m]; });
   }
 
   // Save documents to backend for sharing
@@ -1111,25 +1002,10 @@ export class DocumentManager {
     }
   }
 
-  // Notify when switching to a document (for collaboration)
-  notifyDocumentSwitch(documentId) {
-    // WebSocket functionality removed - using HTTP polling instead
-    console.log(`Switched to document ${documentId}`);
-  }
-
-  // Refresh shared documents from backend
-  async refreshSharedDocuments() {
-    const count = await this.loadSharedDocuments();
-    if (count > 0) {
-      addMessageToUI('system', `🔄 Loaded ${count} shared document${count > 1 ? 's' : ''} from other users.`);
-    }
-    return count;
-  }
-
   // Refresh the currently active document from backend for real-time collaboration
   async refreshActiveDocument() {
     if (!this.activeDocumentId) {
-      return; // No document is currently open
+      return;
     }
 
     const currentDoc = this.documents.get(this.activeDocumentId);
@@ -1220,8 +1096,7 @@ export class DocumentManager {
       }
       
     } catch (error) {
-      // Silently fail - don't spam console with errors during normal operation
-      // console.error('Error refreshing active document:', error);
+      console.error('Error refreshing active document:', error);
     }
   }
 
@@ -1247,20 +1122,7 @@ export class DocumentManager {
     }
   }
 
-  // Auto-refresh shared documents periodically
-  startAutoRefresh() {
-    // Refresh every 1 second for discovering new shared documents
-    setInterval(() => {
-      this.loadSharedDocuments();
-    }, 1000);
-    
-    // Refresh currently open document every 1 second for real-time collaboration
-    setInterval(() => {
-      this.refreshActiveDocument();
-    }, 25000);
-  }
-
-  // // Clear all user-specific data when switching users
+  // Clear all user-specific data when switching users
   clearUserData() {
     console.log('Clearing user-specific document data...');
 
@@ -1272,16 +1134,8 @@ export class DocumentManager {
     // Close all open documents
     const openDocuments = Array.from(this.documents.keys());
     openDocuments.forEach(docId => {
-      // Remove tab and content without confirmation
-      const tab = document.querySelector(`[data-tab="${docId}"]`);
-      if (tab) {
-        tab.remove();
-      }
-      
-      const content = document.getElementById(`document-${docId}`);
-      if (content) {
-        content.remove();
-      }
+      // Clean all elements for this document
+      this.cleanAllElement(docId);
     });
     
     // Clear documents map
@@ -1389,14 +1243,11 @@ export class DocumentManager {
     const sourceEditor = container.querySelector('.source-editor');
 
     // CRITICAL FIX: Get clean template content, not diff HTML
-    const currentTemplateContent = this.getCleanTemplateContent(templateEditor);
+    const currentTemplateContent = templateEditor ? templateEditor.innerHTML : '';
     const currentPreviewContent = previewContent ? previewContent.innerHTML : '';
     const currentSourceContent = sourceEditor ? getTextContentWithLineBreaks(sourceEditor) : '';
     
     try {
-      // Get current comment state from the global state (use static import)
-      const { state } = await import('./state.js');
-      
       // Capture current comments with UI state preservation
       const currentComments = this.captureCommentsWithUIState(state.comments || {});
 
@@ -1451,64 +1302,6 @@ export class DocumentManager {
   }
 
   /**
-   * Get clean template content without inline diff HTML
-   * @param {Element} templateEditor - The template editor element
-   * @returns {string} Clean template content
-   */
-  getCleanTemplateContent(templateEditor) {
-    if (!templateEditor) {
-      return '';
-    }
-
-    // Check if there are active inline diffs
-    const hasInlineDiffs = templateEditor.querySelector('.inline-diff-delete, .inline-diff-add');
-    
-    if (hasInlineDiffs) {
-      // Check if we have stored original content from comments using window.currentInlineDiffs
-      if (window.currentInlineDiffs) {
-        const activeDiffIds = Object.keys(window.currentInlineDiffs);
-        if (activeDiffIds.length > 0) {
-          const firstDiff = window.currentInlineDiffs[activeDiffIds[0]];
-          if (firstDiff.commentData && firstDiff.commentData.originalTemplateContent) {
-            const cleanContent = firstDiff.commentData.originalTemplateContent;
-            console.log('Using stored original template content from currentInlineDiffs:', cleanContent);
-            return cleanContent;
-          }
-        }
-      }
-      
-      // Fallback: try to clean the HTML by removing diff elements
-      const tempEditor = templateEditor.cloneNode(true);
-      
-      // Remove all diff delete elements and replace with their text content
-      const deleteElements = tempEditor.querySelectorAll('.inline-diff-delete');
-      deleteElements.forEach(el => {
-        const textNode = document.createTextNode(el.textContent);
-        el.parentNode.replaceChild(textNode, el);
-      });
-      
-      // Remove all diff add elements entirely
-      const addElements = tempEditor.querySelectorAll('.inline-diff-add');
-      addElements.forEach(el => el.remove());
-      
-      const cleanedContent = getTextContentWithLineBreaks(tempEditor);
-      console.log('Fallback: cleaned diff HTML to get content:', cleanedContent);
-      return cleanedContent;
-    } else {
-      // No inline diffs, check if content contains HTML formatting
-      const hasHTMLContent = templateEditor.innerHTML !== templateEditor.textContent;
-      
-      if (hasHTMLContent) {
-        // Preserve HTML content for rich formatting (like PPTX content)
-        return templateEditor.innerHTML;
-      } else {
-        // Plain text content, use text extraction
-        return getTextContentWithLineBreaks(templateEditor);
-      }
-    }
-  }
-
-  /**
    * Capture comments with UI state preservation for saving
    */
   captureCommentsWithUIState(stateComments) {
@@ -1547,16 +1340,6 @@ export class DocumentManager {
         savedComment.suggestedTemplate = comment.suggestedTemplate;
         savedComment.aiMessage = comment.aiMessage;
         savedComment.requestedBy = comment.requestedBy;
-      }
-
-      // Save template suggestion-specific properties
-      if (comment.isTemplateSuggestion) {
-        savedComment.isTemplateSuggestion = true;
-        savedComment.originalComment = comment.originalComment;
-        savedComment.aiSuggestion = comment.aiSuggestion;
-        savedComment.confidence = comment.confidence;
-        savedComment.inlineDiffData = comment.inlineDiffData;
-        savedComment.inlineDiffState = comment.inlineDiffState;
       }
 
       // Store UI state separately for restoration (but don't save DOM elements to backend)
@@ -1660,14 +1443,6 @@ export class DocumentManager {
    * Handle content change events
    */
   onContentChange() {
-    this.hasUnsavedChanges = true;
-    this.updateSaveStatus('unsaved');
-  }
-  
-  /**
-   * Track when comments change to trigger auto-save
-   */
-  onCommentChange() {
     this.hasUnsavedChanges = true;
     this.updateSaveStatus('unsaved');
   }
@@ -1788,11 +1563,11 @@ export class DocumentManager {
         // Now proceed with opening the document with fresh data
         console.log(`Creating tab and content for document ${documentId}`);
         this.createTab(freshDoc);
-        this.createDocumentContent(freshDoc);
+        this.createAllElement(freshDoc.id);
         
         // Switch to the document FIRST, then load content
         console.log(`Switching to document ${documentId}`);
-        this.switchToDocument(documentId);
+        await this.switchToDocument(documentId);
         
         // Load content into editor AFTER switching with proper verification
         console.log(`Loading content for document ${documentId}`);
@@ -1833,8 +1608,7 @@ export class DocumentManager {
       }
 
       if (sourceEditor && freshDoc.source_content !== undefined) {
-        sourceEditor.innerHTML = '';
-        sourceEditor.textContent = freshDoc.source_content;
+        sourceEditor.innerHTML = freshDoc.source_content;
       }
 
       // Load preview content first (less critical)
@@ -1844,9 +1618,6 @@ export class DocumentManager {
 
       // Now handle template content and comments together
       if (freshDoc.template_content !== undefined) {
-        // Clear any existing content first
-        templateEditor.innerHTML = '';
-        
         // Set the content
         templateEditor.innerHTML = freshDoc.template_content;
         
@@ -1866,7 +1637,7 @@ export class DocumentManager {
 
         // NOW immediately restore comments while content is confirmed to be there
         console.log('=== RESTORING COMMENTS ===');
-        console.log('Template editor content length:', templateEditor.textContent?.length || 0);
+        console.log('Template editor content length:', templateEditor.innerHTML?.length || 0);
         console.log('Preview content length:', previewContent?.innerHTML?.length || 0);
         console.log('Preview content contains highlights:', previewContent?.innerHTML?.includes('data-comment-id') || false);
         await this.restoreDocumentComments(documentId, freshDoc);
@@ -1880,14 +1651,7 @@ export class DocumentManager {
           console.warn('Could not load verification status:', error);
         }
         
-        // Load variables for this document (includes operator outputs)
-        try {
-          const { variablesManager } = await import('./variables.js');
-          await variablesManager.loadVariablesFromBackend();
-          console.log(`✅ Variables loaded for document ${documentId}`);
-        } catch (error) {
-          console.warn('Could not load variables:', error);
-        }
+
 
         // Configure role-based UI for loaded document
         this.configureRoleBasedUI(container);
@@ -1895,31 +1659,8 @@ export class DocumentManager {
         return true; // Success, exit retry loop
         
       } else {
-        // Still try to restore comments even if no content
-        await this.restoreDocumentComments(documentId, freshDoc);
-        
-        // Load verification status
-        try {
-          const { loadDocumentVerification } = await import('./verification.js');
-          await loadDocumentVerification();
-          console.log(`✅ Verification status loaded for document ${documentId}`);
-        } catch (error) {
-          console.warn('Could not load verification status:', error);
-        }
-        
-        // Load variables for this document (includes operator outputs)
-        try {
-          const { variablesManager } = await import('./variables.js');
-          await variablesManager.loadVariablesFromBackend();
-          console.log(`✅ Variables loaded for document ${documentId}`);
-        } catch (error) {
-          console.warn('Could not load variables:', error);
-        }
-
-        // Configure role-based UI for loaded document  
-        this.configureRoleBasedUI(container);
-        
-        return true;
+        addMessageToUI('system', '⚠️ Document content may not have loaded properly');
+        return false;
       }
     }
     
@@ -2674,6 +2415,360 @@ export class DocumentManager {
     } catch (error) {
       console.error('Error syncing document comments:', error);
     }
+  }
+
+  // ===== DOCUMENT ELEMENT MANAGEMENT FUNCTIONS =====
+
+
+
+  /**
+   * Create all elements for a specific document with prefixed IDs
+   * @param {string} docId - The document ID
+   * @returns {HTMLElement} The created document container
+   */
+  createAllElement(docId) {
+    console.log(`🏗️ Creating all elements for document: ${docId}`);
+    
+    const template = document.getElementById('document-tab-template');
+    if (!template) {
+      console.error('Document tab template not found!');
+      return null;
+    }
+    
+    // Clone the template
+    const documentContent = template.cloneNode(true);
+    
+    // Set up the main container
+    documentContent.id = `document-${docId}`;
+    documentContent.className = 'tab-content';
+    documentContent.style.display = 'none';
+    documentContent.setAttribute('data-document-id', docId);
+    
+    // Update all IDs to be document-specific with prefixes
+    this.assignDocumentSpecificIds(documentContent, docId);
+    
+    // Insert after the template
+    template.parentNode.insertBefore(documentContent, template.nextSibling);
+    
+    console.log(`✅ Created all elements for document: ${docId}`);
+    return documentContent;
+  }
+
+
+
+  /**
+   * Assign document-specific IDs to all elements that need them
+   * @param {HTMLElement} container - The document container
+   * @param {string} docId - The document ID
+   */
+  assignDocumentSpecificIds(container, docId) {
+    // Map of original IDs to new document-specific IDs
+    const idMappings = {
+      'content-panel': `${docId}-content-panel`,
+      'content-title': `${docId}-content-title`,
+      'instances-items': `${docId}-instances-items`,
+      'no-instances-message': `${docId}-no-instances-message`,
+      'operators-tools-items': `${docId}-operators-tools-items`,
+      'operators-no-tools-message': `${docId}-operators-no-tools-message`,
+      'operators-tools-search': `${docId}-operators-tools-search`,
+      'tool-editor-title': `${docId}-tool-editor-title`,
+      'embedded-tool-name': `${docId}-embedded-tool-name`,
+      'embedded-tool-description': `${docId}-embedded-tool-description`,
+      'embedded-tool-code': `${docId}-embedded-tool-code`,
+      'save-embedded-tool-btn': `${docId}-save-embedded-tool-btn`,
+      'cancel-embedded-tool-btn': `${docId}-cancel-embedded-tool-btn`,
+      'instance-editor-title': `${docId}-instance-editor-title`,
+      'operator-ai-indicator': `${docId}-operator-ai-indicator`,
+      'embedded-instance-name': `${docId}-embedded-instance-name`,
+      'embedded-instance-tool': `${docId}-embedded-instance-tool`,
+      'embedded-instance-parameters': `${docId}-embedded-instance-parameters`,
+      'embedded-instance-outputs': `${docId}-embedded-instance-outputs`,
+      'save-embedded-instance-btn': `${docId}-save-embedded-instance-btn`,
+      'cancel-embedded-instance-btn': `${docId}-cancel-embedded-instance-btn`,
+      'context-files-section': `${docId}-context-files-section`,
+      'context-files-list': `${docId}-context-files-list`
+    };
+    
+    // Update IDs
+    Object.entries(idMappings).forEach(([originalId, newId]) => {
+      const element = container.querySelector(`#${originalId}`);
+      if (element) {
+        element.id = newId;
+      }
+    });
+    
+    // Update 'for' attributes in labels to match new IDs
+    const labels = container.querySelectorAll('label[for]');
+    labels.forEach(label => {
+      const forValue = label.getAttribute('for');
+      if (idMappings[forValue]) {
+        label.setAttribute('for', idMappings[forValue]);
+      }
+    });
+    
+    // Add document-specific classes for easier targeting
+    container.classList.add(`doc-${docId}`);
+    
+    // Store original display values for show/hide functionality
+    const allElements = container.querySelectorAll('*');
+    allElements.forEach(element => {
+      const computedStyle = window.getComputedStyle(element);
+      const originalDisplay = computedStyle.display;
+      if (originalDisplay && originalDisplay !== 'none') {
+        element.setAttribute('data-original-display', originalDisplay);
+      }
+    });
+  }
+
+  // ===== GLOBAL ELEMENT ID MANAGEMENT SYSTEM =====
+
+  /**
+   * Global registry of all dynamic elements created by different modules
+   * This helps us track and clean up ALL elements across modules
+   */
+  static elementRegistry = new Map(); // docId -> Set of elementIds
+
+  /**
+   * Register a dynamic element for a specific document
+   * @param {string} docId - The document ID
+   * @param {string} elementId - The element ID that was created
+   * @param {string} moduleSource - The module that created it (e.g., 'variables', 'sharing')
+   */
+  static registerDynamicElement(docId, elementId, moduleSource = 'unknown') {
+    if (!this.elementRegistry.has(docId)) {
+      this.elementRegistry.set(docId, new Set());
+    }
+    
+    const elementInfo = `${elementId}:${moduleSource}`;
+    this.elementRegistry.get(docId).add(elementInfo);
+    console.log(`📝 Registered dynamic element: ${elementInfo} for document: ${docId}`);
+  }
+
+  /**
+   * Unregister a dynamic element for a specific document
+   * @param {string} docId - The document ID
+   * @param {string} elementId - The element ID to unregister
+   */
+  static unregisterDynamicElement(docId, elementId) {
+    if (this.elementRegistry.has(docId)) {
+      const docElements = this.elementRegistry.get(docId);
+      // Remove any entries that start with this elementId
+      const toRemove = Array.from(docElements).filter(entry => entry.startsWith(elementId + ':'));
+      toRemove.forEach(entry => docElements.delete(entry));
+      
+      if (docElements.size === 0) {
+        this.elementRegistry.delete(docId);
+      }
+      
+      console.log(`🗑️ Unregistered dynamic element: ${elementId} for document: ${docId}`);
+    }
+  }
+
+  /**
+   * Get all registered dynamic elements for a document
+   * @param {string} docId - The document ID
+   * @returns {Array<{elementId: string, moduleSource: string}>}
+   */
+  static getRegisteredElements(docId) {
+    if (!this.elementRegistry.has(docId)) {
+      return [];
+    }
+    
+    return Array.from(this.elementRegistry.get(docId)).map(entry => {
+      const [elementId, moduleSource] = entry.split(':');
+      return { elementId, moduleSource };
+    });
+  }
+
+  /**
+   * Enhanced cleanAllElement that includes registered dynamic elements
+   * @param {string} docId - The document ID
+   */
+  async cleanAllElement(docId) {
+    console.log(`🧹 Enhanced cleaning all elements for document: ${docId}`);
+    
+    // First, clean up all registered dynamic elements from various modules
+    const registeredElements = DocumentManager.getRegisteredElements(docId);
+    console.log(`Found ${registeredElements.length} registered dynamic elements to clean up`);
+    
+    registeredElements.forEach(({ elementId, moduleSource }) => {
+      const element = document.getElementById(elementId);
+      if (element) {
+        console.log(`Removing registered element: ${elementId} (from ${moduleSource})`);
+        element.remove();
+      }
+    });
+
+    // Clear the registry for this document
+    DocumentManager.elementRegistry.delete(docId);
+    
+    // Remove all elements with doc_id prefix
+    const prefixedElements = document.querySelectorAll(`[id^="${docId}-"]`);
+    console.log(`Found ${prefixedElements.length} prefixed elements to remove`);
+    prefixedElements.forEach(element => {
+      element.remove();
+    });
+    
+    // Remove the main document container
+    const documentContainer = document.getElementById(`document-${docId}`);
+    if (documentContainer) {
+      console.log('Removing main document container');
+      documentContainer.remove(); // Event listeners automatically cleaned up
+    }
+    
+    // Remove document-specific annotations
+    const annotations = document.querySelectorAll(`.floating-annotation[data-document-id="${docId}"]`);
+    console.log(`Found ${annotations.length} annotations to remove`);
+    annotations.forEach(annotation => {
+      annotation.remove();
+    });
+    
+    // Remove document-specific highlights
+    const highlights = document.querySelectorAll(`.text-comment-highlight[data-document-id="${docId}"]`);
+    console.log(`Found ${highlights.length} highlights to remove`);
+    highlights.forEach(highlight => {
+      highlight.replaceWith(document.createTextNode(highlight.textContent));
+    });
+    
+    // Remove tab
+    const tab = document.querySelector(`[data-tab="${docId}"]`);
+    if (tab) {
+      console.log('Removing tab element');
+      tab.remove();
+    }
+    
+    // Clean up any variables UI for this document
+    try {
+      const variablesContainer = document.getElementById(`${docId}-variables-container`);
+      if (variablesContainer) {
+        variablesContainer.remove();
+      }
+    } catch (error) {
+      console.warn('Error cleaning variables UI:', error);
+    }
+
+    // Clear comments from global state only if this is the active document
+    // (this will be restored when document is reopened)
+    if (this.activeDocumentId === docId) {
+      try {
+        const { state } = await import('./state.js');
+        if (state.comments) {
+          console.log(`Clearing ${Object.keys(state.comments).length} comments from global state`);
+          state.comments = {};
+          state.commentIdCounter = 0;
+        }
+      } catch (error) {
+        console.warn('Could not clear global state:', error);
+      }
+    }
+    
+    console.log(`✅ Enhanced cleaning completed for document: ${docId}`);
+  }
+
+  /**
+   * Enhanced hideAllElement that includes registered dynamic elements
+   * @param {string} docId - The document ID
+   */
+  hideAllElement(docId) {
+    console.log(`🙈 Enhanced hiding all elements for document: ${docId}`);
+    
+    // Hide the main document container
+    const documentContainer = document.getElementById(`document-${docId}`);
+    if (documentContainer) {
+      documentContainer.style.display = 'none';
+      documentContainer.classList.remove('active');
+    }
+    
+    // Hide all elements with doc_id prefix
+    const prefixedElements = document.querySelectorAll(`[id^="${docId}-"]`);
+    prefixedElements.forEach(element => {
+      element.style.display = 'none';
+    });
+    
+    // Hide registered dynamic elements
+    const registeredElements = DocumentManager.getRegisteredElements(docId);
+    registeredElements.forEach(({ elementId, moduleSource }) => {
+      const element = document.getElementById(elementId);
+      if (element) {
+        // Store visibility state before hiding
+        if (element.style.display !== 'none') {
+          element.setAttribute('data-was-visible', 'true');
+        }
+        element.style.display = 'none';
+        console.log(`Hidden registered element: ${elementId} (from ${moduleSource})`);
+      }
+    });
+    
+    // Hide document-specific annotations
+    const annotations = document.querySelectorAll(`.floating-annotation[data-document-id="${docId}"]`);
+    annotations.forEach(annotation => {
+      if (annotation.style.display !== 'none') {
+        annotation.setAttribute('data-was-visible', 'true');
+      }
+      annotation.style.display = 'none';
+    });
+    
+    // Hide tab
+    const tab = document.querySelector(`[data-tab="${docId}"]`);
+    if (tab) {
+      tab.classList.remove('active');
+    }
+    
+    console.log(`✅ Enhanced hiding completed for document: ${docId}`);
+  }
+
+  /**
+   * Enhanced showAllElement that includes registered dynamic elements
+   * @param {string} docId - The document ID
+   */
+  showAllElement(docId) {
+    console.log(`👁️ Enhanced showing all elements for document: ${docId}`);
+    
+    // Show the main document container
+    const documentContainer = document.getElementById(`document-${docId}`);
+    if (documentContainer) {
+      documentContainer.style.display = 'flex';
+      documentContainer.classList.add('active');
+    }
+    
+    // Show all elements with doc_id prefix (but respect their original display states)
+    const prefixedElements = document.querySelectorAll(`[id^="${docId}-"]`);
+    prefixedElements.forEach(element => {
+      // Only show if it's not explicitly hidden by design
+      if (!element.hasAttribute('data-hidden-by-design')) {
+        const originalDisplay = element.getAttribute('data-original-display') || '';
+        element.style.display = originalDisplay;
+      }
+    });
+    
+    // Show registered dynamic elements that were previously visible
+    const registeredElements = DocumentManager.getRegisteredElements(docId);
+    registeredElements.forEach(({ elementId, moduleSource }) => {
+      const element = document.getElementById(elementId);
+      if (element && element.getAttribute('data-was-visible') === 'true') {
+        element.style.display = '';
+        element.removeAttribute('data-was-visible');
+        console.log(`Shown registered element: ${elementId} (from ${moduleSource})`);
+      }
+    });
+    
+    // Show document-specific annotations that should be visible
+    const annotations = document.querySelectorAll(`.floating-annotation[data-document-id="${docId}"]`);
+    annotations.forEach(annotation => {
+      // Only show annotations that were previously visible
+      if (annotation.getAttribute('data-was-visible') === 'true') {
+        annotation.style.display = 'block';
+        annotation.removeAttribute('data-was-visible');
+      }
+    });
+    
+    // Activate tab
+    const tab = document.querySelector(`[data-tab="${docId}"]`);
+    if (tab) {
+      tab.classList.add('active');
+    }
+    
+    console.log(`✅ Enhanced showing completed for document: ${docId}`);
   }
 }
 

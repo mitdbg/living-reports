@@ -719,25 +719,62 @@ class OperatorManager {
     }
   }
 
-  // Get valid variables from variables manager and backend
+  // Get valid variables from variables manager only (ground truth)
   async getValidVariables() {
     const validVariables = {};
     
     try {
-      // Get variables from variables manager
-      if (window.variablesManager && window.variablesManager.variables) {
-        const variables = window.variablesManager.variables;
+      let variables = null;
+      
+      // Try variables manager first
+      if (window.variablesManager) {
+        console.log(`[${windowId}] Loading fresh variables from backend via variables manager...`);
+        await window.variablesManager.loadVariables();
+        
+        if (window.variablesManager.variables && window.variablesManager.variables.size > 0) {
+          variables = window.variablesManager.variables;
+          console.log(`[${windowId}] Found ${variables.size} variables from variables manager`);
+        } else {
+          console.log(`[${windowId}] No variables found in variables manager after loading`);
+        }
+      } else {
+        console.log(`[${windowId}] Variables manager not available, falling back to direct API call`);
+      }
+      
+      // Fallback: Call API directly if variables manager is null or has no variables
+      if (!variables || variables.size === 0) {
+        console.log(`[${windowId}] Calling /api/variables directly as fallback...`);
+        
+        const documentId = window.documentManager?.activeDocumentId;
+        if (!documentId) {
+          console.warn(`[${windowId}] No active document ID available for API call`);
+          return validVariables;
+        }
+        
+        const response = await fetch(`http://127.0.0.1:5000/api/variables?documentId=${encodeURIComponent(documentId)}`);
+        
+        if (!response.ok) {
+          throw new Error(`API responded with status: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        if (result.success && result.variables) {
+          const variablesData = result.variables || {};
+          console.log(`[${windowId}] API returned ${Object.keys(variablesData).length} variables`);
+          
+          // Convert API response to object for consistent processing
+          Object.entries(variablesData).forEach(([name, variable]) => {
+            validVariables[name] = variable;
+          });
+        } else {
+          console.log(`[${windowId}] API returned no variables or failed`);
+        }
+      } else {
+        // Use variables from variables manager
         variables.forEach((variable, name) => {
           validVariables[name] = variable;
         });
         console.log(`[${windowId}] Loaded ${variables.size} variables from variables manager`);
-      }
-      
-      // Also load from backend vars.json
-      const backendVariables = await loadVariablesFromBackend();
-      if (backendVariables && typeof backendVariables === 'object') {
-        Object.assign(validVariables, backendVariables);
-        console.log(`[${windowId}] Loaded ${Object.keys(backendVariables).length} variables from backend`);
       }
       
     } catch (error) {
@@ -758,6 +795,9 @@ export function initOperators() {
   if (!operatorManager) {
     operatorManager = new OperatorManager();
   }
+  
+  // Initialize tools manager (moved from tools.js)
+  initToolsManager();
   
   setupOperatorEventListeners();
   
@@ -1234,10 +1274,16 @@ async function populateVariablesList() {
   const container = getActiveDocumentContainer();
   if (!container) return;
   
+  console.log('🔄 Populating all variable dropdowns in instance editor...');
+  
   const allSelects = container.querySelectorAll('#embedded-instance-outputs .output-variable-select');
+  console.log(`📊 Found ${allSelects.length} variable dropdown(s) to populate`);
+  
   for (const select of allSelects) {
     await populateVariablesDropdown(select);
   }
+  
+  console.log('✅ All variable dropdowns populated');
 }
 
 function populateInstanceForm(instanceId) {
@@ -1453,11 +1499,57 @@ async function populateVariablesDropdown(select) {
   select.innerHTML = '<option value="">Select a variable...</option>';
 
   try {
-    // Try to get variables from the variables manager
-    if (window.variablesManager && window.variablesManager.variables) {
-      const variables = window.variablesManager.variables;
-      console.log(`📊 Found ${variables.size} variables in variables manager`);
+    let variables = null;
+    
+    // Try variables manager first
+    if (window.variablesManager) {
+      console.log('📡 Loading fresh variables from backend via variables manager...');
+      await window.variablesManager.loadVariables();
       
+      if (window.variablesManager.variables && window.variablesManager.variables.size > 0) {
+        variables = window.variablesManager.variables;
+        console.log(`📊 Found ${variables.size} variables in variables manager`);
+      } else {
+        console.log('📊 No variables found in variables manager after loading from backend');
+      }
+    } else {
+      console.log('⚠️ Variables manager not available, falling back to direct API call');
+    }
+    
+    // Fallback: Call API directly if variables manager is null or has no variables
+    if (!variables || variables.size === 0) {
+      console.log('📡 Calling /api/variables directly as fallback...');
+      
+      const documentId = window.documentManager?.activeDocumentId;
+      if (!documentId) {
+        console.warn('No active document ID available for API call');
+        return;
+      }
+      
+      const response = await fetch(`http://127.0.0.1:5000/api/variables?documentId=${encodeURIComponent(documentId)}`);
+      
+      if (!response.ok) {
+        throw new Error(`API responded with status: ${response.status}`);
+      }
+      
+      const result = await response.json();
+      if (result.success && result.variables) {
+        const variablesData = result.variables || {};
+        console.log(`📊 API returned ${Object.keys(variablesData).length} variables`);
+        
+        // Convert API response to Map-like structure for consistent processing
+        variables = new Map();
+        Object.entries(variablesData).forEach(([name, variable]) => {
+          variables.set(name, variable);
+        });
+      } else {
+        console.log('📊 API returned no variables or failed');
+        variables = new Map(); // Empty map
+      }
+    }
+    
+    // Populate dropdown with variables (from either source)
+    if (variables && variables.size > 0) {
       variables.forEach((variable, name) => {
         const option = document.createElement('option');
         option.value = name;
@@ -1466,38 +1558,9 @@ async function populateVariablesDropdown(select) {
         console.log(`  ✓ Added variable: ${name}`);
       });
       
-      if (variables.size > 0) {
-        console.log(`✅ Populated ${variables.size} variables from variables manager`);
-      }
+      console.log(`✅ Populated ${variables.size} variables in dropdown`);
     } else {
-      console.log('⚠️ Variables manager not available or no variables');
-    }
-
-    // Also try to load from backend vars.json if available
-    try {
-      const varsFromBackend = await loadVariablesFromBackend();
-      console.log('📡 Backend variables response:', varsFromBackend);
-      
-      if (varsFromBackend && Object.keys(varsFromBackend).length > 0) {
-        let addedCount = 0;
-        Object.entries(varsFromBackend).forEach(([name, variable]) => {
-          // Check if this variable is already in the list
-          const existingOption = select.querySelector(`option[value="${name}"]`);
-          if (!existingOption) {
-            const option = document.createElement('option');
-            option.value = name;
-            option.textContent = `${name} (${variable.type || 'text'})`;
-            select.appendChild(option);
-            addedCount++;
-            console.log(`  ✓ Added backend variable: ${name}`);
-          }
-        });
-        console.log(`✅ Added ${addedCount} variables from backend`);
-      } else {
-        console.log('⚠️ No backend variables found');
-      }
-    } catch (error) {
-      console.error('❌ Error loading backend variables:', error);
+      console.log('📊 No variables available from any source');
     }
 
   } catch (error) {
@@ -1753,55 +1816,6 @@ async function populateSuggestedFields(suggestions, forceRepopulate = false) {
 
   console.log('✅ Successfully populated suggested fields');
 }
-
-async function loadVariablesFromBackend() {
-  try {
-    // Get the current document ID to load document-specific variables
-    const documentId = window.documentManager?.activeDocumentId;
-    if (!documentId) {
-      console.log('⚠️ No active document ID for loading variables');
-      return {};
-    }
-
-    console.log(`📡 Loading variables for document: ${documentId}`);
-
-    const response = await fetch(`http://127.0.0.1:5000/api/variables?documentId=${encodeURIComponent(documentId)}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      }
-    });
-    
-    console.log(`📡 Backend response status: ${response.status}`);
-    
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    
-    const result = await response.json();
-    console.log('📡 Backend response data:', result);
-    
-    if (result.success && result.variables) {
-      // The backend returns variables directly for the document
-      const documentVariables = result.variables || {};
-      console.log(`✅ Loaded ${Object.keys(documentVariables).length} variables for document ${documentId}:`, documentVariables);
-      return documentVariables;
-    } else {
-      console.log('⚠️ Backend response indicates no variables or failure:', result);
-    }
-    
-    return {};
-  } catch (error) {
-    console.error('❌ Could not load variables from backend:', error);
-    return {};
-  }
-}
-
-
-
-
-
-
 
 function refreshInstancesList() {
   // Get the active document container
@@ -2235,8 +2249,120 @@ export {
   executeRequiredOperatorsForTemplate,
   autoPopulateOperatorFields,
   callLLMForToolAnalysis,
-  populateSuggestedFields
+  populateSuggestedFields,
+  resetOperatorsInitialization
 };
+
+// Reset function for DocumentManager cleanup
+function resetOperatorsInitialization() {
+  console.log('🔄 Operators initialization reset');
+  
+  // Reset the global operator manager
+  if (operatorManager) {
+    operatorManager = null;
+  }
+  
+  // Reset tools manager
+  if (toolsManager) {
+    toolsManager = null;
+    window.toolsManager = null;
+  }
+  
+  // Clear any operators panel state for open documents
+  const operatorsPanels = document.querySelectorAll('.operators-panel');
+  operatorsPanels.forEach(panel => {
+    if (panel) {
+      panel.style.display = 'none';
+      
+      // Reset to list view
+      const listView = panel.querySelector('.operators-list-view');
+      const toolEditorView = panel.querySelector('.operators-tool-editor-view');
+      const instanceEditorView = panel.querySelector('.operators-instance-editor-view');
+      
+      if (listView) listView.style.display = 'block';
+      if (toolEditorView) toolEditorView.style.display = 'none';
+      if (instanceEditorView) instanceEditorView.style.display = 'none';
+    }
+  });
+  
+  // Clear any styling timeouts
+  if (window.instanceStylingTimeout) {
+    clearTimeout(window.instanceStylingTimeout);
+    window.instanceStylingTimeout = null;
+  }
+  
+  // Reset global operators module reference
+  if (window.operatorsModule) {
+    window.operatorsModule = null;
+  }
+}
+
+// Tool storage management (moved from tools.js)
+class ToolsManager {
+  constructor() {
+    this.tools = [];
+  }
+
+  async init() {
+    await this.loadTools();
+  }
+
+  generateId() {
+    return 'tool_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+  }
+
+  async saveTools() {
+    try {
+      const response = await fetch('http://127.0.0.1:5000/api/tools', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ tools: this.tools })
+      });
+      
+      const result = await response.json();
+      if (!result.success) {
+        console.error('Error saving tools:', result.error);
+      }
+    } catch (error) {
+      console.error('Error saving tools:', error);
+    }
+  }
+
+  async loadTools() {
+    try {
+      const response = await fetch('http://127.0.0.1:5000/api/tools');
+      const result = await response.json();
+      
+      if (result.success) {
+        this.tools = result.tools || [];
+      } else {
+        console.error('Error loading tools:', result.error);
+        this.tools = [];
+      }
+    } catch (error) {
+      console.error('Error loading tools:', error);
+      this.tools = [];
+    }
+  }
+
+  removeTool(toolId) {
+    this.tools = this.tools.filter(t => t.id !== toolId);
+    this.saveTools();
+  }
+}
+
+// Initialize tools manager and make it globally available
+let toolsManager;
+
+async function initToolsManager() {
+  if (!toolsManager) {
+    toolsManager = new ToolsManager();
+    await toolsManager.init();
+    window.toolsManager = toolsManager;
+  }
+}
 
 // Template-Operator Integration Functions
 async function executeRequiredOperatorsForTemplate(templateContent) {
@@ -2479,16 +2605,8 @@ function setupToolsSidebarEventListeners() {
   // Add tool button in sidebar
   document.addEventListener('click', (e) => {
     if (e.target.classList.contains('add-tool-btn-sidebar')) {
-      // Import and use tools manager
-      if (window.toolsManager && window.toolsManager.showAddToolDialog) {
-        window.toolsManager.showAddToolDialog();
-      } else {
-        // Fallback: try to find tools module functions
-        const addToolBtn = document.querySelector('.add-tool-btn');
-        if (addToolBtn) {
-          addToolBtn.click();
-        }
-      }
+      // Use the embedded tool editor in operators panel
+      showToolEditor();
     }
     
     // Delete tool button

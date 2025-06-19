@@ -1,5 +1,6 @@
 // Authentication and User Management Module
 import { state, updateState } from './state.js';
+import { createDocumentElement, createDocumentElementId, getDocumentElement, registerElement } from './element-id-manager.js';
 
 // Demo users configuration
 export const DEMO_USERS = {
@@ -198,31 +199,26 @@ function createUserHeader() {
     existingHeader.remove();
   }
   
-  // Create new header
+  // Create global auth header (not document-specific)
   const header = document.createElement('div');
+  header.id = 'collaboration-header';
   header.className = 'collaboration-header';
   header.innerHTML = `
-    <div class="current-user">
+    <div class="user-info">
       <span class="user-emoji">${currentUser.emoji}</span>
       <span class="user-name">${currentUser.name}</span>
-      <span class="user-role">${currentUser.role}</span>
+      <span class="user-role">(${currentUser.role})</span>
+      <button id="user-menu-btn" class="user-menu-btn">⚙️</button>
     </div>
-    <div class="online-users" id="online-users">
-      <!-- Online users will be populated by collaboration module -->
-    </div>
-    <div class="collaboration-status">
-      <span class="status-indicator" id="connection-status"></span>
-      <span id="status-text">Connecting...</span>
-    </div>
-    <div class="user-actions">
-      <button class="btn-icon" id="user-menu-btn" title="User Menu">⚙</button>
+    <div id="connection-status" class="connection-status">
+      <span class="status-indicator"></span>
+      <span id="status-text" class="status-text">Connected</span>
     </div>
   `;
   
-  // Insert header at the top of the body
-  document.body.insertBefore(header, document.body.firstChild);
+  document.body.prepend(header);
   
-  // Add user menu functionality
+  // Set up user menu click handler
   const userMenuBtn = document.getElementById('user-menu-btn');
   if (userMenuBtn) {
     userMenuBtn.addEventListener('click', showUserMenu);
@@ -256,12 +252,16 @@ function initializeCollaborationUI() {
  * Update connection status indicator
  */
 export function updateConnectionStatus(status, message) {
+  // Use global IDs for auth-related elements
   const statusIndicator = document.getElementById('connection-status');
   const statusText = document.getElementById('status-text');
   
-  if (statusIndicator && statusText) {
-    statusIndicator.className = `status-indicator ${status}`;
-    statusText.textContent = message;
+  if (statusIndicator) {
+    statusIndicator.className = `connection-status ${status}`;
+  }
+  
+  if (statusText) {
+    statusText.textContent = message || status;
   }
 }
 
@@ -269,8 +269,9 @@ export function updateConnectionStatus(status, message) {
  * Show user menu
  */
 function showUserMenu() {
-  // Create user menu if it doesn't exist
+  // Use global ID for auth menu
   let userMenu = document.getElementById('user-menu');
+  
   if (!userMenu) {
     userMenu = document.createElement('div');
     userMenu.id = 'user-menu';
@@ -279,57 +280,65 @@ function showUserMenu() {
       <div class="user-menu-content">
         <div class="user-menu-header">
           <span class="user-emoji">${currentUser.emoji}</span>
-          <div class="user-info">
+          <div class="user-details">
             <div class="user-name">${currentUser.name}</div>
             <div class="user-role">${currentUser.role}</div>
           </div>
         </div>
         <div class="user-menu-actions">
-          <button class="menu-item" id="switch-user-btn">
-            <span class="menu-icon">↻</span>
-            <span class="menu-text">Switch User</span>
+          <button id="switch-user-btn" class="menu-action">
+            🔄 Switch User
           </button>
-          <button class="menu-item" id="logout-btn">
-            <span class="menu-icon">→</span>
-            <span class="menu-text">Logout</span>
+          <button id="logout-btn" class="menu-action">
+            🚪 Logout
           </button>
-          <hr style="margin: 8px 0; border: none; border-top: 1px solid #eee;">
-          <button class="menu-item" id="clear-storage-btn" style="color: #dc3545;">
-            <span class="menu-icon">×</span>
-            <span class="menu-text">Clear All Data</span>
+          <button id="clear-storage-btn" class="menu-action danger">
+            🗑️ Clear All Data
           </button>
         </div>
       </div>
     `;
     document.body.appendChild(userMenu);
     
-    // Add event listeners
-    document.getElementById('switch-user-btn').addEventListener('click', () => {
-      hideUserMenu();
-      // Clear current user and reload to show login
-      logout();
-    });
+    // Add event listeners for menu actions - use global IDs
+    const switchUserBtn = document.getElementById('switch-user-btn');
+    const logoutBtn = document.getElementById('logout-btn');
+    const clearStorageBtn = document.getElementById('clear-storage-btn');
     
-    document.getElementById('logout-btn').addEventListener('click', () => {
-      hideUserMenu();
-      logout();
-    });
+    if (switchUserBtn) {
+      switchUserBtn.addEventListener('click', () => {
+        hideUserMenu();
+        logout();
+        window.location.href = 'login.html';
+      });
+    }
     
-    document.getElementById('clear-storage-btn').addEventListener('click', () => {
-      hideUserMenu();
-      clearAllStorageData();
-    });
+    if (logoutBtn) {
+      logoutBtn.addEventListener('click', () => {
+        hideUserMenu();
+        logout();
+      });
+    }
+    
+    if (clearStorageBtn) {
+      clearStorageBtn.addEventListener('click', () => {
+        if (confirm('This will clear all stored data including documents and settings. Are you sure?')) {
+          clearAllStorageData();
+          logout();
+        }
+      });
+    }
     
     // Close menu when clicking outside
     document.addEventListener('click', (e) => {
-      if (!userMenu.contains(e.target) && !document.getElementById('user-menu-btn').contains(e.target)) {
+      const userMenuBtn = document.getElementById('user-menu-btn');
+      if (userMenu && !userMenu.contains(e.target) && (!userMenuBtn || !userMenuBtn.contains(e.target))) {
         hideUserMenu();
       }
     });
   }
   
-  // Toggle menu visibility
-  userMenu.style.display = userMenu.style.display === 'block' ? 'none' : 'block';
+  userMenu.style.display = 'block';
 }
 
 /**

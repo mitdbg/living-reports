@@ -1,9 +1,15 @@
 // Comments and Text Selection Module
-import { state, elements, windowId, incrementCommentCounter } from './state.js';
+import { state, getElements, elements, windowId, incrementCommentCounter } from './state.js';
 import { escapeHtml, escapeRegExp, calculateSafePosition, getTextContentWithLineBreaks } from './utils.js';
 import { createFloatingAnnotation, showAnnotationForText, refreshAnnotationElements, clearActiveAnnotationHighlight, removeHighlightWrapper } from './annotations.js';
 import { addMessageToUI, addWaitingIndicator, removeWaitingIndicator } from './chat.js';
 import { getCurrentUser } from './auth.js';
+import { 
+  createDocumentElement, 
+  createDocumentElementId, 
+  getDocumentElement, 
+  registerElement 
+} from './element-id-manager.js';
 
 /**
  * Parse structured LLM response for AI suggestions
@@ -267,6 +273,7 @@ export function createTextComment(selectedText, commentContent) {
   }
 }
 
+
 /**
  * Unified highlighting function for all HTML-based elements (preview, template editor, source editor)
  */
@@ -278,6 +285,11 @@ function highlightInHtmlElement(targetElement, selectedText, commentId) {
     console.log('Using direct HTML replacement for:', selectedText.substring(0, 100));
     
     if (content.includes(selectedText)) {
+      const highlightElement = createDocumentElement('div', `text-comment-highlight-${commentId}`, 'comments', getCurrentDocumentId());
+      highlightElement.setAttribute('data-comment-id', commentId);
+      highlightElement.setAttribute('title', 'Click to view comment');
+      highlightElement.className = 'text-comment-highlight';
+      
       const replacement = `<div data-comment-id="${commentId}" title="Click to view comment" class="text-comment-highlight">${selectedText}</div>`;
       content = content.replace(selectedText, replacement);
       console.log('Direct HTML replacement successful');
@@ -363,7 +375,7 @@ export function refreshHighlightEventListeners(skipAnnotationRefresh = false) {
 
 // Function to re-attach event listeners to code editor highlighted text elements
 function reattachtemplateEditorHighlightEventListeners() {
-  const templateEditor = elements.templateEditor;
+  const templateEditor = getElements.templateEditor;
   if (!templateEditor) return;
   
   // Find all highlighted text elements in code editor
@@ -398,7 +410,7 @@ function reattachtemplateEditorHighlightEventListeners() {
 
 // Function to re-attach event listeners to source editor highlighted text elements
 function reattachSourceEditorHighlightEventListeners() {
-  const sourceEditor = elements.sourceEditor;
+  const sourceEditor = getElements.sourceEditor;
   if (!sourceEditor) return;
   
   // Find all highlighted text elements in source editor
@@ -432,7 +444,7 @@ function reattachSourceEditorHighlightEventListeners() {
 }
 
 export function closeTextCommentPopup() {
-  const popup = document.querySelector('.text-comment-popup');
+  const popup = getDocumentElement('text-comment-popup') || document.querySelector('.text-comment-popup');
   if (popup) {
     popup.remove();
   }
@@ -515,12 +527,18 @@ function calculateCommentPosition(selectionRect, preferredSide = 'right') {
 }
 
 export function initTextSelection() {  
-  if (!elements.previewContent || !elements.templateEditor || !elements.sourceEditor || !elements.floatingComment) {
+  // Get elements using clean getElements
+  const previewContent = getElements.previewContent;
+  const templateEditor = getElements.templateEditor;
+  const sourceEditor = getElements.sourceEditor;
+  const floatingComment = getElements.floatingComment;
+  
+  if (!previewContent || !templateEditor || !sourceEditor || !floatingComment) {
     console.error(`[${windowId}] Text selection elements not found!`, {
-      previewContent: !!elements.previewContent,
-      templateEditor: !!elements.templateEditor,
-      sourceEditor: !!elements.sourceEditor,
-      floatingComment: !!elements.floatingComment
+      previewContent: !!previewContent,
+      templateEditor: !!templateEditor,
+      sourceEditor: !!sourceEditor,
+      floatingComment: !!floatingComment
     });
     return;
   }
@@ -528,31 +546,31 @@ export function initTextSelection() {
   // Remove existing event listeners if they exist
   if (commentsData.textSelectionInitialized) {
     if (commentsData.previewMouseUpHandler) {
-      elements.previewContent.removeEventListener('mouseup', commentsData.previewMouseUpHandler);
+      previewContent.removeEventListener('mouseup', commentsData.previewMouseUpHandler);
     }
     if (commentsData.templateEditorMouseUpHandler) {
-      elements.templateEditor.removeEventListener('mouseup', commentsData.templateEditorMouseUpHandler);
+      templateEditor.removeEventListener('mouseup', commentsData.templateEditorMouseUpHandler);
     }
     if (commentsData.sourceEditorMouseUpHandler) {
-      elements.sourceEditor.removeEventListener('mouseup', commentsData.sourceEditorMouseUpHandler);
+      sourceEditor.removeEventListener('mouseup', commentsData.sourceEditorMouseUpHandler);
     }
     if (commentsData.templateEditorKeyUpHandler) {
-      elements.templateEditor.removeEventListener('keyup', commentsData.templateEditorKeyUpHandler);
+      templateEditor.removeEventListener('keyup', commentsData.templateEditorKeyUpHandler);
     }
     if (commentsData.sourceEditorKeyUpHandler) {
-      elements.sourceEditor.removeEventListener('keyup', commentsData.sourceEditorKeyUpHandler);
+      sourceEditor.removeEventListener('keyup', commentsData.sourceEditorKeyUpHandler);
     }
     if (commentsData.templateEditorInputHandler) {
-      elements.templateEditor.removeEventListener('input', commentsData.templateEditorInputHandler);
+      templateEditor.removeEventListener('input', commentsData.templateEditorInputHandler);
     }
     if (commentsData.sourceEditorInputHandler) {
-      elements.sourceEditor.removeEventListener('input', commentsData.sourceEditorInputHandler);
+      sourceEditor.removeEventListener('input', commentsData.sourceEditorInputHandler);
     }
     if (commentsData.templateEditorScrollHandler) {
-      elements.templateEditor.removeEventListener('scroll', commentsData.templateEditorScrollHandler);
+      templateEditor.removeEventListener('scroll', commentsData.templateEditorScrollHandler);
     }
     if (commentsData.sourceEditorScrollHandler) {
-      elements.sourceEditor.removeEventListener('scroll', commentsData.sourceEditorScrollHandler);
+      sourceEditor.removeEventListener('scroll', commentsData.sourceEditorScrollHandler);
     }
   }
   
@@ -568,23 +586,23 @@ export function initTextSelection() {
   commentsData.sourceEditorScrollHandler = updateSourceHighlights;
   
   // For preview content (regular HTML)
-  elements.previewContent.addEventListener('mouseup', commentsData.previewMouseUpHandler);
+  previewContent.addEventListener('mouseup', commentsData.previewMouseUpHandler);
   
   // For template editor (contenteditable div) - uses same selection handling as preview
-  elements.templateEditor.addEventListener('mouseup', commentsData.templateEditorMouseUpHandler);
-  elements.templateEditor.addEventListener('keyup', commentsData.templateEditorKeyUpHandler);
+  templateEditor.addEventListener('mouseup', commentsData.templateEditorMouseUpHandler);
+  templateEditor.addEventListener('keyup', commentsData.templateEditorKeyUpHandler);
   
   // For source editor (contenteditable div) - uses same selection handling as preview
-  elements.sourceEditor.addEventListener('mouseup', commentsData.sourceEditorMouseUpHandler);
-  elements.sourceEditor.addEventListener('keyup', commentsData.sourceEditorKeyUpHandler);
+  sourceEditor.addEventListener('mouseup', commentsData.sourceEditorMouseUpHandler);
+  sourceEditor.addEventListener('keyup', commentsData.sourceEditorKeyUpHandler);
   
   // Update code highlights when editor content changes or scrolls
-  elements.templateEditor.addEventListener('input', commentsData.templateEditorInputHandler);
-  elements.templateEditor.addEventListener('scroll', commentsData.templateEditorScrollHandler);
+  templateEditor.addEventListener('input', commentsData.templateEditorInputHandler);
+  templateEditor.addEventListener('scroll', commentsData.templateEditorScrollHandler);
   
   // Update source highlights when source editor content changes or scrolls
-  elements.sourceEditor.addEventListener('input', commentsData.sourceEditorInputHandler);
-  elements.sourceEditor.addEventListener('scroll', commentsData.sourceEditorScrollHandler);
+  sourceEditor.addEventListener('input', commentsData.sourceEditorInputHandler);
+  sourceEditor.addEventListener('scroll', commentsData.sourceEditorScrollHandler);
   
   // Global click handler to hide floating comment when clicking elsewhere
   document.addEventListener('click', function(e) {
@@ -592,7 +610,7 @@ export function initTextSelection() {
     if (!e.target.closest('.floating-comment') && 
         !e.target.closest('.text-comment-highlight') &&
         !window.getSelection().toString().trim()) {
-      elements.floatingComment.style.display = 'none';
+      floatingComment.style.display = 'none';
     }
     
     // Clear active annotation highlighting when clicking elsewhere (but not on annotation windows or highlighted text)
@@ -605,7 +623,7 @@ export function initTextSelection() {
   // Hide on escape key
   document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
-      elements.floatingComment.style.display = 'none';
+      floatingComment.style.display = 'none';
       clearActiveAnnotationHighlight();
       window.getSelection().removeAllRanges();
     }
@@ -621,9 +639,18 @@ export function initTextSelection() {
 function handleTextSelection(event) {
   const selection = window.getSelection();
   
+  // Get clean elements
+  const floatingComment = getElements.floatingComment;
+  const commentText = getElements.commentText;
+  const templateEditor = getElements.templateEditor;
+  const sourceEditor = getElements.sourceEditor;
+  const previewContent = getElements.previewContent;
+  
   if (selection.rangeCount === 0) {
-    elements.floatingComment.style.display = 'none';
-    elements.floatingComment.storedSelectionRange = null;
+    if (floatingComment) {
+      floatingComment.style.display = 'none';
+      floatingComment.storedSelectionRange = null;
+    }
     return;
   }
   
@@ -631,9 +658,6 @@ function handleTextSelection(event) {
   let selectedText = '';
   
   // Check if the selection is within contenteditable elements (template or source editor)
-  const templateEditor = elements.templateEditor;
-  const sourceEditor = elements.sourceEditor;
-  const previewContent = elements.previewContent;
   
   // Also check for other source-editor elements (like in Tools dialog)
   const isInSourceEditor = range.commonAncestorContainer.nodeType === Node.TEXT_NODE ? 
@@ -682,8 +706,10 @@ function handleTextSelection(event) {
       while (element && element !== document.body) {
         if (element.classList && element.classList.contains('text-comment-highlight')) {
           console.log('Text is already highlighted, ignoring selection');
-          elements.floatingComment.style.display = 'none';
-          elements.floatingComment.storedSelectionRange = null;
+          if (floatingComment) {
+            floatingComment.style.display = 'none';
+            floatingComment.storedSelectionRange = null;
+          }
           return;
         }
         element = element.parentElement;
@@ -694,14 +720,16 @@ function handleTextSelection(event) {
     
     if (!cleanedText) {
       console.warn('Invalid text selection, ignoring');
-      elements.floatingComment.style.display = 'none';
-      elements.floatingComment.storedSelectionRange = null;
+      if (floatingComment) {
+        floatingComment.style.display = 'none';
+        floatingComment.storedSelectionRange = null;
+      }
       return;
     }
     
     const rect = range.getBoundingClientRect();
     
-    if (rect.width > 0 && rect.height > 0) {
+    if (rect.width > 0 && rect.height > 0 && floatingComment) {
       // Store the selection range immediately for later use
       const storedRange = range.cloneRange();
       
@@ -711,20 +739,24 @@ function handleTextSelection(event) {
       // Use the extracted positioning function
       const { left, top } = calculateCommentPosition(rect, 'right');
       
-      elements.floatingComment.style.display = 'block';
-      elements.floatingComment.style.top = `${top}px`;
-      elements.floatingComment.style.left = `${left}px`;
-      elements.floatingComment.dataset.selectedText = cleanedText; // Use cleaned text
+      floatingComment.style.display = 'block';
+      floatingComment.style.top = `${top}px`;
+      floatingComment.style.left = `${left}px`;
+      floatingComment.dataset.selectedText = cleanedText; // Use cleaned text
       // Store the range in the floating comment element for later retrieval
-      elements.floatingComment.storedSelectionRange = storedRange;
-      elements.commentText.value = '';
+      floatingComment.storedSelectionRange = storedRange;
+      if (commentText) commentText.value = '';
     } else {
-      elements.floatingComment.style.display = 'none';
-      elements.floatingComment.storedSelectionRange = null;
+      if (floatingComment) {
+        floatingComment.style.display = 'none';
+        floatingComment.storedSelectionRange = null;
+      }
     }
   } else {
-    elements.floatingComment.style.display = 'none';
-    elements.floatingComment.storedSelectionRange = null;
+    if (floatingComment) {
+      floatingComment.style.display = 'none';
+      floatingComment.storedSelectionRange = null;
+    }
   }
 }
 
@@ -737,15 +769,20 @@ export function updateSourceHighlights() {
 }
 
 export function initCommentButtons() {
-  if (!elements.addCommentBtn) {
+  // Get elements using clean getElements
+  const addCommentBtn = getElements.addCommentBtn;
+  const cancelCommentBtn = getElements.cancelCommentBtn;
+  const floatingComment = getElements.floatingComment;
+  
+  if (!addCommentBtn) {
     console.error(`[${windowId}] Add comment button not found!`);
     return;
   }
-  if (!elements.cancelCommentBtn) {
+  if (!cancelCommentBtn) {
     console.error(`[${windowId}] Cancel comment button not found!`);
     return;
   }
-  if (!elements.floatingComment) {
+  if (!floatingComment) {
     console.error(`[${windowId}] Floating comment element not found!`);
     return;
   }
@@ -762,8 +799,9 @@ export function initCommentButtons() {
   
   commentsData.askLLMHandler = async () => {
     console.log(`[${windowId}] Ask AI clicked - Mode: ${state.currentMode}`);
-    const selectedText = elements.floatingComment.dataset.selectedText;
-    const commentContent = elements.commentText.value;
+    const selectedText = floatingComment.dataset.selectedText;
+    const commentText = getElements.commentText;
+    const commentContent = commentText ? commentText.value : '';
 
     if (!selectedText) {
       addMessageToUI('system', 'Please select some text first.');
@@ -782,7 +820,7 @@ export function initCommentButtons() {
 
        await handleAskAI(selectedText, userRequest);
 
-      elements.floatingComment.style.display = 'none';
+      floatingComment.style.display = 'none';
 
     } catch (error) {
       console.error('Error sending to AI:', error);
@@ -798,7 +836,7 @@ export function initCommentButtons() {
     }
   };
   
-  const askLLMBtn = elements.floatingComment.querySelector('.ask-llm');
+  const askLLMBtn = floatingComment.querySelector('.ask-llm');
   if (askLLMBtn) {
     if (commentsData.currentAskLLMBtn) {
       console.log(`[${windowId}] 🧹 Removing event listener from previous ask AI button`);
@@ -811,8 +849,9 @@ export function initCommentButtons() {
   
   commentsData.addCommentHandler = async () => {
     console.log(`[${windowId}] Add comment clicked - Mode: ${state.currentMode}`);
-    const selectedText = elements.floatingComment.dataset.selectedText;
-    const commentContent = elements.commentText.value;
+    const selectedText = floatingComment.dataset.selectedText;
+    const commentText = getElements.commentText;
+    const commentContent = commentText ? commentText.value : '';
     
     if (!selectedText) {
       addMessageToUI('system', 'Please select some text first.');
@@ -834,20 +873,20 @@ export function initCommentButtons() {
       addMessageToUI('system', 'Error: Failed to process comment. Please try again.');
     }
 
-    elements.floatingComment.style.display = 'none';
+    floatingComment.style.display = 'none';
   };
 
   commentsData.cancelCommentHandler = () => {
     console.log(`[${windowId}] Cancel comment clicked`);
-    elements.floatingComment.style.display = 'none';
+    floatingComment.style.display = 'none';
   };
   
-  elements.addCommentBtn.addEventListener('click', commentsData.addCommentHandler);
-  elements.cancelCommentBtn.addEventListener('click', commentsData.cancelCommentHandler);
+  addCommentBtn.addEventListener('click', commentsData.addCommentHandler);
+  cancelCommentBtn.addEventListener('click', commentsData.cancelCommentHandler);
   
   // Track which buttons currently have the listeners
-  commentsData.currentAddCommentBtn = elements.addCommentBtn;
-  commentsData.currentCancelCommentBtn = elements.cancelCommentBtn;
+  commentsData.currentAddCommentBtn = addCommentBtn;
+  commentsData.currentCancelCommentBtn = cancelCommentBtn;
   
   console.log(`[${windowId}] Comment buttons initialized`);
   
@@ -864,23 +903,23 @@ async function handleAskAI(selectedText, userRequest, mode = null) {
   const actualMode = mode || state.currentMode;
   console.log(`Handling ${actualMode} + AskAI scenario`);
   
-  // Get content and element based on mode
+  // Get content and element based on mode using clean getElements
   let content = '';
   let targetElement = null;
   
   switch (actualMode) {
     case 'template':
-      content = elements.templateEditor ? elements.templateEditor.innerHTML : '';
-      targetElement = elements.templateEditor;
+      targetElement = getElements.templateEditor;
+      content = targetElement ? targetElement.innerHTML : '';
       break;
     case 'source':
-      content = elements.sourceEditor ? elements.sourceEditor.innerHTML : '';
-      targetElement = elements.sourceEditor;
+      targetElement = getElements.sourceEditor;
+      content = targetElement ? targetElement.innerHTML : '';
       break;
     case 'preview':
     default:
-      content = elements.previewContent ? elements.previewContent.innerHTML : '';
-      targetElement = elements.previewContent;
+      targetElement = getElements.previewContent;
+      content = targetElement ? targetElement.innerHTML : '';
       break;
   }
   
@@ -994,18 +1033,18 @@ async function createAISuggestionFromParsed(selectedText, userRequest, parsedSug
  */
 async function createInlineDiffFromParsed(parsedSuggestion, commentId, mode) {
   try {
-    // Get the target element based on mode
+    // Get the target element based on mode using clean getElements
     let targetElement;
     switch (mode) {
       case 'template':
-        targetElement = elements.templateEditor;
+        targetElement = getElements.templateEditor;
         break;
       case 'source':
-        targetElement = elements.sourceEditor;
+        targetElement = getElements.sourceEditor;
         break;
       case 'preview':
       default:
-        targetElement = elements.previewContent;
+        targetElement = getElements.previewContent;
         break;
     }
     
@@ -1107,17 +1146,17 @@ export function createTextHighlight(options) {
     return false;
   }
 
-  // Determine mode and target element
+  // Determine mode and target element using clean getElements
   let actualMode = mode || state.currentMode;
   let target = targetElement;
   
   if (!target) {
     if (actualMode === 'template') {
-      target = elements.templateEditor;
+      target = getElements.templateEditor;
     } else if (actualMode === 'source') {
-      target = elements.sourceEditor;
+      target = getElements.sourceEditor;
     } else if (actualMode === 'preview') {
-      target = elements.previewContent;
+      target = getElements.previewContent;
     }
   }
   

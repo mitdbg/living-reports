@@ -1,6 +1,12 @@
 // Chat System Module
-import { state, elements, windowId } from './state.js';
+import { state, getElements, windowId } from './state.js';
 import { getTextContentWithLineBreaks } from './utils.js';
+import { 
+  createDocumentElement, 
+  createDocumentElementId, 
+  getDocumentElement, 
+  registerElement 
+} from './element-id-manager.js';
 
 // Create window-specific storage for initialization flags and handlers
 const CHAT_KEY = `chat_${windowId}`;
@@ -83,18 +89,19 @@ function extractContentFromResponse(responseText) {
 
 // Display extracted content in preview panel
 function displayContentInPreview(content) {
-  if (!elements.previewContent || !content) return;
+  const previewContent = getElements.previewContent;
+  if (!previewContent || !content) return;
   
   // Render markdown if it looks like markdown
   if (content.includes('#') || content.includes('*') || content.includes('`')) {
-    elements.previewContent.innerHTML = renderMarkdownForChat(content);
+    previewContent.innerHTML = renderMarkdownForChat(content);
   } else {
-    elements.previewContent.innerHTML = content;
+    previewContent.innerHTML = content;
   }
 }
 
 export function addMessageToUI(sender, text) {
-  const messageElement = document.createElement('div');
+  const messageElement = createDocumentElement('div', `chat-message-${Date.now()}`, 'chat');
   messageElement.classList.add('chat-message');
   messageElement.classList.add(sender === 'user' ? 'user-message' : 'system-message');
   
@@ -112,14 +119,17 @@ export function addMessageToUI(sender, text) {
     <div class="message-content">${renderedContent}</div>
   `;
   
-  elements.chatMessages.appendChild(messageElement);
-  
-  // Scroll to bottom
-  elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
+  // Get the chat messages container using clean getElements
+  const chatMessages = getElements.chatMessages;
+  if (chatMessages) {
+    chatMessages.appendChild(messageElement);
+    // Scroll to bottom
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
 }
 
 export function addWaitingIndicator() {
-  waitingMessageElement = document.createElement('div');
+  waitingMessageElement = createDocumentElement('div', `waiting-message-${Date.now()}`, 'chat');
   waitingMessageElement.classList.add('chat-message', 'system-message', 'waiting-message');
   waitingMessageElement.innerHTML = `
     <div class="message-header">
@@ -138,10 +148,13 @@ export function addWaitingIndicator() {
     </div>
   `;
   
-  elements.chatMessages.appendChild(waitingMessageElement);
-  
-  // Scroll to bottom
-  elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
+  // Get the chat messages container using clean getElements
+  const chatMessages = getElements.chatMessages;
+  if (chatMessages) {
+    chatMessages.appendChild(waitingMessageElement);
+    // Scroll to bottom
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
 }
 
 export function removeWaitingIndicator() {
@@ -152,7 +165,8 @@ export function removeWaitingIndicator() {
 }
 
 async function sendMessage() {
-  const message = elements.messageInput.value.trim();
+  const messageInput = getElements.messageInput;
+  const message = messageInput ? messageInput.value.trim() : '';
   if (!message) return;
   
   // Check if this is an agent command first
@@ -160,7 +174,7 @@ async function sendMessage() {
     const agentCommand = window.codingAssistant.detectAgentCommand(message);
     if (agentCommand.isAgentCommand) {
       // Clear input
-      elements.messageInput.value = '';
+      if (messageInput) messageInput.value = '';
       // Handle through coding assistant
       await window.codingAssistant.handleAgentCommand(agentCommand.agentType, agentCommand.prompt);
       return;
@@ -171,7 +185,7 @@ async function sendMessage() {
   addMessageToUI('user', message);
   
   // Clear input
-  elements.messageInput.value = '';
+  if (messageInput) messageInput.value = '';
   
   // Show waiting indicator
   addWaitingIndicator();
@@ -191,8 +205,13 @@ async function sendMessage() {
 
 // Function to clear chat history
 export function clearChatHistory() {
+  // Get the chat messages container using clean getElements
+  const chatMessages = getElements.chatMessages;
+  
   // Clear the UI
-  elements.chatMessages.innerHTML = '';
+  if (chatMessages) {
+    chatMessages.innerHTML = '';
+  }
   
   // Clear backend conversation history if backend is available
   clearBackendChatHistory();
@@ -203,9 +222,12 @@ export function clearChatHistory() {
 
 async function chatToLLM(message, suggestTemplate = false) {
   try {
-    // Get all document content for complete context
-    const currentTemplateContent = elements.templateEditor ? elements.templateEditor.innerHTML : '';
-    const currentPreviewContent = elements.previewContent ? elements.previewContent.innerHTML : '';
+    // Get all document content for complete context using clean getElements
+    const templateEditor = getElements.templateEditor;
+    const previewContent = getElements.previewContent;
+    
+    const currentTemplateContent = templateEditor ? templateEditor.innerHTML : '';
+    const currentPreviewContent = previewContent ? previewContent.innerHTML : '';
     
     const response = await fetch('http://127.0.0.1:5000/api/chat', {
       method: 'POST',
@@ -297,13 +319,19 @@ export async function sendChatMessage(userMessage) {
 }
 
 export function initChat() {
+  // Get elements using clean getElements
+  const sendButton = getElements.sendButton;
+  const messageInput = getElements.messageInput;
+  const chatMessages = getElements.chatMessages;
+  const clearChatBtn = getElements.clearChatBtn;
+  
   // Check if chat elements exist
-  if (!elements.sendButton || !elements.messageInput || !elements.chatMessages || !elements.clearChatBtn) {
+  if (!sendButton || !messageInput || !chatMessages || !clearChatBtn) {
     console.error(`[${windowId}] Chat elements not found!`, {
-      sendButton: !!elements.sendButton,
-      messageInput: !!elements.messageInput,
-      chatMessages: !!elements.chatMessages,
-      clearChatBtn: !!elements.clearChatBtn
+      sendButton: !!sendButton,
+      messageInput: !!messageInput,
+      chatMessages: !!chatMessages,
+      clearChatBtn: !!clearChatBtn
     });
     return;
   }
@@ -333,16 +361,16 @@ export function initChat() {
   chatData.clearChatHandler = clearChatHistory;
   
   // Send button click handler
-  elements.sendButton.addEventListener('click', chatData.sendMessageHandler);
-  chatData.currentSendButton = elements.sendButton;
+  sendButton.addEventListener('click', chatData.sendMessageHandler);
+  chatData.currentSendButton = sendButton;
   
   // Enter key handler for message input
-  elements.messageInput.addEventListener('keypress', chatData.keyPressHandler);
-  chatData.currentMessageInput = elements.messageInput;
+  messageInput.addEventListener('keypress', chatData.keyPressHandler);
+  chatData.currentMessageInput = messageInput;
   
   // Clear chat button handler
-  elements.clearChatBtn.addEventListener('click', chatData.clearChatHandler);
-  chatData.currentClearChatBtn = elements.clearChatBtn;
+  clearChatBtn.addEventListener('click', chatData.clearChatHandler);
+  chatData.currentClearChatBtn = clearChatBtn;
   
   console.log(`[${windowId}] Chat initialized`);
   
@@ -353,10 +381,13 @@ export function initChat() {
 
 // Ask LLM functionality for floating comments
 export function initAskLLMButton() {
+  // Get element using clean getElements
+  const askLLMBtn = getElements.askLLMBtn;
+  
   // Check if Ask LLM elements exist
-  if (!elements.askLLMBtn) {
+  if (!askLLMBtn) {
     console.error('Ask LLM elements not found!', {
-      askLLMBtn: !!elements.askLLMBtn
+      askLLMBtn: !!askLLMBtn
     });
     return;
   }
