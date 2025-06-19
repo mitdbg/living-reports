@@ -509,23 +509,7 @@ export class DocumentManager {
     this.cleanAllElement(documentId);
     
     // Step 5: Determine where to switch if this was the active document
-    if (this.activeDocumentId === documentId) {
-      const remainingDocs = Array.from(this.documents.keys()).filter(id => id !== documentId);
-      
-      if (remainingDocs.length > 0) {
-        console.log(`Switching to remaining document: ${remainingDocs[0]}`);
-        // Verify the target document still exists in DOM before switching
-        const targetExists = document.getElementById(`document-${remainingDocs[0]}`);
-        if (targetExists) {
-          await this.switchToDocument(remainingDocs[0]);
-        } else {
-          this.switchToMain();
-        }
-      } else {
-        console.log('No remaining documents, switching to main');
-        this.switchToMain();
-      }
-    }
+    this.switchToMain();
     
     // Step 6: Update document list (document still exists in backend/map for reopening)
     this.updateDocumentList();
@@ -2464,8 +2448,37 @@ export class DocumentManager {
   assignDocumentSpecificIds(container, docId) {
     // Map of original IDs to new document-specific IDs
     const idMappings = {
+      // Core content elements
       'content-panel': `${docId}-content-panel`,
       'content-title': `${docId}-content-title`,
+      
+      // Template execution elements
+      'execute-template-btn': `${docId}-execute-template-btn`,
+      'verify-template-btn': `${docId}-verify-template-btn`,
+      'template-execution-status': `${docId}-template-execution-status`,
+      'template-editor': `${docId}-template-editor`,
+      'preview-content': `${docId}-preview-content`,
+      
+      // Mode buttons
+      'template-mode-btn': `${docId}-template-mode-btn`,
+      'preview-mode-btn': `${docId}-preview-mode-btn`,
+      
+      // Panel elements
+      'template-panel': `${docId}-template-panel`,
+      'preview-panel': `${docId}-preview-panel`,
+      
+      // Action buttons
+      'share-btn': `${docId}-share-btn`,
+      'clear-comments-btn': `${docId}-clear-comments-btn`,
+      'data-lake-btn': `${docId}-data-lake-btn`,
+      'variables-btn': `${docId}-variables-btn`,
+      'operators-btn': `${docId}-operators-btn`,
+      
+      // Variables display
+      'variables-display': `${docId}-variables-display`,
+      'variables-list': `${docId}-variables-list`,
+      
+      // Operators elements
       'instances-items': `${docId}-instances-items`,
       'no-instances-message': `${docId}-no-instances-message`,
       'operators-tools-items': `${docId}-operators-tools-items`,
@@ -2485,14 +2498,77 @@ export class DocumentManager {
       'embedded-instance-outputs': `${docId}-embedded-instance-outputs`,
       'save-embedded-instance-btn': `${docId}-save-embedded-instance-btn`,
       'cancel-embedded-instance-btn': `${docId}-cancel-embedded-instance-btn`,
+      
+      // Context files
       'context-files-section': `${docId}-context-files-section`,
       'context-files-list': `${docId}-context-files-list`
     };
     
-    // Update IDs
+    // Update IDs - first handle elements that already have IDs
     Object.entries(idMappings).forEach(([originalId, newId]) => {
       const element = container.querySelector(`#${originalId}`);
       if (element) {
+        element.id = newId;
+      }
+    });
+    
+    // Handle elements that have classes but no IDs (common for buttons)
+    const classToIdMappings = {
+      // Template execution elements
+      'execute-template-btn': `${docId}-execute-template-btn`,
+      'verify-template-btn': `${docId}-verify-template-btn`,
+      'template-execution-status': `${docId}-template-execution-status`,
+      'template-editor': `${docId}-template-editor`,
+      'preview-content': `${docId}-preview-content`,
+      'source-editor': `${docId}-source-editor`,
+      
+      // Mode buttons
+      'template-mode-btn': `${docId}-template-mode-btn`,
+      'preview-mode-btn': `${docId}-preview-mode-btn`,
+      
+      // Panel elements
+      'template-panel': `${docId}-template-panel`,
+      'preview-panel': `${docId}-preview-panel`,
+      
+      // Action buttons
+      'share-btn': `${docId}-share-btn`,
+      'clear-comments-btn': `${docId}-clear-comments-btn`,
+      'data-lake-btn': `${docId}-data-lake-btn`,
+      'variables-btn': `${docId}-variables-btn`,
+      'operators-btn': `${docId}-operators-btn`,
+      
+      // Variables display
+      'variables-display': `${docId}-variables-display`,
+      'variables-list': `${docId}-variables-list`,
+      
+      // Chat elements
+      'send-button': `${docId}-send-button`,
+      'clear-chat-btn': `${docId}-clear-chat-btn`,
+      'message-input': `${docId}-message-input`,
+      'chat-messages': `${docId}-chat-messages`,
+      
+      // Comment elements
+      'floating-comment': `${docId}-floating-comment`,
+      'comment-text': `${docId}-comment-text`,
+      'ask-llm': `${docId}-ask-llm-btn`,
+      'add-comment': `${docId}-add-comment-btn`,
+      'cancel-comment': `${docId}-cancel-comment-btn`,
+      
+      // File operation buttons
+      'open-file-btn': `${docId}-open-file-btn`,
+      'clear-context-btn': `${docId}-clear-context-btn`,
+      
+      // Diff view elements
+      'diff-view': `${docId}-diff-view`,
+      'accept-suggestion': `${docId}-accept-suggestion-btn`,
+      'reject-suggestion': `${docId}-reject-suggestion-btn`,
+      'diff-current-content': `${docId}-diff-current-content`,
+      'diff-suggested-content': `${docId}-diff-suggested-content`
+    };
+    
+    Object.entries(classToIdMappings).forEach(([className, newId]) => {
+      const element = container.querySelector(`.${className}`);
+      if (element && !element.id) {  // Only set ID if element doesn't already have one
         element.id = newId;
       }
     });

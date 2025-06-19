@@ -144,10 +144,6 @@ if (!window[COMMENTS_KEY]) {
     templateEditorKeyUpHandler: null,
     templateEditorInputHandler: null,
     templateEditorScrollHandler: null,
-    sourceEditorMouseUpHandler: null,
-    sourceEditorKeyUpHandler: null,
-    sourceEditorInputHandler: null,
-    sourceEditorScrollHandler: null,
     addCommentHandler: null,
     cancelCommentHandler: null,
     askLLMHandler: null,
@@ -365,7 +361,6 @@ function reattachHighlightEventListeners() {
 export function refreshHighlightEventListeners(skipAnnotationRefresh = false) {
   reattachHighlightEventListeners();
   reattachtemplateEditorHighlightEventListeners();
-  reattachSourceEditorHighlightEventListeners();
   
   // Only refresh annotation elements if not skipping (to prevent flicker when showing annotations)
   if (!skipAnnotationRefresh) {
@@ -380,41 +375,6 @@ function reattachtemplateEditorHighlightEventListeners() {
   
   // Find all highlighted text elements in code editor
   const highlightElements = templateEditor.querySelectorAll('.text-comment-highlight');
-  
-  highlightElements.forEach(element => {
-    // Check if this highlight should be visible in current mode
-    const selectedText = element.textContent;
-    const comment = Object.values(state.comments).find(c => c.selectedText === selectedText);
-    
-    if (comment && comment.mode !== state.currentMode) {
-      // Hide highlights that don't match current mode
-      element.style.display = 'none';
-      return;
-    } else {
-      // Show highlights that match current mode
-      element.style.display = 'inline';
-    }
-    
-    // Only add event listener if it doesn't already have one
-    if (!element.hasAttribute('data-listener-attached')) {
-      element.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        // Show the full annotation window
-        showAnnotationForText(selectedText);
-      });
-      element.setAttribute('data-listener-attached', 'true');
-    }
-  });
-}
-
-// Function to re-attach event listeners to source editor highlighted text elements
-function reattachSourceEditorHighlightEventListeners() {
-  const sourceEditor = getElements.sourceEditor;
-  if (!sourceEditor) return;
-  
-  // Find all highlighted text elements in source editor
-  const highlightElements = sourceEditor.querySelectorAll('.text-comment-highlight');
   
   highlightElements.forEach(element => {
     // Check if this highlight should be visible in current mode
@@ -530,14 +490,12 @@ export function initTextSelection() {
   // Get elements using clean getElements
   const previewContent = getElements.previewContent;
   const templateEditor = getElements.templateEditor;
-  const sourceEditor = getElements.sourceEditor;
   const floatingComment = getElements.floatingComment;
   
-  if (!previewContent || !templateEditor || !sourceEditor || !floatingComment) {
+  if (!previewContent || !templateEditor || !floatingComment) {
     console.error(`[${windowId}] Text selection elements not found!`, {
       previewContent: !!previewContent,
       templateEditor: !!templateEditor,
-      sourceEditor: !!sourceEditor,
       floatingComment: !!floatingComment
     });
     return;
@@ -551,39 +509,23 @@ export function initTextSelection() {
     if (commentsData.templateEditorMouseUpHandler) {
       templateEditor.removeEventListener('mouseup', commentsData.templateEditorMouseUpHandler);
     }
-    if (commentsData.sourceEditorMouseUpHandler) {
-      sourceEditor.removeEventListener('mouseup', commentsData.sourceEditorMouseUpHandler);
-    }
     if (commentsData.templateEditorKeyUpHandler) {
       templateEditor.removeEventListener('keyup', commentsData.templateEditorKeyUpHandler);
-    }
-    if (commentsData.sourceEditorKeyUpHandler) {
-      sourceEditor.removeEventListener('keyup', commentsData.sourceEditorKeyUpHandler);
     }
     if (commentsData.templateEditorInputHandler) {
       templateEditor.removeEventListener('input', commentsData.templateEditorInputHandler);
     }
-    if (commentsData.sourceEditorInputHandler) {
-      sourceEditor.removeEventListener('input', commentsData.sourceEditorInputHandler);
-    }
     if (commentsData.templateEditorScrollHandler) {
       templateEditor.removeEventListener('scroll', commentsData.templateEditorScrollHandler);
-    }
-    if (commentsData.sourceEditorScrollHandler) {
-      sourceEditor.removeEventListener('scroll', commentsData.sourceEditorScrollHandler);
     }
   }
   
   // Create new event handlers
   commentsData.previewMouseUpHandler = handleTextSelection;
   commentsData.templateEditorMouseUpHandler = handleTextSelection;
-  commentsData.sourceEditorMouseUpHandler = handleTextSelection;
   commentsData.templateEditorKeyUpHandler = handleTextSelection;
-  commentsData.sourceEditorKeyUpHandler = handleTextSelection;
   commentsData.templateEditorInputHandler = updateCodeHighlights;
-  commentsData.sourceEditorInputHandler = updateSourceHighlights;
   commentsData.templateEditorScrollHandler = updateCodeHighlights;
-  commentsData.sourceEditorScrollHandler = updateSourceHighlights;
   
   // For preview content (regular HTML)
   previewContent.addEventListener('mouseup', commentsData.previewMouseUpHandler);
@@ -592,18 +534,10 @@ export function initTextSelection() {
   templateEditor.addEventListener('mouseup', commentsData.templateEditorMouseUpHandler);
   templateEditor.addEventListener('keyup', commentsData.templateEditorKeyUpHandler);
   
-  // For source editor (contenteditable div) - uses same selection handling as preview
-  sourceEditor.addEventListener('mouseup', commentsData.sourceEditorMouseUpHandler);
-  sourceEditor.addEventListener('keyup', commentsData.sourceEditorKeyUpHandler);
-  
   // Update code highlights when editor content changes or scrolls
   templateEditor.addEventListener('input', commentsData.templateEditorInputHandler);
   templateEditor.addEventListener('scroll', commentsData.templateEditorScrollHandler);
-  
-  // Update source highlights when source editor content changes or scrolls
-  sourceEditor.addEventListener('input', commentsData.sourceEditorInputHandler);
-  sourceEditor.addEventListener('scroll', commentsData.sourceEditorScrollHandler);
-  
+
   // Global click handler to hide floating comment when clicking elsewhere
   document.addEventListener('click', function(e) {
     // Only hide comment window if clicking completely outside the comment system
@@ -643,7 +577,6 @@ function handleTextSelection(event) {
   const floatingComment = getElements.floatingComment;
   const commentText = getElements.commentText;
   const templateEditor = getElements.templateEditor;
-  const sourceEditor = getElements.sourceEditor;
   const previewContent = getElements.previewContent;
   
   if (selection.rangeCount === 0) {
@@ -658,15 +591,8 @@ function handleTextSelection(event) {
   let selectedText = '';
   
   // Check if the selection is within contenteditable elements (template or source editor)
-  
-  // Also check for other source-editor elements (like in Tools dialog)
-  const isInSourceEditor = range.commonAncestorContainer.nodeType === Node.TEXT_NODE ? 
-    range.commonAncestorContainer.parentElement?.closest('.source-editor') !== null :
-    range.commonAncestorContainer.closest?.('.source-editor') !== null;
-  
-  if ((templateEditor && templateEditor.contains(range.commonAncestorContainer)) ||
-      (sourceEditor && sourceEditor.contains(range.commonAncestorContainer)) ||
-      isInSourceEditor) {
+
+  if ((templateEditor && templateEditor.contains(range.commonAncestorContainer))) {
     // For contenteditable elements, use the utility function to preserve line breaks
     try {
       // Create a temporary container with the selected content
@@ -762,10 +688,6 @@ function handleTextSelection(event) {
 
 export function updateCodeHighlights() {
   reattachtemplateEditorHighlightEventListeners();
-}
-
-export function updateSourceHighlights() {
-  reattachSourceEditorHighlightEventListeners();
 }
 
 export function initCommentButtons() {
@@ -912,10 +834,6 @@ async function handleAskAI(selectedText, userRequest, mode = null) {
       targetElement = getElements.templateEditor;
       content = targetElement ? targetElement.innerHTML : '';
       break;
-    case 'source':
-      targetElement = getElements.sourceEditor;
-      content = targetElement ? targetElement.innerHTML : '';
-      break;
     case 'preview':
     default:
       targetElement = getElements.previewContent;
@@ -1039,9 +957,6 @@ async function createInlineDiffFromParsed(parsedSuggestion, commentId, mode) {
       case 'template':
         targetElement = getElements.templateEditor;
         break;
-      case 'source':
-        targetElement = getElements.sourceEditor;
-        break;
       case 'preview':
       default:
         targetElement = getElements.previewContent;
@@ -1089,13 +1004,9 @@ export function resetTextSelectionInitialization() {
   commentsData.textSelectionInitialized = false;
   commentsData.previewMouseUpHandler = null;
   commentsData.templateEditorMouseUpHandler = null;
-  commentsData.sourceEditorMouseUpHandler = null;
   commentsData.templateEditorKeyUpHandler = null;
-  commentsData.sourceEditorKeyUpHandler = null;
   commentsData.templateEditorInputHandler = null;
-  commentsData.sourceEditorInputHandler = null;
   commentsData.templateEditorScrollHandler = null;
-  commentsData.sourceEditorScrollHandler = null;
   window[COMMENTS_KEY] = commentsData;
 }
 
@@ -1153,8 +1064,6 @@ export function createTextHighlight(options) {
   if (!target) {
     if (actualMode === 'template') {
       target = getElements.templateEditor;
-    } else if (actualMode === 'source') {
-      target = getElements.sourceEditor;
     } else if (actualMode === 'preview') {
       target = getElements.previewContent;
     }

@@ -1,7 +1,7 @@
 // Mode Management Module
 import { state, getElements, updateState, windowId } from './state.js';
 import { updateAnnotationsVisibility } from './annotations.js';
-import { refreshHighlightEventListeners, updateCodeHighlights, updateSourceHighlights } from './comments.js';
+import { refreshHighlightEventListeners } from './comments.js';
 import { getCurrentUser } from './auth.js';
 
 // Create window-specific storage for initialization flags and handlers
