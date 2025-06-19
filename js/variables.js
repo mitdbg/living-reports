@@ -112,6 +112,11 @@ class VariablesManager {
    * Handle text selection events
    */
   handleTextSelection(e) {
+    // Skip processing if no active document
+    if (!window.documentManager?.activeDocumentId) {
+      return;
+    }
+    
     const selection = window.getSelection();
     const selectedText = selection.toString().trim();
     

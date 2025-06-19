@@ -490,6 +490,9 @@ export class DocumentManager {
       
       // Stop auto-save immediately
       this.stopAutoSave();
+      
+      // Clear active document ID FIRST to prevent modules from trying to access elements
+      this.activeDocumentId = null;
 
       // Reset ALL module initialization flags to ensure clean state
       resetModesInitialization();
@@ -508,7 +511,7 @@ export class DocumentManager {
     console.log('Removing DOM elements...');
     this.cleanAllElement(documentId);
     
-    // Step 5: Determine where to switch if this was the active document
+    // Step 5: Show main tab (activeDocumentId already cleared above)
     this.switchToMain();
     
     // Step 6: Update document list (document still exists in backend/map for reopening)
@@ -648,9 +651,6 @@ export class DocumentManager {
             <div class="document-actions">
               <button class="document-action-btn open" data-action="open" data-document-id="${doc.id}">
                 Open
-              </button>
-              <button class="document-action-btn share" data-action="share" data-document-id="${doc.id}">
-                ${doc.isShared ? 'Manage Sharing' : 'Share'}
               </button>
               <button class="document-action-btn delete" data-action="delete" data-document-id="${doc.id}">
                 Delete

@@ -252,6 +252,12 @@ export function exitDiffMode() {
 
 // Force preview mode for consumers
 function enforceConsumerMode() {
+  // Check if we have an active document before enforcing mode
+  if (!window.documentManager?.activeDocumentId) {
+    console.log(`[${windowId}] No active document for enforcing consumer mode`);
+    return;
+  }
+  
   const currentUser = getCurrentUser();
   if (currentUser && currentUser.role === 'Report Consumer') {
     // Consumer should always be in preview mode
@@ -345,8 +351,11 @@ export function resetModesInitialization() {
   modesData.modesInitialized = false;
   window[MODES_KEY] = modesData;
   
-  // Re-enforce consumer mode restrictions after reset
+  // Only re-enforce consumer mode if there's still an active document
   setTimeout(() => {
-    enforceConsumerMode();
+    // Check if we still have an active document before trying to enforce mode
+    if (window.documentManager?.activeDocumentId) {
+      enforceConsumerMode();
+    }
   }, 50);
 }
