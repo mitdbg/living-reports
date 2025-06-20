@@ -878,6 +878,18 @@ function setupAutoStyling() {
 
 // Setup event listeners
 function setupOperatorEventListeners() {
+  console.log(`[${windowId}] 🔧 setupOperatorEventListeners() called - Stack trace:`);
+  console.trace('setupOperatorEventListeners call stack');
+  
+  // Check if event listeners have already been set up
+  if (window.operatorsEventListenersCount) {
+    window.operatorsEventListenersCount++;
+    console.warn(`[${windowId}] ⚠️ setupOperatorEventListeners called ${window.operatorsEventListenersCount} times!`);
+  } else {
+    window.operatorsEventListenersCount = 1;
+    console.log(`[${windowId}] ✅ First time setting up operator event listeners`);
+  }
+  
   // Listen for tool selection changes to auto-populate fields
   document.addEventListener('change', (event) => {
     if (event.target.id === createDocumentElementId('embedded-instance-tool')) {
@@ -943,14 +955,17 @@ function setupOperatorEventListeners() {
     }
 
     if (event.target.matches('.add-parameter-btn')) {
+      console.log(`[${windowId}] 🔧 Add parameter button clicked (listener #${window.operatorsEventListenersCount || 'unknown'})`);
       addParameterField();
     }
     
     if (event.target.matches('.add-output-btn')) {
+      console.log(`[${windowId}] 🔧 Add output button clicked (listener #${window.operatorsEventListenersCount || 'unknown'})`);
       addOutputField();
     }
     
     if (event.target.matches('.add-tool-btn-sidebar')) {
+      console.log(`[${windowId}] 🔧 Add tool button clicked (listener #${window.operatorsEventListenersCount || 'unknown'})`);
       showToolEditor();
     }
     
@@ -963,6 +978,8 @@ function setupOperatorEventListeners() {
   
   // Setup tools sidebar event listeners
   setupToolsSidebarEventListeners();
+  
+  console.log(`[${windowId}] ✅ setupOperatorEventListeners completed for call #${window.operatorsEventListenersCount}`);
 }
 
 // Helper function to get the active document container
@@ -1095,6 +1112,8 @@ function showOperatorsListView() {
 }
 
 function showToolEditor(toolId = null) {
+  console.log(`[${windowId}] 🔧 showToolEditor() EXECUTED - Call #${++window.showToolEditorCallCount || (window.showToolEditorCallCount = 1)}`);
+  
   // Get the active document container
   const container = getActiveDocumentContainer();
   if (!container) {
@@ -1388,6 +1407,8 @@ function clearOutputsForm() {
 }
 
 function addParameterField(key = '', value = '', valueType = 'literal') {
+  console.log(`[${windowId}] 🔧 addParameterField() EXECUTED - Call #${++window.addParameterCallCount || (window.addParameterCallCount = 1)}`);
+  
   // Get the active document container
   const documentContainer = getActiveDocumentContainer();
   if (!documentContainer) return;
@@ -1443,6 +1464,8 @@ function addParameterField(key = '', value = '', valueType = 'literal') {
 }
 
 async function addOutputField(outputConfig = '', outputVariable = '') {
+  console.log(`[${windowId}] 🔧 addOutputField() EXECUTED - Call #${++window.addOutputCallCount || (window.addOutputCallCount = 1)}`);
+  
   // Get the active document container
   const documentContainer = getActiveDocumentContainer();
   if (!documentContainer) return;
@@ -2599,6 +2622,8 @@ function createOperatorsSidebarToolElement(tool) {
 }
 
 function setupToolsSidebarEventListeners() {
+  console.log(`[${windowId}] 🔧 Setting up tools sidebar event listeners...`);
+  
   // Tools sidebar search
   document.addEventListener('input', (e) => {
     if (e.target.id === 'operators-tools-search') {
@@ -2608,7 +2633,11 @@ function setupToolsSidebarEventListeners() {
   
   // Add tool button in sidebar
   document.addEventListener('click', (e) => {
+    console.log(`[${windowId}] 🔧 Tools sidebar click event detected on:`, e.target.className, e.target.id);
+    
     if (e.target.classList.contains('add-tool-btn-sidebar')) {
+      console.log(`[${windowId}] 🔧 Add tool button clicked - setupToolsSidebarEventListeners`);
+      console.trace('Add tool button click stack trace from sidebar');
       // Use the embedded tool editor in operators panel
       showToolEditor();
     }
@@ -2631,6 +2660,8 @@ function setupToolsSidebarEventListeners() {
       showToolEditor(toolId);
     }
   });
+  
+  console.log(`[${windowId}] ✅ Tools sidebar event listeners setup complete`);
 }
 
 function filterOperatorsTools(searchTerm) {

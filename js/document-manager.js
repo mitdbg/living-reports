@@ -7,7 +7,7 @@ import { initTextSelection, initCommentButtons, resetTextSelectionInitialization
 import { initFileOperations, resetFileOperationsInitialization } from './file-operations.js';
 import { initSharing, resetSharingInitialization } from './sharing.js';
 import { initContentMapping, resetContentMappingInitialization } from './content-mapping.js';
-import { initDataLake } from './data-lake.js';
+import { initDataLake, resetDataLakeInitialization, loadDataLake } from './data-lake.js';
 import { initOperators, resetOperatorsInitialization } from './operators.js';
 import { initCodingAssistant } from './coding_assistant.js';
 import { initVerification } from './verification.js';
@@ -105,33 +105,75 @@ export class DocumentManager {
    * This should only be called once to prevent event listener accumulation
    */
   setupDocumentListEventDelegation() {
+    console.log(`🔍 setupDocumentListEventDelegation() called. Current state:`, {
+      documentListDelegationSetup: this.documentListDelegationSetup,
+      hasDocumentList: !!this.documentList
+    });
+    console.trace('setupDocumentListEventDelegation call stack');
+    
     if (this.documentListDelegationSetup || !this.documentList) {
+      console.log(`🔍 Skipping delegation setup - already set up or no document list`);
+      return;
+    }
+    
+    // Mark the document list to prevent duplicate listeners
+    if (this.documentList.hasAttribute('data-event-listener-attached')) {
+      console.warn('🚨 Document list already has event listener attached! Preventing duplicate.');
+      this.documentListDelegationSetup = true;
       return;
     }
     
     // Use event delegation on the document list container
     this.documentList.addEventListener('click', async (e) => {
+      console.log(`🔍 Document list click detected:`, {
+        target: e.target.tagName + '.' + e.target.className,
+        documentId: e.target.getAttribute('data-document-id'),
+        action: e.target.getAttribute('data-action'),
+        closestItem: e.target.closest('.document-item')?.getAttribute('data-document-id'),
+        isButton: e.target.matches('button')
+      });
+      
       const documentId = e.target.getAttribute('data-document-id');
       const action = e.target.getAttribute('data-action');
       
       if (action === 'open' && documentId) {
+        console.log(`🔍 Executing OPEN action for document: ${documentId}`);
+        e.stopPropagation(); // Prevent event bubbling to avoid double execution
         await this.openExistingDocument(documentId);
       } else if (action === 'delete' && documentId) {
+        console.log(`🔍 Executing DELETE action for document: ${documentId}`);
+        e.stopPropagation(); // Prevent event bubbling
         await this.deleteDocument(documentId);
       } else if (action === 'share' && documentId) {
+        console.log(`🔍 Executing SHARE action for document: ${documentId}`);
+        e.stopPropagation(); // Prevent event bubbling
         await this.shareDocument(documentId);
-      } else if (e.target.closest('.document-item') && !action) {
-        // Click on document item itself
+      } else if (e.target.closest('.document-item') && !action && !e.target.matches('button')) {
+        console.log(`🔍 Executing FALLBACK click for document item`);
+        // Click on document item itself (but not on buttons)
         const item = e.target.closest('.document-item');
         const docId = item.getAttribute('data-document-id');
         if (docId) {
           await this.openExistingDocument(docId);
         }
+      } else {
+        console.log(`🔍 No action taken - conditions not met`);
       }
     });
     
+    // Mark the document list to indicate event listener is attached
+    this.documentList.setAttribute('data-event-listener-attached', 'true');
+    
     this.documentListDelegationSetup = true;
-    console.log('Document list event delegation set up');
+    
+    // Add global counter for debugging
+    if (!window.documentListEventListenerCount) {
+      window.documentListEventListenerCount = 1;
+    } else {
+      window.documentListEventListenerCount++;
+    }
+    
+    console.log(`🔍 Document list event delegation set up - Total listeners: ${window.documentListEventListenerCount}`);
   }
 
   generateSessionId() {
@@ -334,6 +376,7 @@ export class DocumentManager {
       resetContentMappingInitialization();
       resetFileOperationsInitialization();
       resetSharingInitialization();
+      resetDataLakeInitialization();
       resetOperatorsInitialization();
       resetVariablesInitialization();
       // Note: Other modules may not have reset functions yet, but should be added as needed
@@ -360,6 +403,10 @@ export class DocumentManager {
       
       // Initialize variables for this specific document
       initVariablesForDocument();
+      
+      // Load data lake for this specific document
+      await loadDataLake(documentId);
+      
       // Configure role-based UI after all modules are initialized
       this.configureRoleBasedUI(container);
       
@@ -671,25 +718,40 @@ export class DocumentManager {
   }
 
   async openExistingDocument(documentId) {
-    const doc = this.documents.get(documentId);
-    if (!doc) {
-      console.error(`Document ${documentId} not found in documents map`);
+    // Protection against double execution
+    const executionKey = `opening_${documentId}`;
+    if (window[executionKey]) {
+      console.log(`🔄 Document ${documentId} is already being opened, skipping duplicate execution`);
       return;
     }
     
-    console.log(`📂 Opening document: ${doc.title} (${documentId})`);
+    // Set flag to prevent duplicate execution
+    window[executionKey] = true;
     
-    // Check if tab already exists
-    const existingTab = document.querySelector(`[data-tab="${documentId}"]`);
-    if (existingTab) {
-      console.log(`Tab already exists for document ${documentId}, switching to it`);
-      await this.switchToDocument(documentId);
-      return;
+    try {
+      const doc = this.documents.get(documentId);
+      if (!doc) {
+        console.error(`Document ${documentId} not found in documents map`);
+        return;
+      }
+      
+      console.log(`📂 Opening document: ${doc.title} (${documentId})`);
+      
+      // Check if tab already exists
+      const existingTab = document.querySelector(`[data-tab="${documentId}"]`);
+      if (existingTab) {
+        console.log(`Tab already exists for document ${documentId}, switching to it`);
+        await this.switchToDocument(documentId);
+        return;
+      }
+      
+      // Always load fresh data from backend since all documents are saved there
+      console.log(`Loading fresh data from backend for document ${documentId}`);
+      await this.loadDocumentFromBackend(documentId); // ✅ FIXED: Added missing await
+    } finally {
+      // Always clear the flag when done
+      delete window[executionKey];
     }
-    
-    // Always load fresh data from backend since all documents are saved there
-    console.log(`Loading fresh data from backend for document ${documentId}`);
-    this.loadDocumentFromBackend(documentId);
   }
 
   async deleteDocument(documentId) {
@@ -1135,6 +1197,11 @@ export class DocumentManager {
     
     // IMPORTANT: Reset event delegation flag so it can be set up again for new user
     this.documentListDelegationSetup = false;
+    
+    // Also remove the DOM attribute marker to allow re-setup
+    if (this.documentList) {
+      this.documentList.removeAttribute('data-event-listener-attached');
+    }
     
     // Switch to main page
     this.switchToMain();
