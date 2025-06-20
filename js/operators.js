@@ -2,6 +2,7 @@
 import { elements, state, updateState, windowId } from './state.js';
 import { addMessageToUI } from './chat.js';
 import { getCurrentUser } from './auth.js';
+import { createDocumentElementId } from './element-id-manager.js';
 
 // Create window-specific storage
 const CODE_INSTANCES_KEY = `operators_${windowId}`;
@@ -879,7 +880,7 @@ function setupAutoStyling() {
 function setupOperatorEventListeners() {
   // Listen for tool selection changes to auto-populate fields
   document.addEventListener('change', (event) => {
-    if (event.target.id === 'embedded-instance-tool') {
+    if (event.target.id === createDocumentElementId('embedded-instance-tool')) {
       const toolId = event.target.value;
       if (toolId) {
         autoPopulateOperatorFields(toolId);
@@ -910,19 +911,19 @@ function setupOperatorEventListeners() {
       showOperatorsListView();
     }
     
-    if (event.target.id === 'save-embedded-tool-btn') {
+    if (event.target.id === createDocumentElementId('save-embedded-tool-btn')) {
       saveTool();
     }
     
-    if (event.target.id === 'cancel-embedded-tool-btn') {
+    if (event.target.id === createDocumentElementId('cancel-embedded-tool-btn')) {
       showOperatorsListView();
     }
     
-    if (event.target.id === 'save-embedded-instance-btn') {
+    if (event.target.id === createDocumentElementId('save-embedded-instance-btn')) {
       saveInstance();
     }
     
-    if (event.target.id === 'cancel-embedded-instance-btn') {
+    if (event.target.id === createDocumentElementId('cancel-embedded-instance-btn')) {
       showOperatorsListView();
     }
     
@@ -1012,7 +1013,7 @@ async function showOperatorsDialog() {
     operatorsPanel.classList.add('active');
     
     // Update content title
-    const contentTitle = container.querySelector('#content-title, .content-title');
+    const contentTitle = container.querySelector(`#${createDocumentElementId('content-title')}, .content-title`);
     if (contentTitle) {
       contentTitle.textContent = 'Operators Management';
     }
@@ -1043,7 +1044,7 @@ function hideOperatorsDialog() {
   // Hide the operators panel and show the template panel
   const operatorsPanel = container.querySelector('.operators-panel');
   const templatePanel = container.querySelector('.template-panel');
-  const contentTitle = container.querySelector('#content-title, .content-title');
+  const contentTitle = container.querySelector(`#${createDocumentElementId('content-title')}, .content-title`);
   
   if (operatorsPanel) {
     operatorsPanel.style.display = 'none';
@@ -1105,7 +1106,7 @@ function showToolEditor(toolId = null) {
   const toolEditorView = container.querySelector('.operators-tool-editor-view');
   const instanceEditorView = container.querySelector('.operators-instance-editor-view');
   const breadcrumb = container.querySelector('.nav-breadcrumb');
-  const title = container.querySelector('#tool-editor-title');
+  const title = container.querySelector(`#${createDocumentElementId('tool-editor-title')}`);
   
   if (listView) {
     listView.style.display = 'none';
@@ -1148,7 +1149,7 @@ function showInstanceEditor(instanceId = null) {
   const toolEditorView = container.querySelector('.operators-tool-editor-view');
   const instanceEditorView = container.querySelector('.operators-instance-editor-view');
   const breadcrumb = container.querySelector('.nav-breadcrumb');
-  const title = container.querySelector('#instance-editor-title');
+  const title = container.querySelector(`#${createDocumentElementId('instance-editor-title')}`);
   
   if (listView) {
     listView.style.display = 'none';
@@ -1197,9 +1198,9 @@ function populateToolForm(toolId) {
   if (!container) return;
   
   // Populate form fields
-  const nameInput = container.querySelector('#embedded-tool-name');
-  const descriptionInput = container.querySelector('#embedded-tool-description');
-  const codeEditor = container.querySelector('#embedded-tool-code');
+  const nameInput = container.querySelector(`#${createDocumentElementId('embedded-tool-name')}`);
+  const descriptionInput = container.querySelector(`#${createDocumentElementId('embedded-tool-description')}`);
+  const codeEditor = container.querySelector(`#${createDocumentElementId('embedded-tool-code')}`);
   
   if (nameInput) nameInput.value = tool.name;
   if (descriptionInput) descriptionInput.value = tool.description || '';
@@ -1220,9 +1221,9 @@ function clearToolForm() {
   const container = getActiveDocumentContainer();
   if (!container) return;
   
-  const nameInput = container.querySelector('#embedded-tool-name');
-  const descriptionInput = container.querySelector('#embedded-tool-description');
-  const codeEditor = container.querySelector('#embedded-tool-code');
+  const nameInput = container.querySelector(`#${createDocumentElementId('embedded-tool-name')}`);
+  const descriptionInput = container.querySelector(`#${createDocumentElementId('embedded-tool-description')}`);
+  const codeEditor = container.querySelector(`#${createDocumentElementId('embedded-tool-code')}`);
   
   if (nameInput) nameInput.value = '';
   if (descriptionInput) descriptionInput.value = '';
@@ -1237,7 +1238,7 @@ async function populateToolsDropdown() {
   const container = getActiveDocumentContainer();
   if (!container) return;
   
-  const select = container.querySelector('#embedded-instance-tool');
+  const select = container.querySelector(`#${createDocumentElementId('embedded-instance-tool')}`);
   if (!select) return;
 
   // Clear existing options
@@ -1276,7 +1277,7 @@ async function populateVariablesList() {
   
   console.log('🔄 Populating all variable dropdowns in instance editor...');
   
-  const allSelects = container.querySelectorAll('#embedded-instance-outputs .output-variable-select');
+  const allSelects = container.querySelectorAll(`#${createDocumentElementId('embedded-instance-outputs')} .output-variable-select`);
   console.log(`📊 Found ${allSelects.length} variable dropdown(s) to populate`);
   
   for (const select of allSelects) {
@@ -1294,8 +1295,8 @@ function populateInstanceForm(instanceId) {
   const container = getActiveDocumentContainer();
   if (!container) return;
   
-  const nameInput = container.querySelector('#embedded-instance-name');
-  const toolSelect = container.querySelector('#embedded-instance-tool');
+  const nameInput = container.querySelector(`#${createDocumentElementId('embedded-instance-name')}`);
+  const toolSelect = container.querySelector(`#${createDocumentElementId('embedded-instance-tool')}`);
   
   if (nameInput) nameInput.value = instance.name;
   if (toolSelect) toolSelect.value = instance.toolId;
@@ -1315,8 +1316,8 @@ function clearInstanceForm() {
   const container = getActiveDocumentContainer();
   if (!container) return;
   
-  const nameInput = container.querySelector('#embedded-instance-name');
-  const toolSelect = container.querySelector('#embedded-instance-tool');
+  const nameInput = container.querySelector(`#${createDocumentElementId('embedded-instance-name')}`);
+  const toolSelect = container.querySelector(`#${createDocumentElementId('embedded-instance-tool')}`);
   
   if (nameInput) nameInput.value = '';
   if (toolSelect) toolSelect.value = '';
@@ -1332,7 +1333,7 @@ function populateParametersForm(parameters) {
   const documentContainer = getActiveDocumentContainer();
   if (!documentContainer) return;
   
-  const container = documentContainer.querySelector('#embedded-instance-parameters');
+  const container = documentContainer.querySelector(`#${createDocumentElementId('embedded-instance-parameters')}`);
   if (!container) return;
 
   container.innerHTML = '';
@@ -1351,7 +1352,7 @@ function clearParametersForm() {
   const documentContainer = getActiveDocumentContainer();
   if (!documentContainer) return;
   
-  const container = documentContainer.querySelector('#embedded-instance-parameters');
+  const container = documentContainer.querySelector(`#${createDocumentElementId('embedded-instance-parameters')}`);
   if (container) {
     container.innerHTML = '';
   }
@@ -1380,7 +1381,7 @@ function clearOutputsForm() {
   const documentContainer = getActiveDocumentContainer();
   if (!documentContainer) return;
   
-  const container = documentContainer.querySelector('#embedded-instance-outputs');
+  const container = documentContainer.querySelector(`#${createDocumentElementId('embedded-instance-outputs')}`);
   if (container) {
     container.innerHTML = '';
   }
@@ -1391,7 +1392,7 @@ function addParameterField(key = '', value = '', valueType = 'literal') {
   const documentContainer = getActiveDocumentContainer();
   if (!documentContainer) return;
   
-  const container = documentContainer.querySelector('#embedded-instance-parameters');
+  const container = documentContainer.querySelector(`#${createDocumentElementId('embedded-instance-parameters')}`);
   if (!container) return;
 
   // Get available datasets for the dropdown
@@ -1446,7 +1447,7 @@ async function addOutputField(outputConfig = '', outputVariable = '') {
   const documentContainer = getActiveDocumentContainer();
   if (!documentContainer) return;
   
-  const container = documentContainer.querySelector('#embedded-instance-outputs');
+  const container = documentContainer.querySelector(`#${createDocumentElementId('embedded-instance-outputs')}`);
   if (!container) return;
 
   const field = document.createElement('div');
@@ -1574,14 +1575,14 @@ function showOperatorLoadingIndicator() {
   if (!container) return;
   
   // Show AI indicator
-  const aiIndicator = container.querySelector('#operator-ai-indicator');
+  const aiIndicator = container.querySelector(`#${createDocumentElementId('operator-ai-indicator')}`);
   if (aiIndicator) {
     aiIndicator.style.display = 'flex';
   }
   
   // Disable form fields during loading
-  const nameInput = container.querySelector('#embedded-instance-name');
-  const toolSelect = container.querySelector('#embedded-instance-tool');
+  const nameInput = container.querySelector(`#${createDocumentElementId('embedded-instance-name')}`);
+  const toolSelect = container.querySelector(`#${createDocumentElementId('embedded-instance-tool')}`);
   
   if (nameInput) nameInput.disabled = true;
   if (toolSelect) toolSelect.disabled = true;
@@ -1595,14 +1596,14 @@ function hideOperatorLoadingIndicator() {
   if (!container) return;
   
   // Hide AI indicator
-  const aiIndicator = container.querySelector('#operator-ai-indicator');
+  const aiIndicator = container.querySelector(`#${createDocumentElementId('operator-ai-indicator')}`);
   if (aiIndicator) {
     aiIndicator.style.display = 'none';
   }
   
   // Re-enable form fields
-  const nameInput = container.querySelector('#embedded-instance-name');
-  const toolSelect = container.querySelector('#embedded-instance-tool');
+  const nameInput = container.querySelector(`#${createDocumentElementId('embedded-instance-name')}`);
+  const toolSelect = container.querySelector(`#${createDocumentElementId('embedded-instance-tool')}`);
   
   if (nameInput) nameInput.disabled = false;
   if (toolSelect) toolSelect.disabled = false;
@@ -1716,7 +1717,7 @@ async function populateSuggestedFields(suggestions, forceRepopulate = false) {
 
   // 1. Populate operator name
   if (suggestions.operatorName && suggestions.operatorName.trim()) {
-    const nameInput = container.querySelector('#embedded-instance-name');
+    const nameInput = container.querySelector(`#${createDocumentElementId('embedded-instance-name')}`);
     if (nameInput && (!nameInput.value.trim() || forceRepopulate)) {
       nameInput.value = suggestions.operatorName.trim();
       console.log(`✅ Set operator name: "${suggestions.operatorName}"`);
@@ -1724,7 +1725,7 @@ async function populateSuggestedFields(suggestions, forceRepopulate = false) {
   }
 
   // 2. Append suggested parameters (don't clear existing ones)
-  const parametersContainer = container.querySelector('#embedded-instance-parameters');
+  const parametersContainer = container.querySelector(`#${createDocumentElementId('embedded-instance-parameters')}`);
   if (parametersContainer && suggestions.parameters && suggestions.parameters.length > 0) {
     const existingParams = parametersContainer.querySelectorAll('.parameter-field');
     
@@ -1750,7 +1751,7 @@ async function populateSuggestedFields(suggestions, forceRepopulate = false) {
   }
 
   // 3. Append suggested outputs (don't clear existing ones)
-  const outputsContainer = container.querySelector('#embedded-instance-outputs');
+  const outputsContainer = container.querySelector(`#${createDocumentElementId('embedded-instance-outputs')}`);
   if (outputsContainer) {
     const existingOutputs = outputsContainer.querySelectorAll('.output-config-field');
     
@@ -1822,7 +1823,7 @@ function refreshInstancesList() {
   const documentContainer = getActiveDocumentContainer();
   if (!documentContainer) return;
   
-  const container = documentContainer.querySelector('#instances-items');
+  const container = documentContainer.querySelector(`#${createDocumentElementId('instances-items')}`);
   if (!container) return;
 
   // Get only instances for the current document
@@ -2001,13 +2002,14 @@ function styleInstanceReferences(templateEditor) {
 
   // Form Save Functions
 async function saveTool() {
+  console.log('Saving tool.............');
   // Get the active document container
   const container = getActiveDocumentContainer();
   if (!container) return;
   
-  const nameInput = container.querySelector('#embedded-tool-name');
-  const descriptionInput = container.querySelector('#embedded-tool-description');
-  const codeEditor = container.querySelector('#embedded-tool-code');
+  const nameInput = container.querySelector(`#${createDocumentElementId('embedded-tool-name')}`);
+  const descriptionInput = container.querySelector(`#${createDocumentElementId('embedded-tool-description')}`);
+  const codeEditor = container.querySelector(`#${createDocumentElementId('embedded-tool-code')}`);
 
   const name = nameInput?.value.trim();
   const description = descriptionInput?.value.trim();
@@ -2101,9 +2103,11 @@ function saveInstance() {
   // Get the active document container
   const container = getActiveDocumentContainer();
   if (!container) return;
+  const embeddedInstanceName = createDocumentElmentId('embedded-instance-name');
+  const embeddedInstanceTool = createDocumentElmentId('embedded-instance-tool');
   
-  const nameInput = container.querySelector('#embedded-instance-name');
-  const toolSelect = container.querySelector('#embedded-instance-tool');
+  const nameInput = container.querySelector(`#${embeddedInstanceName}`);
+  const toolSelect = container.querySelector(`#${embeddedInstanceTool}`);
 
   const name = nameInput?.value.trim();
   const toolId = toolSelect?.value;
@@ -2123,7 +2127,7 @@ function saveInstance() {
 
   // Get output assignments
   const outputs = [];
-  const outputFields = container.querySelectorAll('#embedded-instance-outputs .output-config-field');
+  const outputFields = container.querySelectorAll(`#${createDocumentElementId('embedded-instance-outputs')} .output-config-field`);
   
   // Validate output fields
   for (const field of outputFields) {
@@ -2152,7 +2156,7 @@ function saveInstance() {
 
   // Get parameters
   const parameters = {};
-  const paramFields = container.querySelectorAll('#embedded-instance-parameters .parameter-field');
+  const paramFields = container.querySelectorAll(`#${createDocumentElementId('embedded-instance-parameters')} .parameter-field`);
   paramFields.forEach(field => {
     const key = field.querySelector('.param-key')?.value.trim();
     const typeSelect = field.querySelector('.param-type-select');
@@ -2532,7 +2536,7 @@ async function refreshOperatorsToolsList() {
   const documentContainer = getActiveDocumentContainer();
   if (!documentContainer) return;
   
-  const toolsContainer = documentContainer.querySelector('#operators-tools-items');
+  const toolsContainer = documentContainer.querySelector(`#${createDocumentElementId('operators-tools-items')}`);
   if (!toolsContainer) return;
   
   // Get available tools
@@ -2556,7 +2560,7 @@ async function refreshOperatorsToolsList() {
   toolsContainer.innerHTML = '';
   
   if (tools.length === 0) {
-    const noToolsDiv = documentContainer.querySelector('#operators-no-tools-message');
+    const noToolsDiv = documentContainer.querySelector(`#${createDocumentElementId('operators-no-tools-message')}`);
     if (noToolsDiv) {
       noToolsDiv.style.display = 'block';
     }
@@ -2564,7 +2568,7 @@ async function refreshOperatorsToolsList() {
   }
   
   // Hide no tools message
-  const noToolsDiv = documentContainer.querySelector('#operators-no-tools-message');
+  const noToolsDiv = documentContainer.querySelector(`#${createDocumentElementId('operators-no-tools-message')}`);
   if (noToolsDiv) {
     noToolsDiv.style.display = 'none';
   }
