@@ -348,10 +348,6 @@ class VariablesManager {
           </div>
           
           <div class="variables-list" id="variables-list">
-            <div class="no-variables-message" id="no-variables-message">
-              <p>No variables created yet.</p>
-              <p>Select text in your template and click "Suggest Variables".</p>
-            </div>
           </div>
           
           <div class="dialog-actions">
@@ -701,6 +697,13 @@ class VariablesManager {
         this.variablesPanel = null;
       }
       
+      // IMPORTANT: Remove any existing variables panels to prevent duplicate IDs
+      const existingPanels = document.querySelectorAll('.variables-panel-dialog');
+      existingPanels.forEach((panel, index) => {
+        console.log(`Removing existing variables panel ${index}: ${panel.id}`);
+        panel.remove();
+      });
+      
       this.createVariablesPanelDialog();
     }
     
@@ -900,45 +903,19 @@ class VariablesManager {
     const currentDocId = window.documentManager?.activeDocumentId;
     console.log('Current document ID:', currentDocId);
     
-    // Try to get the element using getDocumentElement
-    const variablesList = getDocumentElement('variables-list');
-    const noVariablesMsg = getDocumentElement('no-variables-message');
+    // Get the variables list element
+    const variablesList = this.variablesPanel.querySelector('.variables-list');
     
-    // Debug: Log what IDs we're looking for
-    const expectedId = currentDocId ? `${currentDocId}-variables-list` : 'variables-list';
-    console.log('Looking for element with ID:', expectedId);
-    
-    // Debug: Check if we can find it with direct getElementById
-    const directGetById = document.getElementById(expectedId);
-    console.log('Element found via getElementById:', !!directGetById);
-    console.log('Element found via getDocumentElement:', !!variablesList);
-
     if (!variablesList) {
       console.error('Variables list element not found in panel');
-      console.log('Available elements with "variables-list" in ID:');
-      const allElements = document.querySelectorAll('[id*="variables-list"]');
-      allElements.forEach(el => console.log(`  - ${el.id}`));
-      
-      // Debug: Check if the panel itself exists
-      const panelExists = this.variablesPanel && document.body.contains(this.variablesPanel);
-      console.log('Variables panel exists in DOM:', panelExists);
-      if (this.variablesPanel) {
-        console.log('Panel HTML preview:', this.variablesPanel.innerHTML.substring(0, 200) + '...');
-      }
-      
       return;
     }
+    console.log('Using variables list element:', variablesList);
     
+    // Clear existing content
     variablesList.innerHTML = '';
-
-    if (this.variables.size === 0) {
-      console.log('No variables to display, showing empty message');
-      if (noVariablesMsg) noVariablesMsg.style.display = 'block';
-      return;
-    }
     
     console.log('Displaying', this.variables.size, 'variables');
-    if (noVariablesMsg) noVariablesMsg.style.display = 'none';
     
     this.variables.forEach((variable, name) => {
       console.log('Adding variable to list:', name, variable);
@@ -960,8 +937,15 @@ class VariablesManager {
         </div>
       `;
       
+      console.log('Created variable item:', variableItem);
+      console.log('Variable item HTML:', variableItem.outerHTML);
+      
       variablesList.appendChild(variableItem);
+      console.log('Variable item appended, variables list now has', variablesList.children.length, 'children');
+      console.log('Variables list content:', variablesList.innerHTML);
     });
+
+    this.variablesPanel.style.display = 'flex';
   }
 
   /**
@@ -1382,11 +1366,13 @@ class VariablesManager {
     
     // Clear dialog references so they get recreated for new document
     if (this.variableDialog) {
-      console.log('Nulling out variable dialog reference');
+      console.log('Removing variable dialog from DOM');
+      this.variableDialog.remove();
       this.variableDialog = null;
     }
     if (this.variablesPanel) {
-      console.log('Nulling out variables panel reference');
+      console.log('Removing variables panel from DOM');
+      this.variablesPanel.remove();
       this.variablesPanel = null;
     }
     

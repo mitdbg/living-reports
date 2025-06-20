@@ -6350,7 +6350,6 @@ p {
   width: 100%;
   height: 100%;
   z-index: 9999;
-  display: none;
 }
 
 .variables-panel-content {
@@ -6361,6 +6360,7 @@ p {
 .variables-list {
   padding: 20px;
   max-height: 400px;
+  min-height: 50px;
   overflow-y: auto;
 }
 
