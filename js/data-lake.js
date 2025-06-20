@@ -914,6 +914,9 @@ function getOrCreateDataLakeDialog() {
     dialog.className = 'data-lake-dialog';
     dialog.style.display = 'none';
     
+    // Mark dialog as hidden by design to prevent auto-restoration when switching documents
+    dialog.setAttribute('data-hidden-by-design', 'true');
+    
     document.body.appendChild(dialog);
 
     // Set up event listeners for the new dialog

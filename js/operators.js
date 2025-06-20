@@ -810,6 +810,10 @@ const operatorsEventData = {
   addOutputBtnHandler: null,
   // Change handlers
   toolSelectionChangeHandler: null,
+  // Tools sidebar handlers
+  toolsSearchHandler: null,
+  addToolBtnSidebarHandler: null,
+  toolsSidebarClickHandler: null,
   // Current elements with attached listeners
   currentOperatorsPanel: null,
   currentElements: {
@@ -821,7 +825,11 @@ const operatorsEventData = {
     saveInstanceBtn: null,
     cancelInstanceBtn: null,
     closeOperatorsBtn: null,
-    toolSelection: null
+    toolSelection: null,
+    // Tools sidebar elements
+    toolsSearch: null,
+    addToolBtnSidebar: null,
+    toolsContainer: null
   }
 };
 
@@ -1151,6 +1159,9 @@ function cleanupOperatorEventListeners() {
     console.log(`[${windowId}] 🧹 Removed operators panel delegation handler`);
   }
   
+  // Clean up tools sidebar listeners
+  cleanupToolsSidebarEventListeners();
+  
   // Clear all references
   operatorsEventData.currentOperatorsPanel = null;
   operatorsEventData.operatorsBtnHandler = null;
@@ -1163,6 +1174,9 @@ function cleanupOperatorEventListeners() {
   operatorsEventData.closeOperatorsBtnHandler = null;
   operatorsEventData.toolSelectionChangeHandler = null;
   operatorsEventData.operatorsPanelClickHandler = null;
+  operatorsEventData.toolsSearchHandler = null;
+  operatorsEventData.addToolBtnSidebarHandler = null;
+  operatorsEventData.toolsSidebarClickHandler = null;
   
   // Clear element references
   Object.keys(operatorsEventData.currentElements).forEach(key => {
@@ -2819,32 +2833,33 @@ function createOperatorsSidebarToolElement(tool) {
 }
 
 function setupToolsSidebarEventListeners() {
-  console.log(`[${windowId}] 🔧 Setting up tools sidebar event listeners...`);
+  console.log(`[${windowId}] 🔧 Setting up tools sidebar event listeners using direct element attachment...`);
   
-  // Tools sidebar search
-  document.addEventListener('input', (e) => {
-    if (e.target.id === 'operators-tools-search') {
-      filterOperatorsTools(e.target.value);
-    }
-  });
+  // Get the active document container
+  const container = getActiveDocumentContainer();
+  if (!container) {
+    console.error(`[${windowId}] No active document container found for tools sidebar event listeners`);
+    return;
+  }
   
-  // Add tool button in sidebar and tool selection
-  document.addEventListener('click', (e) => {
-    // Only log clicks related to tools sidebar functionality
-    if (e.target.classList.contains('add-tool-btn-sidebar') || 
-        e.target.classList.contains('sidebar-tool-delete-btn') ||
+  // Clean up existing tools sidebar listeners first
+  cleanupToolsSidebarEventListeners();
+  
+  // Create event handlers
+  operatorsEventData.toolsSearchHandler = (e) => {
+    filterOperatorsTools(e.target.value);
+  };
+  
+  operatorsEventData.addToolBtnSidebarHandler = () => {
+    console.log(`[${windowId}] 🔧 Add tool button clicked - setupToolsSidebarEventListeners`);
+    showToolEditor();
+  };
+  
+  operatorsEventData.toolsSidebarClickHandler = (e) => {
+    // Log clicks for debugging
+    if (e.target.classList.contains('sidebar-tool-delete-btn') ||
         e.target.closest('.operators-sidebar-tool-item')) {
       console.log(`[${windowId}] 🔧 Tools sidebar click event detected on:`, e.target.className, e.target.id);
-    } else {
-      return;
-    }
-    
-    if (e.target.classList.contains('add-tool-btn-sidebar')) {
-      console.log(`[${windowId}] 🔧 Add tool button clicked - setupToolsSidebarEventListeners`);
-      console.trace('Add tool button click stack trace from sidebar');
-      // Use the embedded tool editor in operators panel
-      showToolEditor();
-      return;
     }
     
     // Delete tool button
@@ -2866,9 +2881,67 @@ function setupToolsSidebarEventListeners() {
       const toolId = toolItem.dataset.toolId;
       showToolEditor(toolId);
     }
-  });
+  };
   
-  console.log(`[${windowId}] ✅ Tools sidebar event listeners setup complete`);
+  // Find and attach to specific elements
+  const toolsSearch = container.querySelector(`#${createDocumentElementId('operators-tools-search')}`);
+  const addToolBtnSidebar = container.querySelector('.add-tool-btn-sidebar');
+  const toolsContainer = container.querySelector(`#${createDocumentElementId('operators-tools-items')}`);
+  
+  // Attach event listeners to found elements
+  if (toolsSearch) {
+    toolsSearch.addEventListener('input', operatorsEventData.toolsSearchHandler);
+    operatorsEventData.currentElements.toolsSearch = toolsSearch;
+    console.log(`[${windowId}] ✅ Attached tools search listener`);
+  }
+  
+  if (addToolBtnSidebar) {
+    addToolBtnSidebar.addEventListener('click', operatorsEventData.addToolBtnSidebarHandler);
+    operatorsEventData.currentElements.addToolBtnSidebar = addToolBtnSidebar;
+    console.log(`[${windowId}] ✅ Attached add tool sidebar button listener`);
+  }
+  
+  // Attach click delegation to tools container for dynamic tool items
+  if (toolsContainer) {
+    toolsContainer.addEventListener('click', operatorsEventData.toolsSidebarClickHandler);
+    operatorsEventData.currentElements.toolsContainer = toolsContainer;
+    console.log(`[${windowId}] ✅ Attached tools container delegation handler`);
+  }
+  
+  console.log(`[${windowId}] ✅ Tools sidebar event listeners setup complete - direct element attachment`);
+}
+
+// Cleanup function for tools sidebar event listeners
+function cleanupToolsSidebarEventListeners() {
+  console.log(`[${windowId}] 🧹 Cleaning up tools sidebar event listeners...`);
+  
+  // Remove listeners from tracked tools sidebar elements
+  if (operatorsEventData.currentElements.toolsSearch && operatorsEventData.toolsSearchHandler) {
+    operatorsEventData.currentElements.toolsSearch.removeEventListener('input', operatorsEventData.toolsSearchHandler);
+    console.log(`[${windowId}] 🧹 Removed tools search listener`);
+  }
+  
+  if (operatorsEventData.currentElements.addToolBtnSidebar && operatorsEventData.addToolBtnSidebarHandler) {
+    operatorsEventData.currentElements.addToolBtnSidebar.removeEventListener('click', operatorsEventData.addToolBtnSidebarHandler);
+    console.log(`[${windowId}] 🧹 Removed add tool sidebar button listener`);
+  }
+  
+  if (operatorsEventData.currentElements.toolsContainer && operatorsEventData.toolsSidebarClickHandler) {
+    operatorsEventData.currentElements.toolsContainer.removeEventListener('click', operatorsEventData.toolsSidebarClickHandler);
+    console.log(`[${windowId}] 🧹 Removed tools container delegation handler`);
+  }
+  
+  // Clear handler references
+  operatorsEventData.toolsSearchHandler = null;
+  operatorsEventData.addToolBtnSidebarHandler = null;
+  operatorsEventData.toolsSidebarClickHandler = null;
+  
+  // Clear tools sidebar element references
+  operatorsEventData.currentElements.toolsSearch = null;
+  operatorsEventData.currentElements.addToolBtnSidebar = null;
+  operatorsEventData.currentElements.toolsContainer = null;
+  
+  console.log(`[${windowId}] ✅ Tools sidebar event listeners cleanup completed`);
 }
 
 function filterOperatorsTools(searchTerm) {

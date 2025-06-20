@@ -97,6 +97,9 @@ export function switchToSource() {
   const diffView = getElements.diffView;
   const contentTitle = getElements.contentTitle;
   
+  // Also handle operators panel
+  const operatorsPanel = getElements.operatorsPanel || document.querySelector('.operators-panel.active');
+  
   if (sourcePanel) {
     sourcePanel.classList.add('active');
     sourcePanel.style.display = 'block';
@@ -110,6 +113,12 @@ export function switchToSource() {
   if (previewPanel) {
     previewPanel.classList.remove('active');
     previewPanel.style.display = 'none';
+  }
+  
+  // Hide operators panel if it's active
+  if (operatorsPanel) {
+    operatorsPanel.classList.remove('active');
+    operatorsPanel.style.display = 'none';
   }
   
   if (diffView) {
@@ -145,6 +154,9 @@ export function switchToTemplate() {
   const diffView = getElements.diffView;
   const contentTitle = getElements.contentTitle;
   
+  // Also handle operators panel
+  const operatorsPanel = getElements.operatorsPanel || document.querySelector('.operators-panel.active');
+  
   if (sourcePanel) {
     sourcePanel.classList.remove('active');
     sourcePanel.style.display = 'none';
@@ -158,6 +170,12 @@ export function switchToTemplate() {
   if (previewPanel) {
     previewPanel.classList.remove('active');
     previewPanel.style.display = 'none';
+  }
+  
+  // Hide operators panel if it's active
+  if (operatorsPanel) {
+    operatorsPanel.classList.remove('active');
+    operatorsPanel.style.display = 'none';
   }
   
   if (diffView) {
@@ -187,6 +205,9 @@ export function switchToPreview() {
   const diffView = getElements.diffView;
   const contentTitle = getElements.contentTitle;
   
+  // Also handle operators panel
+  const operatorsPanel = getElements.operatorsPanel || document.querySelector('.operators-panel.active');
+  
   if (sourcePanel) {
     sourcePanel.classList.remove('active');
     sourcePanel.style.display = 'none';
@@ -200,6 +221,12 @@ export function switchToPreview() {
   if (previewPanel) {
     previewPanel.classList.add('active');
     previewPanel.style.display = 'block';
+  }
+  
+  // Hide operators panel if it's active
+  if (operatorsPanel) {
+    operatorsPanel.classList.remove('active');
+    operatorsPanel.style.display = 'none';
   }
   
   if (diffView) {
@@ -233,9 +260,19 @@ export function switchToDiff() {
   const diffView = getElements.diffView;
   const contentTitle = getElements.contentTitle;
   
+  // Also handle operators panel
+  const operatorsPanel = getElements.operatorsPanel || document.querySelector('.operators-panel.active');
+  
   if (sourcePanel) sourcePanel.classList.remove('active');
   if (templatePanel) templatePanel.classList.remove('active');
   if (previewPanel) previewPanel.classList.remove('active');
+  
+  // Hide operators panel if it's active
+  if (operatorsPanel) {
+    operatorsPanel.classList.remove('active');
+    operatorsPanel.style.display = 'none';
+  }
+  
   if (diffView) diffView.classList.add('active');
   
   if (contentTitle) {
