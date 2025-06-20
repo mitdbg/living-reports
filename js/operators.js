@@ -800,6 +800,7 @@ export function initOperators() {
   // Initialize tools manager (moved from tools.js)
   initToolsManager();
   
+  // Only set up event listeners once globally
   setupOperatorEventListeners();
   
   // Set up auto-styling for template editors
@@ -881,14 +882,15 @@ function setupOperatorEventListeners() {
   console.log(`[${windowId}] 🔧 setupOperatorEventListeners() called - Stack trace:`);
   console.trace('setupOperatorEventListeners call stack');
   
-  // Check if event listeners have already been set up
-  if (window.operatorsEventListenersCount) {
-    window.operatorsEventListenersCount++;
-    console.warn(`[${windowId}] ⚠️ setupOperatorEventListeners called ${window.operatorsEventListenersCount} times!`);
-  } else {
-    window.operatorsEventListenersCount = 1;
-    console.log(`[${windowId}] ✅ First time setting up operator event listeners`);
+  // Check if event listeners have already been set up globally
+  if (window.operatorsEventListenersSetup) {
+    console.log(`[${windowId}] ⚠️ setupOperatorEventListeners already set up - skipping to prevent duplicates`);
+    return;
   }
+  
+  // Mark as set up to prevent duplicate listeners
+  window.operatorsEventListenersSetup = true;
+  console.log(`[${windowId}] ✅ First time setting up operator event listeners`);
   
   // Listen for tool selection changes to auto-populate fields
   document.addEventListener('change', (event) => {
@@ -955,18 +957,13 @@ function setupOperatorEventListeners() {
     }
 
     if (event.target.matches('.add-parameter-btn')) {
-      console.log(`[${windowId}] 🔧 Add parameter button clicked (listener #${window.operatorsEventListenersCount || 'unknown'})`);
+      console.log(`[${windowId}] 🔧 Add parameter button clicked`);
       addParameterField();
     }
     
     if (event.target.matches('.add-output-btn')) {
-      console.log(`[${windowId}] 🔧 Add output button clicked (listener #${window.operatorsEventListenersCount || 'unknown'})`);
+      console.log(`[${windowId}] 🔧 Add output button clicked`);
       addOutputField();
-    }
-    
-    if (event.target.matches('.add-tool-btn-sidebar')) {
-      console.log(`[${windowId}] 🔧 Add tool button clicked (listener #${window.operatorsEventListenersCount || 'unknown'})`);
-      showToolEditor();
     }
     
     if (event.target.matches('.close-operators-btn') || event.target.closest('.close-operators-btn')) {
@@ -979,7 +976,7 @@ function setupOperatorEventListeners() {
   // Setup tools sidebar event listeners
   setupToolsSidebarEventListeners();
   
-  console.log(`[${windowId}] ✅ setupOperatorEventListeners completed for call #${window.operatorsEventListenersCount}`);
+  console.log(`[${windowId}] ✅ setupOperatorEventListeners completed - global setup`);
 }
 
 // Helper function to get the active document container
@@ -1182,6 +1179,7 @@ function showInstanceEditor(instanceId = null) {
   
   if (instanceEditorView) {
     instanceEditorView.style.display = 'flex';
+    hideOperatorLoadingIndicator();
     instanceEditorView.classList.add('active');
   }
   
@@ -1660,6 +1658,7 @@ async function autoPopulateOperatorFields(toolId) {
     }
 
   } catch (error) {
+    hideOperatorLoadingIndicator();
     console.error('Error auto-populating operator fields:', error);
     addMessageToUI('system', `⚠️ Could not auto-populate fields: ${error.message}`);
   } finally {
@@ -2284,6 +2283,10 @@ export {
 function resetOperatorsInitialization() {
   console.log('🔄 Operators initialization reset');
   
+  // NOTE: We intentionally do NOT remove global event listeners here.
+  // The event delegation pattern is designed to handle multiple documents
+  // with document-specific selectors, so global listeners can stay attached.
+  
   // Reset the global operator manager
   if (operatorManager) {
     operatorManager = null;
@@ -2624,6 +2627,15 @@ function createOperatorsSidebarToolElement(tool) {
 function setupToolsSidebarEventListeners() {
   console.log(`[${windowId}] 🔧 Setting up tools sidebar event listeners...`);
   
+  // Check if already set up
+  if (window.toolsSidebarEventListenersSetup) {
+    console.log(`[${windowId}] ⚠️ Tools sidebar event listeners already set up - skipping`);
+    return;
+  }
+  
+  // Mark as set up
+  window.toolsSidebarEventListenersSetup = true;
+  
   // Tools sidebar search
   document.addEventListener('input', (e) => {
     if (e.target.id === 'operators-tools-search') {
@@ -2631,15 +2643,23 @@ function setupToolsSidebarEventListeners() {
     }
   });
   
-  // Add tool button in sidebar
+  // Add tool button in sidebar and tool selection
   document.addEventListener('click', (e) => {
-    console.log(`[${windowId}] 🔧 Tools sidebar click event detected on:`, e.target.className, e.target.id);
+    // Only log clicks related to tools sidebar functionality
+    if (e.target.classList.contains('add-tool-btn-sidebar') || 
+        e.target.classList.contains('sidebar-tool-delete-btn') ||
+        e.target.closest('.operators-sidebar-tool-item')) {
+      console.log(`[${windowId}] 🔧 Tools sidebar click event detected on:`, e.target.className, e.target.id);
+    } else {
+      return;
+    }
     
     if (e.target.classList.contains('add-tool-btn-sidebar')) {
       console.log(`[${windowId}] 🔧 Add tool button clicked - setupToolsSidebarEventListeners`);
       console.trace('Add tool button click stack trace from sidebar');
       // Use the embedded tool editor in operators panel
       showToolEditor();
+      return;
     }
     
     // Delete tool button
@@ -2648,12 +2668,14 @@ function setupToolsSidebarEventListeners() {
       const toolId = e.target.getAttribute('data-tool-id');
       if (window.toolsManager) {
         window.toolsManager.removeTool(toolId);
+        // Refresh the tools list UI immediately after deletion
+        refreshOperatorsToolsList();
+        addMessageToUI('system', '🗑️ Tool deleted successfully');
       }
+      return;
     }
-  });
-  
-  // Tool selection in sidebar - show tool editor
-  document.addEventListener('click', (e) => {
+    
+    // Tool selection in sidebar - show tool editor
     const toolItem = e.target.closest('.operators-sidebar-tool-item');
     if (toolItem && !e.target.classList.contains('sidebar-tool-delete-btn')) {
       const toolId = toolItem.dataset.toolId;

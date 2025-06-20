@@ -148,14 +148,6 @@ export class DocumentManager {
         console.log(`🔍 Executing SHARE action for document: ${documentId}`);
         e.stopPropagation(); // Prevent event bubbling
         await this.shareDocument(documentId);
-      } else if (e.target.closest('.document-item') && !action && !e.target.matches('button')) {
-        console.log(`🔍 Executing FALLBACK click for document item`);
-        // Click on document item itself (but not on buttons)
-        const item = e.target.closest('.document-item');
-        const docId = item.getAttribute('data-document-id');
-        if (docId) {
-          await this.openExistingDocument(docId);
-        }
       } else {
         console.log(`🔍 No action taken - conditions not met`);
       }
@@ -1218,10 +1210,6 @@ export class DocumentManager {
     
     // Clear any existing data first
     this.clearUserData();
-    
-    // Re-setup event delegation in case it wasn't set up initially
-    this.setupDocumentListEventDelegation();
-    
     // Load documents from backend (source of truth)
     this.loadSharedDocuments();
     

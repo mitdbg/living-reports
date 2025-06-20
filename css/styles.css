@@ -6777,6 +6777,8 @@ p {
   display: none;
   flex-direction: column;
   height: 100%;
+  max-height: 100%;
+  overflow: hidden; /* Prevent overflow on container */
 }
 
 .operators-tool-editor-view.active,
@@ -6792,6 +6794,7 @@ p {
   margin-bottom: 20px;
   padding-bottom: 15px;
   border-bottom: 2px solid #f0f0f0;
+  flex-shrink: 0; /* Prevent header from shrinking */
 }
 
 .back-to-operators-btn {
@@ -6821,6 +6824,7 @@ p {
   flex: 1;
   overflow-y: auto;
   margin-bottom: 20px;
+  min-height: 0; /* Allow form to shrink properly in flexbox */
 }
 
 .tool-editor-actions,
@@ -6830,6 +6834,9 @@ p {
   justify-content: flex-end;
   padding-top: 15px;
   border-top: 1px solid #dee2e6;
+  flex-shrink: 0; /* Prevent action buttons from shrinking */
+  background: white; /* Ensure background covers content below */
+  z-index: 1; /* Ensure buttons stay above scrolled content */
 }
 
 .tool-editor-actions .btn-primary,
