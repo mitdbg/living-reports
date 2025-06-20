@@ -789,6 +789,42 @@ class OperatorManager {
 // Global instance manager
 let operatorManager = null;
 
+// Event handlers tracking for cleanup (similar to file-operations.js)
+const operatorsEventData = {
+  operatorsInitialized: false,
+  // Click handlers
+  operatorsBtnHandler: null,
+  instanceReferenceHandler: null,
+  addInstanceBtnHandler: null,
+  backToOperatorsBtnHandler: null,
+  saveToolBtnHandler: null,
+  cancelToolBtnHandler: null,
+  saveInstanceBtnHandler: null,
+  cancelInstanceBtnHandler: null,
+  closeOperatorsBtnHandler: null,
+  // Dynamic handlers for instances
+  instanceExecuteHandler: null,
+  instanceEditHandler: null,
+  instanceDeleteHandler: null,
+  addParameterBtnHandler: null,
+  addOutputBtnHandler: null,
+  // Change handlers
+  toolSelectionChangeHandler: null,
+  // Current elements with attached listeners
+  currentOperatorsPanel: null,
+  currentElements: {
+    operatorsBtn: null,
+    addInstanceBtn: null,
+    backToOperatorsBtn: null,
+    saveToolBtn: null,
+    cancelToolBtn: null,
+    saveInstanceBtn: null,
+    cancelInstanceBtn: null,
+    closeOperatorsBtn: null,
+    toolSelection: null
+  }
+};
+
 // Initialize operators
 export function initOperators() {
   console.log(`[${windowId}] Initializing operators`);
@@ -800,7 +836,7 @@ export function initOperators() {
   // Initialize tools manager (moved from tools.js)
   initToolsManager();
   
-  // Only set up event listeners once globally
+  // Set up event listeners for active document
   setupOperatorEventListeners();
   
   // Set up auto-styling for template editors
@@ -877,106 +913,265 @@ function setupAutoStyling() {
   });
 }
 
-// Setup event listeners
+// Setup event listeners using direct element attachment (similar to file-operations.js)
 function setupOperatorEventListeners() {
-  console.log(`[${windowId}] 🔧 setupOperatorEventListeners() called - Stack trace:`);
-  console.trace('setupOperatorEventListeners call stack');
+  console.log(`[${windowId}] 🔧 setupOperatorEventListeners() called - using direct element attachment`);
   
-  // Check if event listeners have already been set up globally
-  if (window.operatorsEventListenersSetup) {
-    console.log(`[${windowId}] ⚠️ setupOperatorEventListeners already set up - skipping to prevent duplicates`);
+  // Get the active document container
+  const container = getActiveDocumentContainer();
+  if (!container) {
+    console.error(`[${windowId}] No active document container found for operator event listeners`);
     return;
   }
   
-  // Mark as set up to prevent duplicate listeners
-  window.operatorsEventListenersSetup = true;
-  console.log(`[${windowId}] ✅ First time setting up operator event listeners`);
+  // Clean up existing event listeners first
+  cleanupOperatorEventListeners();
   
-  // Listen for tool selection changes to auto-populate fields
-  document.addEventListener('change', (event) => {
-    if (event.target.id === createDocumentElementId('embedded-instance-tool')) {
-      const toolId = event.target.value;
-      if (toolId) {
-        autoPopulateOperatorFields(toolId);
-      }
+  // Store current container reference
+  operatorsEventData.currentOperatorsPanel = container;
+  
+  // Create event handlers
+  operatorsEventData.operatorsBtnHandler = () => {
+    console.log(`[${windowId}] operators button clicked`);
+    showOperatorsDialog();
+  };
+  
+  operatorsEventData.addInstanceBtnHandler = () => {
+    showInstanceEditor();
+  };
+  
+  operatorsEventData.backToOperatorsBtnHandler = () => {
+    showOperatorsListView();
+  };
+  
+  operatorsEventData.saveToolBtnHandler = () => {
+    saveTool();
+  };
+  
+  operatorsEventData.cancelToolBtnHandler = () => {
+    showOperatorsListView();
+  };
+  
+  operatorsEventData.saveInstanceBtnHandler = () => {
+    saveInstance();
+  };
+  
+  operatorsEventData.cancelInstanceBtnHandler = () => {
+    showOperatorsListView();
+  };
+  
+  operatorsEventData.closeOperatorsBtnHandler = () => {
+    hideOperatorsDialog();
+  };
+  
+  operatorsEventData.toolSelectionChangeHandler = (e) => {
+    const toolId = e.target.value;
+    if (toolId) {
+      autoPopulateOperatorFields(toolId);
     }
-  });
-
-  // Listen for operator buttons
-  document.addEventListener('click', (event) => {
-    if (event.target.matches('.operators-btn') || event.target.closest('.operators-btn')) {
-      console.log(`[${windowId}] operators button clicked`);
-      showOperatorsDialog();
-    }
-    
-    // Listen for clicks on instance references
-    if (event.target.matches('.instance-reference')) {
-      const instanceName = event.target.textContent.replace('$$', '').replace(/_/g, ' ');
+  };
+  
+  // Dynamic click handler for the operators panel (using event delegation within the panel)
+  operatorsEventData.operatorsPanelClickHandler = (e) => {
+    // Instance references (can be anywhere in template editors)
+    if (e.target.matches('.instance-reference')) {
+      const instanceName = e.target.textContent.replace('$$', '').replace(/_/g, ' ');
       openInstanceFromReference(instanceName).catch(error => {
         console.error('Error opening instance from reference:', error);
       });
+      return;
     }
     
-    if (event.target.matches('.add-instance-btn') || event.target.closest('.add-instance-btn')) {
-      showInstanceEditor();
-    }
-    
-    if (event.target.matches('.back-to-operators-btn') || event.target.closest('.back-to-operators-btn')) {
-      showOperatorsListView();
-    }
-    
-    if (event.target.id === createDocumentElementId('save-embedded-tool-btn')) {
-      saveTool();
-    }
-    
-    if (event.target.id === createDocumentElementId('cancel-embedded-tool-btn')) {
-      showOperatorsListView();
-    }
-    
-    if (event.target.id === createDocumentElementId('save-embedded-instance-btn')) {
-      saveInstance();
-    }
-    
-    if (event.target.id === createDocumentElementId('cancel-embedded-instance-btn')) {
-      showOperatorsListView();
-    }
-    
-    if (event.target.matches('.instance-execute-btn')) {
-      const instanceId = event.target.getAttribute('data-instance-id');
+    // Instance action buttons
+    if (e.target.matches('.instance-execute-btn')) {
+      const instanceId = e.target.getAttribute('data-instance-id');
       executeInstanceById(instanceId);
+      return;
     }
     
-    if (event.target.matches('.instance-edit-btn')) {
-      const instanceId = event.target.getAttribute('data-instance-id');
+    if (e.target.matches('.instance-edit-btn')) {
+      const instanceId = e.target.getAttribute('data-instance-id');
       showInstanceEditor(instanceId);
+      return;
     }
     
-    if (event.target.matches('.instance-delete-btn')) {
-      const instanceId = event.target.getAttribute('data-instance-id');
+    if (e.target.matches('.instance-delete-btn')) {
+      const instanceId = e.target.getAttribute('data-instance-id');
       deleteInstance(instanceId);
+      return;
     }
 
-    if (event.target.matches('.add-parameter-btn')) {
+    if (e.target.matches('.add-parameter-btn')) {
       console.log(`[${windowId}] 🔧 Add parameter button clicked`);
       addParameterField();
+      return;
     }
     
-    if (event.target.matches('.add-output-btn')) {
+    if (e.target.matches('.add-output-btn')) {
       console.log(`[${windowId}] 🔧 Add output button clicked`);
       addOutputField();
+      return;
     }
-    
-    if (event.target.matches('.close-operators-btn') || event.target.closest('.close-operators-btn')) {
-      hideOperatorsDialog();
-    }
-    
-
-  });
+  };
+  
+  // Find and attach to specific elements
+  const operatorsBtn = container.querySelector('.operators-btn');
+  const addInstanceBtn = container.querySelector('.add-instance-btn');
+  const backToOperatorsBtn = container.querySelector('.back-to-operators-btn');
+  const saveToolBtn = container.querySelector(`#${createDocumentElementId('save-embedded-tool-btn')}`);
+  const cancelToolBtn = container.querySelector(`#${createDocumentElementId('cancel-embedded-tool-btn')}`);
+  const saveInstanceBtn = container.querySelector(`#${createDocumentElementId('save-embedded-instance-btn')}`);
+  const cancelInstanceBtn = container.querySelector(`#${createDocumentElementId('cancel-embedded-instance-btn')}`);
+  const closeOperatorsBtn = container.querySelector('.close-operators-btn');
+  const toolSelection = container.querySelector(`#${createDocumentElementId('embedded-instance-tool')}`);
+  
+  // Attach event listeners to found elements
+  if (operatorsBtn) {
+    operatorsBtn.addEventListener('click', operatorsEventData.operatorsBtnHandler);
+    operatorsEventData.currentElements.operatorsBtn = operatorsBtn;
+    console.log(`[${windowId}] ✅ Attached operators button listener`);
+  }
+  
+  if (addInstanceBtn) {
+    addInstanceBtn.addEventListener('click', operatorsEventData.addInstanceBtnHandler);
+    operatorsEventData.currentElements.addInstanceBtn = addInstanceBtn;
+    console.log(`[${windowId}] ✅ Attached add instance button listener`);
+  }
+  
+  if (backToOperatorsBtn) {
+    backToOperatorsBtn.addEventListener('click', operatorsEventData.backToOperatorsBtnHandler);
+    operatorsEventData.currentElements.backToOperatorsBtn = backToOperatorsBtn;
+    console.log(`[${windowId}] ✅ Attached back to operators button listener`);
+  }
+  
+  if (saveToolBtn) {
+    saveToolBtn.addEventListener('click', operatorsEventData.saveToolBtnHandler);
+    operatorsEventData.currentElements.saveToolBtn = saveToolBtn;
+    console.log(`[${windowId}] ✅ Attached save tool button listener`);
+  }
+  
+  if (cancelToolBtn) {
+    cancelToolBtn.addEventListener('click', operatorsEventData.cancelToolBtnHandler);
+    operatorsEventData.currentElements.cancelToolBtn = cancelToolBtn;
+    console.log(`[${windowId}] ✅ Attached cancel tool button listener`);
+  }
+  
+  if (saveInstanceBtn) {
+    saveInstanceBtn.addEventListener('click', operatorsEventData.saveInstanceBtnHandler);
+    operatorsEventData.currentElements.saveInstanceBtn = saveInstanceBtn;
+    console.log(`[${windowId}] ✅ Attached save instance button listener`);
+  }
+  
+  if (cancelInstanceBtn) {
+    cancelInstanceBtn.addEventListener('click', operatorsEventData.cancelInstanceBtnHandler);
+    operatorsEventData.currentElements.cancelInstanceBtn = cancelInstanceBtn;
+    console.log(`[${windowId}] ✅ Attached cancel instance button listener`);
+  }
+  
+  if (closeOperatorsBtn) {
+    closeOperatorsBtn.addEventListener('click', operatorsEventData.closeOperatorsBtnHandler);
+    operatorsEventData.currentElements.closeOperatorsBtn = closeOperatorsBtn;
+    console.log(`[${windowId}] ✅ Attached close operators button listener`);
+  }
+  
+  if (toolSelection) {
+    toolSelection.addEventListener('change', operatorsEventData.toolSelectionChangeHandler);
+    operatorsEventData.currentElements.toolSelection = toolSelection;
+    console.log(`[${windowId}] ✅ Attached tool selection change listener`);
+  }
+  
+  // Attach the panel click handler for dynamic elements
+  if (container) {
+    container.addEventListener('click', operatorsEventData.operatorsPanelClickHandler);
+    console.log(`[${windowId}] ✅ Attached operators panel delegation handler`);
+  }
   
   // Setup tools sidebar event listeners
   setupToolsSidebarEventListeners();
   
-  console.log(`[${windowId}] ✅ setupOperatorEventListeners completed - global setup`);
+  // Mark as initialized
+  operatorsEventData.operatorsInitialized = true;
+  
+  console.log(`[${windowId}] ✅ setupOperatorEventListeners completed - direct element attachment`);
+}
+
+// Cleanup function for operator event listeners
+function cleanupOperatorEventListeners() {
+  console.log(`[${windowId}] 🧹 Cleaning up operator event listeners...`);
+  
+  // Remove listeners from tracked elements
+  if (operatorsEventData.currentElements.operatorsBtn && operatorsEventData.operatorsBtnHandler) {
+    operatorsEventData.currentElements.operatorsBtn.removeEventListener('click', operatorsEventData.operatorsBtnHandler);
+    console.log(`[${windowId}] 🧹 Removed operators button listener`);
+  }
+  
+  if (operatorsEventData.currentElements.addInstanceBtn && operatorsEventData.addInstanceBtnHandler) {
+    operatorsEventData.currentElements.addInstanceBtn.removeEventListener('click', operatorsEventData.addInstanceBtnHandler);
+    console.log(`[${windowId}] 🧹 Removed add instance button listener`);
+  }
+  
+  if (operatorsEventData.currentElements.backToOperatorsBtn && operatorsEventData.backToOperatorsBtnHandler) {
+    operatorsEventData.currentElements.backToOperatorsBtn.removeEventListener('click', operatorsEventData.backToOperatorsBtnHandler);
+    console.log(`[${windowId}] 🧹 Removed back to operators button listener`);
+  }
+  
+  if (operatorsEventData.currentElements.saveToolBtn && operatorsEventData.saveToolBtnHandler) {
+    operatorsEventData.currentElements.saveToolBtn.removeEventListener('click', operatorsEventData.saveToolBtnHandler);
+    console.log(`[${windowId}] 🧹 Removed save tool button listener`);
+  }
+  
+  if (operatorsEventData.currentElements.cancelToolBtn && operatorsEventData.cancelToolBtnHandler) {
+    operatorsEventData.currentElements.cancelToolBtn.removeEventListener('click', operatorsEventData.cancelToolBtnHandler);
+    console.log(`[${windowId}] 🧹 Removed cancel tool button listener`);
+  }
+  
+  if (operatorsEventData.currentElements.saveInstanceBtn && operatorsEventData.saveInstanceBtnHandler) {
+    operatorsEventData.currentElements.saveInstanceBtn.removeEventListener('click', operatorsEventData.saveInstanceBtnHandler);
+    console.log(`[${windowId}] 🧹 Removed save instance button listener`);
+  }
+  
+  if (operatorsEventData.currentElements.cancelInstanceBtn && operatorsEventData.cancelInstanceBtnHandler) {
+    operatorsEventData.currentElements.cancelInstanceBtn.removeEventListener('click', operatorsEventData.cancelInstanceBtnHandler);
+    console.log(`[${windowId}] 🧹 Removed cancel instance button listener`);
+  }
+  
+  if (operatorsEventData.currentElements.closeOperatorsBtn && operatorsEventData.closeOperatorsBtnHandler) {
+    operatorsEventData.currentElements.closeOperatorsBtn.removeEventListener('click', operatorsEventData.closeOperatorsBtnHandler);
+    console.log(`[${windowId}] 🧹 Removed close operators button listener`);
+  }
+  
+  if (operatorsEventData.currentElements.toolSelection && operatorsEventData.toolSelectionChangeHandler) {
+    operatorsEventData.currentElements.toolSelection.removeEventListener('change', operatorsEventData.toolSelectionChangeHandler);
+    console.log(`[${windowId}] 🧹 Removed tool selection change listener`);
+  }
+  
+  // Remove panel delegation handler
+  if (operatorsEventData.currentOperatorsPanel && operatorsEventData.operatorsPanelClickHandler) {
+    operatorsEventData.currentOperatorsPanel.removeEventListener('click', operatorsEventData.operatorsPanelClickHandler);
+    console.log(`[${windowId}] 🧹 Removed operators panel delegation handler`);
+  }
+  
+  // Clear all references
+  operatorsEventData.currentOperatorsPanel = null;
+  operatorsEventData.operatorsBtnHandler = null;
+  operatorsEventData.addInstanceBtnHandler = null;
+  operatorsEventData.backToOperatorsBtnHandler = null;
+  operatorsEventData.saveToolBtnHandler = null;
+  operatorsEventData.cancelToolBtnHandler = null;
+  operatorsEventData.saveInstanceBtnHandler = null;
+  operatorsEventData.cancelInstanceBtnHandler = null;
+  operatorsEventData.closeOperatorsBtnHandler = null;
+  operatorsEventData.toolSelectionChangeHandler = null;
+  operatorsEventData.operatorsPanelClickHandler = null;
+  
+  // Clear element references
+  Object.keys(operatorsEventData.currentElements).forEach(key => {
+    operatorsEventData.currentElements[key] = null;
+  });
+  
+  operatorsEventData.operatorsInitialized = false;
+  
+  console.log(`[${windowId}] ✅ Operator event listeners cleanup completed`);
 }
 
 // Helper function to get the active document container
@@ -2283,9 +2478,8 @@ export {
 function resetOperatorsInitialization() {
   console.log('🔄 Operators initialization reset');
   
-  // NOTE: We intentionally do NOT remove global event listeners here.
-  // The event delegation pattern is designed to handle multiple documents
-  // with document-specific selectors, so global listeners can stay attached.
+  // Clean up all event listeners first
+  cleanupOperatorEventListeners();
   
   // Reset the global operator manager
   if (operatorManager) {
@@ -2626,15 +2820,6 @@ function createOperatorsSidebarToolElement(tool) {
 
 function setupToolsSidebarEventListeners() {
   console.log(`[${windowId}] 🔧 Setting up tools sidebar event listeners...`);
-  
-  // Check if already set up
-  if (window.toolsSidebarEventListenersSetup) {
-    console.log(`[${windowId}] ⚠️ Tools sidebar event listeners already set up - skipping`);
-    return;
-  }
-  
-  // Mark as set up
-  window.toolsSidebarEventListenersSetup = true;
   
   // Tools sidebar search
   document.addEventListener('input', (e) => {
