@@ -1,4 +1,3 @@
-
 // Get window-specific identifier
 function getWindowId() {
   const urlParams = new URLSearchParams(window.location.search);
@@ -6,60 +5,119 @@ function getWindowId() {
   return userId || 'default';
 }
 
+// Import element ID manager for document-specific access
+import { getDocumentElement } from './element-id-manager.js';
+
 // Create window-specific storage keys
 const windowId = getWindowId();
 const ELEMENTS_KEY = `elements_${windowId}`;
 const STATE_KEY = `state_${windowId}`;
 
-// Global DOM element references - will be initialized after DOM loads
-// Make this window-specific by storing in window object
-if (!window[ELEMENTS_KEY]) {
-  window[ELEMENTS_KEY] = {};
-}
-export let elements = window[ELEMENTS_KEY];
+// Document-aware element access functions
+export const getElements = {
+  // Mode buttons
+  get sourceModeBtn() { return getDocumentElement('source-mode-btn'); },
+  get templateModeBtn() { return getDocumentElement('template-mode-btn'); },
+  get previewModeBtn() { return getDocumentElement('preview-mode-btn'); },
+  
+  // Execute buttons
+  get executeSourceBtn() { return getDocumentElement('execute-source-btn'); },
+  get executeTemplateBtn() { return getDocumentElement('execute-template-btn'); },
+  
+  // Status elements
+  get executionStatus() { return getDocumentElement('execution-status'); },
+  get sourceExecutionStatus() { return getDocumentElement('source-execution-status'); },
+  get templateExecutionStatus() { return getDocumentElement('template-execution-status'); },
+  
+  // Chat elements
+  get sendButton() { return getDocumentElement('send-button'); },
+  get clearChatBtn() { return getDocumentElement('clear-chat-btn'); },
+  get messageInput() { return getDocumentElement('message-input'); },
+  get chatMessages() { return getDocumentElement('chat-messages'); },
+  
+  // Content editors
+  get previewContent() { return getDocumentElement('preview-content'); },
+  get sourceEditor() { return getDocumentElement('source-editor'); },
+  get templateEditor() { return getDocumentElement('template-editor'); },
+  
+  // Action buttons
+  get openFileBtn() { return getDocumentElement('open-file-btn'); },
+  get clearContextBtn() { return getDocumentElement('clear-context-btn'); },
+  get shareBtn() { return getDocumentElement('share-btn'); },
+  
+  // Comment elements
+  get floatingComment() { return getDocumentElement('floating-comment'); },
+  get commentText() { return getDocumentElement('comment-text'); },
+  get askLLMBtn() { return getDocumentElement('ask-llm-btn'); },
+  get addCommentBtn() { return getDocumentElement('add-comment-btn'); },
+  get cancelCommentBtn() { return getDocumentElement('cancel-comment-btn'); },
+  
+  // Panel elements
+  get previewPanel() { return getDocumentElement('preview-panel'); },
+  get sourcePanel() { return getDocumentElement('source-panel'); },
+  get templatePanel() { return getDocumentElement('template-panel'); },
+  
+  // Diff view elements
+  get diffView() { return getDocumentElement('diff-view'); },
+  get acceptSuggestionBtn() { return getDocumentElement('accept-suggestion-btn'); },
+  get rejectSuggestionBtn() { return getDocumentElement('reject-suggestion-btn'); },
+  get diffCurrentContent() { return getDocumentElement('diff-current-content'); },
+  get diffSuggestedContent() { return getDocumentElement('diff-suggested-content'); },
+  
+  // Variables elements
+  get variablesDisplay() { return getDocumentElement('variables-display'); },
+  get variablesList() { return getDocumentElement('variables-list'); },
+  
+  // Context files elements
+  get contextFilesSection() { return getDocumentElement('context-files-section'); },
+  get contextFilesList() { return getDocumentElement('context-files-list'); },
+  
+  // Title element
+  get contentTitle() { return getDocumentElement('content-title'); }
+};
+
+// Legacy elements object for modules that haven't been updated yet
+export const elements = {
+  get sourceModeBtn() { return getElements.sourceModeBtn; },
+  get templateModeBtn() { return getElements.templateModeBtn; },
+  get previewModeBtn() { return getElements.previewModeBtn; },
+  get executeSourceBtn() { return getElements.executeSourceBtn; },
+  get executeTemplateBtn() { return getElements.executeTemplateBtn; },
+  get executionStatus() { return getElements.executionStatus; },
+  get sourceExecutionStatus() { return getElements.sourceExecutionStatus; },
+  get templateExecutionStatus() { return getElements.templateExecutionStatus; },
+  get sendButton() { return getElements.sendButton; },
+  get clearChatBtn() { return getElements.clearChatBtn; },
+  get messageInput() { return getElements.messageInput; },
+  get chatMessages() { return getElements.chatMessages; },
+  get previewContent() { return getElements.previewContent; },
+  get sourceEditor() { return getElements.sourceEditor; },
+  get templateEditor() { return getElements.templateEditor; },
+  get openFileBtn() { return getElements.openFileBtn; },
+  get clearContextBtn() { return getElements.clearContextBtn; },
+  get shareBtn() { return getElements.shareBtn; },
+  get floatingComment() { return getElements.floatingComment; },
+  get commentText() { return getElements.commentText; },
+  get askLLMBtn() { return getElements.askLLMBtn; },
+  get addCommentBtn() { return getElements.addCommentBtn; },
+  get cancelCommentBtn() { return getElements.cancelCommentBtn; },
+  get previewPanel() { return getElements.previewPanel; },
+  get sourcePanel() { return getElements.sourcePanel; },
+  get templatePanel() { return getElements.templatePanel; },
+  get diffView() { return getElements.diffView; },
+  get variablesDisplay() { return getElements.variablesDisplay; },
+  get variablesList() { return getElements.variablesList; },
+  get acceptSuggestionBtn() { return getElements.acceptSuggestionBtn; },
+  get rejectSuggestionBtn() { return getElements.rejectSuggestionBtn; },
+  get diffCurrentContent() { return getElements.diffCurrentContent; },
+  get diffSuggestedContent() { return getElements.diffSuggestedContent; },
+  get contextFilesSection() { return getElements.contextFilesSection; },
+  get contextFilesList() { return getElements.contextFilesList; },
+  get contentTitle() { return getElements.contentTitle; }
+};
 
 // Function to initialize DOM elements after DOM is loaded
 export function initDOMElements() {
-  console.log(`Initializing DOM elements for window: ${windowId}`);
-  
-  // Initialize all DOM element references
-  elements.sourceModeBtn = document.querySelector('.source-mode-btn');
-  elements.templateModeBtn = document.querySelector('.template-mode-btn');
-  elements.previewModeBtn = document.querySelector('.preview-mode-btn');
-  elements.executeSourceBtn = document.querySelector('.execute-source-btn');
-  elements.executeTemplateBtn = document.querySelector('.execute-template-btn');
-  elements.executionStatus = document.querySelector('.execution-status');
-  elements.sourceExecutionStatus = document.querySelector('.source-execution-status');
-  elements.templateExecutionStatus = document.querySelector('.template-execution-status');
-  elements.sendButton = document.querySelector('.send-button');
-  elements.clearChatBtn = document.querySelector('.clear-chat-btn');
-  elements.messageInput = document.querySelector('.message-input');
-  elements.chatMessages = document.querySelector('.chat-messages');
-  elements.previewContent = document.querySelector('.preview-content');
-  elements.sourceEditor = document.querySelector('.source-editor');
-  elements.templateEditor = document.querySelector('.template-editor');
-  elements.openFileBtn = document.querySelector('.open-file-btn');
-  elements.clearContextBtn = document.querySelector('.clear-context-btn');
-  elements.shareBtn = document.querySelector('.share-btn');
-  elements.floatingComment = document.querySelector('.floating-comment');
-  elements.commentText = document.querySelector('.comment-text');
-  elements.askLLMBtn = document.querySelector('.ask-llm');
-  elements.addCommentBtn = document.querySelector('.add-comment');
-  elements.cancelCommentBtn = document.querySelector('.cancel-comment');
-  elements.previewPanel = document.querySelector('.preview-panel');
-  elements.sourcePanel = document.querySelector('.source-panel');
-  elements.templatePanel = document.querySelector('.template-panel');
-  elements.diffView = document.querySelector('.diff-view');
-  elements.variablesDisplay = document.querySelector('.variables-display');
-  elements.variablesList = document.querySelector('.variables-list');
-  elements.acceptSuggestionBtn = document.querySelector('.accept-suggestion');
-  elements.rejectSuggestionBtn = document.querySelector('.reject-suggestion');
-  elements.diffCurrentContent = document.querySelector('.diff-current-content');
-  elements.diffSuggestedContent = document.querySelector('.diff-suggested-content');
-  elements.contextFilesSection = document.querySelector('.context-files-section');
-  elements.contextFilesList = document.querySelector('.context-files-list');
-  elements.contentTitle = document.querySelector('#content-title');
-  
   // Store back to window object
   window[ELEMENTS_KEY] = elements;
   

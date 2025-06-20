@@ -4,6 +4,7 @@ import { addMessageToUI } from './chat.js';
 import { switchToPreview, switchToTemplate } from './modes.js';
 import { refreshHighlightEventListeners } from './comments.js';
 import { addToDataLake } from './data-lake.js';
+import { createDocumentDialog, createDocumentElementId, getDocumentElement } from './element-id-manager.js';
 
 const { ipcRenderer } = require('electron');
 
@@ -309,15 +310,20 @@ async function loadContextFile() {
 }
 
 function showDisplayChoiceDialog(file, backendSaved) {
-  // Create a modal dialog
-  const dialog = document.createElement('div');
-  dialog.className = 'display-choice-dialog';
+  const currentDocumentId = window.documentManager?.activeDocumentId || null;
   
+  if (!currentDocumentId) {
+    console.warn('No active document found for choice dialog');
+    // Fallback to a simple alert or create without document scoping
+    alert(`Context file loaded: ${file.name}. Use chat to interact with the content.`);
+    return;
+  }
+
   const backendStatus = backendSaved 
     ? 'Context saved successfully to backend.' 
     : 'Context available locally (backend not connected).';
     
-  dialog.innerHTML = `
+  const dialogHtml = `
     <div class="dialog-overlay">
       <div class="dialog-content">
         <h3>Context File Loaded</h3>
@@ -332,17 +338,43 @@ function showDisplayChoiceDialog(file, backendSaved) {
     </div>
   `;
   
+  // Create dialog with explicit document ID and register it
+  const dialog = createDocumentDialog('display-choice-dialog', dialogHtml, 'file-operations', currentDocumentId);
+  dialog.className = 'display-choice-dialog';
+  
   document.body.appendChild(dialog);
   
-  // Add event listeners with unique IDs to avoid conflicts
-  const displayBtn = document.getElementById('display-context-btn');
-  const dataLakeBtn = document.getElementById('add-to-data-lake-btn');
-  const hideBtn = document.getElementById('keep-hidden-btn');
+  // Helper function to remove dialog and unregister elements
+  const removeDialog = () => {
+    // Unregister all elements created for this dialog
+    const displayBtnId = createDocumentElementId('display-context-btn', currentDocumentId);
+    const dataLakeBtnId = createDocumentElementId('add-to-data-lake-btn', currentDocumentId);
+    const hideBtnId = createDocumentElementId('keep-hidden-btn', currentDocumentId);
+    const dialogId = createDocumentElementId('display-choice-dialog', currentDocumentId);
+    
+    // Unregister elements
+    if (window.documentManager) {
+      window.documentManager.constructor.unregisterDynamicElement(currentDocumentId, displayBtnId);
+      window.documentManager.constructor.unregisterDynamicElement(currentDocumentId, dataLakeBtnId);
+      window.documentManager.constructor.unregisterDynamicElement(currentDocumentId, hideBtnId);
+      window.documentManager.constructor.unregisterDynamicElement(currentDocumentId, dialogId);
+    }
+    
+    // Remove from DOM
+    if (dialog.parentNode) {
+      document.body.removeChild(dialog);
+    }
+  };
+  
+  // Get elements using document-specific IDs
+  const displayBtn = getDocumentElement('display-context-btn', currentDocumentId);
+  const dataLakeBtn = getDocumentElement('add-to-data-lake-btn', currentDocumentId);
+  const hideBtn = getDocumentElement('keep-hidden-btn', currentDocumentId);
   
   if (displayBtn) {
     displayBtn.addEventListener('click', () => {
       displayContextInPreview(file);
-      document.body.removeChild(dialog);
+      removeDialog();
     });
   }
   
@@ -359,14 +391,14 @@ function showDisplayChoiceDialog(file, backendSaved) {
       const referenceName = file.name.replace(/\.[^/.]+$/, "").replace(/[^a-zA-Z0-9]/g, '_').replace(/_{2,}/g, '_').replace(/^_|_$/g, '').toLowerCase();
       
       addMessageToUI('system', `${file.name} added to Data Lake. Reference it with $${referenceName}`);
-      document.body.removeChild(dialog);
+      removeDialog();
     });
   }
   
   if (hideBtn) {
     hideBtn.addEventListener('click', () => {
       addMessageToUI('system', 'Context file loaded but not displayed. Use chat to reference the context.');
-      document.body.removeChild(dialog);
+      removeDialog();
     });
   }
   
@@ -375,7 +407,7 @@ function showDisplayChoiceDialog(file, backendSaved) {
   if (overlay) {
     overlay.addEventListener('click', (e) => {
       if (e.target === overlay) {
-        document.body.removeChild(dialog);
+        removeDialog();
       }
     });
   }

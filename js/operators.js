@@ -2,6 +2,7 @@
 import { elements, state, updateState, windowId } from './state.js';
 import { addMessageToUI } from './chat.js';
 import { getCurrentUser } from './auth.js';
+import { createDocumentElementId } from './element-id-manager.js';
 
 // Create window-specific storage
 const CODE_INSTANCES_KEY = `operators_${windowId}`;
@@ -32,6 +33,7 @@ class Operator {
     this.error = options.error || null;
     this.createdAt = options.createdAt || new Date().toISOString();
     this.updatedAt = options.updatedAt || new Date().toISOString();
+    // Always use current active document ID for new operators, or specified documentId for loaded ones
     this.documentId = options.documentId || (window.documentManager?.activeDocumentId || 'default');
     this.createdBy = options.createdBy || getCurrentUser()?.id || 'unknown';
   }
@@ -73,11 +75,16 @@ class OperatorManager {
   }
 
   createInstance(options) {
+    // Ensure new instances are created for the active document
+    if (!options.documentId) {
+      options.documentId = window.documentManager?.activeDocumentId || 'default';
+    }
+    
     const instance = new Operator(options);
     this.instances.set(instance.id, instance);
     this.saveInstances();
     
-    console.log(`[${windowId}] Created operator: ${instance.name}`);
+    console.log(`[${windowId}] Created operator: ${instance.name} for document: ${instance.documentId}`);
     addMessageToUI('system', `Created operator: ${instance.name}`);
     
     return instance;
@@ -115,8 +122,10 @@ class OperatorManager {
   }
 
   getInstanceByName(name) {
+    // Only search within the current document's operators
+    const currentDocumentId = window.documentManager?.activeDocumentId || 'default';
     for (const instance of this.instances.values()) {
-      if (instance.name === name) {
+      if (instance.name === name && instance.documentId === currentDocumentId) {
         return instance;
       }
     }
@@ -129,6 +138,12 @@ class OperatorManager {
 
   getInstancesForDocument(documentId) {
     return this.getAllInstances().filter(instance => instance.documentId === documentId);
+  }
+
+  // Get instances for the current active document
+  getCurrentDocumentInstances() {
+    const currentDocumentId = window.documentManager?.activeDocumentId || 'default';
+    return this.getInstancesForDocument(currentDocumentId);
   }
 
   async executeInstance(instanceId) {
@@ -578,11 +593,22 @@ class OperatorManager {
 
   saveInstances() {
     try {
+      // Get current document ID for storage key
+      const currentDocumentId = window.documentManager?.activeDocumentId || 'default';
       const instancesData = {};
+      
+      // Only save instances for the current document
       for (const [id, instance] of this.instances) {
-        instancesData[id] = instance.toJSON();
+        if (instance.documentId === currentDocumentId) {
+          instancesData[id] = instance.toJSON();
+        }
       }
-      localStorage.setItem(`code_instances_${windowId}`, JSON.stringify(instancesData));
+      
+      // Use document-specific storage key
+      const storageKey = `code_instances_${windowId}_${currentDocumentId}`;
+      localStorage.setItem(storageKey, JSON.stringify(instancesData));
+      
+      console.log(`[${windowId}] Saved ${Object.keys(instancesData).length} operators for document: ${currentDocumentId}`);
     } catch (error) {
       console.error('Error saving operators:', error);
     }
@@ -590,23 +616,222 @@ class OperatorManager {
 
   loadInstances() {
     try {
-      const saved = localStorage.getItem(`code_instances_${windowId}`);
+      // Get current document ID for storage key
+      const currentDocumentId = window.documentManager?.activeDocumentId || 'default';
+      const storageKey = `code_instances_${windowId}_${currentDocumentId}`;
+      const saved = localStorage.getItem(storageKey);
+      
       if (saved) {
         const instancesData = JSON.parse(saved);
+        
+        // Clear existing instances for this document only
+        this.clearInstancesForDocument(currentDocumentId);
+        
+        // Load instances for this document
         for (const [id, data] of Object.entries(instancesData)) {
+          // Ensure the instance has the correct documentId
+          data.documentId = currentDocumentId;
           const instance = Operator.fromJSON(data);
           this.instances.set(id, instance);
         }
-        console.log(`[${windowId}] Loaded ${this.instances.size} operators`);
+        
+        console.log(`[${windowId}] Loaded ${Object.keys(instancesData).length} operators for document: ${currentDocumentId}`);
+      } else {
+        // Clear instances for this document if no saved data
+        this.clearInstancesForDocument(currentDocumentId);
+        console.log(`[${windowId}] No saved operators found for document: ${currentDocumentId}`);
       }
     } catch (error) {
       console.error('Error loading operators:', error);
     }
   }
+
+  // Clear instances for a specific document
+  clearInstancesForDocument(documentId) {
+    const instancesToRemove = [];
+    for (const [id, instance] of this.instances) {
+      if (instance.documentId === documentId) {
+        instancesToRemove.push(id);
+      }
+    }
+    
+    instancesToRemove.forEach(id => {
+      this.instances.delete(id);
+    });
+    
+    console.log(`[${windowId}] Cleared ${instancesToRemove.length} operators for document: ${documentId}`);
+  }
+
+  // Method to refresh operators when switching documents
+  async refreshForDocument(documentId) {
+    console.log(`[${windowId}] Refreshing operators for document: ${documentId}`);
+    
+    // Load instances for the new document
+    this.loadInstances();
+    
+    // Validate variable assignments for loaded operators
+    await this.validateVariableAssignments();
+  }
+
+  // Validate that operator output variable assignments still exist in variables manager
+  async validateVariableAssignments() {
+    console.log(`[${windowId}] Validating variable assignments for operators...`);
+    
+    try {
+      // Get current valid variables from variables manager and backend
+      const validVariables = await this.getValidVariables();
+      const validVariableNames = new Set(Object.keys(validVariables));
+      
+      console.log(`[${windowId}] Found ${validVariableNames.size} valid variables:`, Array.from(validVariableNames));
+      
+      let invalidAssignmentsFound = 0;
+      
+      // Check all operators in current document
+      const currentInstances = this.getCurrentDocumentInstances();
+      for (const instance of currentInstances) {
+        if (instance.outputs && Array.isArray(instance.outputs)) {
+          let hasInvalidAssignments = false;
+          
+          for (const output of instance.outputs) {
+            if (output.variable && !validVariableNames.has(output.variable)) {
+              console.warn(`[${windowId}] Operator "${instance.name}" has invalid variable assignment: ${output.variable}`);
+              hasInvalidAssignments = true;
+              invalidAssignmentsFound++;
+            }
+          }
+          
+          // Mark instance with validation issues (for UI display)
+          instance.hasInvalidVariableAssignments = hasInvalidAssignments;
+        }
+      }
+      
+      if (invalidAssignmentsFound > 0) {
+        console.warn(`[${windowId}] Found ${invalidAssignmentsFound} invalid variable assignments`);
+        addMessageToUI('system', `⚠️ ${invalidAssignmentsFound} operator output assignments point to non-existent variables`);
+        
+        // Save the updated instances with validation flags
+        this.saveInstances();
+      } else {
+        console.log(`[${windowId}] All variable assignments are valid`);
+      }
+      
+    } catch (error) {
+      console.error(`[${windowId}] Error validating variable assignments:`, error);
+    }
+  }
+
+  // Get valid variables from variables manager only (ground truth)
+  async getValidVariables() {
+    const validVariables = {};
+    
+    try {
+      let variables = null;
+      
+      // Try variables manager first
+      if (window.variablesManager) {
+        console.log(`[${windowId}] Loading fresh variables from backend via variables manager...`);
+        await window.variablesManager.loadVariables();
+        
+        if (window.variablesManager.variables && window.variablesManager.variables.size > 0) {
+          variables = window.variablesManager.variables;
+          console.log(`[${windowId}] Found ${variables.size} variables from variables manager`);
+        } else {
+          console.log(`[${windowId}] No variables found in variables manager after loading`);
+        }
+      } else {
+        console.log(`[${windowId}] Variables manager not available, falling back to direct API call`);
+      }
+      
+      // Fallback: Call API directly if variables manager is null or has no variables
+      if (!variables || variables.size === 0) {
+        console.log(`[${windowId}] Calling /api/variables directly as fallback...`);
+        
+        const documentId = window.documentManager?.activeDocumentId;
+        if (!documentId) {
+          console.warn(`[${windowId}] No active document ID available for API call`);
+          return validVariables;
+        }
+        
+        const response = await fetch(`http://127.0.0.1:5000/api/variables?documentId=${encodeURIComponent(documentId)}`);
+        
+        if (!response.ok) {
+          throw new Error(`API responded with status: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        if (result.success && result.variables) {
+          const variablesData = result.variables || {};
+          console.log(`[${windowId}] API returned ${Object.keys(variablesData).length} variables`);
+          
+          // Convert API response to object for consistent processing
+          Object.entries(variablesData).forEach(([name, variable]) => {
+            validVariables[name] = variable;
+          });
+        } else {
+          console.log(`[${windowId}] API returned no variables or failed`);
+        }
+      } else {
+        // Use variables from variables manager
+        variables.forEach((variable, name) => {
+          validVariables[name] = variable;
+        });
+        console.log(`[${windowId}] Loaded ${variables.size} variables from variables manager`);
+      }
+      
+    } catch (error) {
+      console.error(`[${windowId}] Error loading valid variables:`, error);
+    }
+    
+    return validVariables;
+  }
 }
 
 // Global instance manager
 let operatorManager = null;
+
+// Event handlers tracking for cleanup (similar to file-operations.js)
+const operatorsEventData = {
+  operatorsInitialized: false,
+  // Click handlers
+  operatorsBtnHandler: null,
+  instanceReferenceHandler: null,
+  addInstanceBtnHandler: null,
+  backToOperatorsBtnHandler: null,
+  saveToolBtnHandler: null,
+  cancelToolBtnHandler: null,
+  saveInstanceBtnHandler: null,
+  cancelInstanceBtnHandler: null,
+  closeOperatorsBtnHandler: null,
+  // Dynamic handlers for instances
+  instanceExecuteHandler: null,
+  instanceEditHandler: null,
+  instanceDeleteHandler: null,
+  addParameterBtnHandler: null,
+  addOutputBtnHandler: null,
+  // Change handlers
+  toolSelectionChangeHandler: null,
+  // Tools sidebar handlers
+  toolsSearchHandler: null,
+  addToolBtnSidebarHandler: null,
+  toolsSidebarClickHandler: null,
+  // Current elements with attached listeners
+  currentOperatorsPanel: null,
+  currentElements: {
+    operatorsBtn: null,
+    addInstanceBtn: null,
+    backToOperatorsBtn: null,
+    saveToolBtn: null,
+    cancelToolBtn: null,
+    saveInstanceBtn: null,
+    cancelInstanceBtn: null,
+    closeOperatorsBtn: null,
+    toolSelection: null,
+    // Tools sidebar elements
+    toolsSearch: null,
+    addToolBtnSidebar: null,
+    toolsContainer: null
+  }
+};
 
 // Initialize operators
 export function initOperators() {
@@ -616,12 +841,58 @@ export function initOperators() {
     operatorManager = new OperatorManager();
   }
   
+  // Initialize tools manager (moved from tools.js)
+  initToolsManager();
+  
+  // Set up event listeners for active document
   setupOperatorEventListeners();
   
   // Set up auto-styling for template editors
   setupAutoStyling();
   
+  // Set up document switching listener to refresh operators
+  setupDocumentSwitchingListener();
+  
   console.log(`[${windowId}] operators initialized`);
+}
+
+// Setup listener for document switching to refresh operators
+function setupDocumentSwitchingListener() {
+  // Listen for document tab changes
+  document.addEventListener('click', async (event) => {
+    // Check if a document tab was clicked
+    if (event.target.matches('.document-tab') || event.target.closest('.document-tab')) {
+      // Wait a bit for the document manager to update activeDocumentId
+      setTimeout(async () => {
+        if (operatorManager && window.documentManager?.activeDocumentId) {
+          const newDocumentId = window.documentManager.activeDocumentId;
+          console.log(`[${windowId}] Document switched to: ${newDocumentId}, refreshing operators`);
+          await operatorManager.refreshForDocument(newDocumentId);
+          
+          // If operators panel is currently open, refresh its content
+          const container = getActiveDocumentContainer();
+          if (container && container.querySelector('.operators-panel.active')) {
+            refreshInstancesList();
+          }
+        }
+      }, 100);
+    }
+  });
+  
+  // Also listen for programmatic document changes
+  document.addEventListener('documentChanged', async (event) => {
+    if (operatorManager && event.detail?.documentId) {
+      const newDocumentId = event.detail.documentId;
+      console.log(`[${windowId}] Document changed event to: ${newDocumentId}, refreshing operators`);
+      await operatorManager.refreshForDocument(newDocumentId);
+      
+      // If operators panel is currently open, refresh its content
+      const container = getActiveDocumentContainer();
+      if (container && container.querySelector('.operators-panel.active')) {
+        refreshInstancesList();
+      }
+    }
+  });
 }
 
 // Setup automatic styling for instance references
@@ -650,93 +921,271 @@ function setupAutoStyling() {
   });
 }
 
-// Setup event listeners
+// Setup event listeners using direct element attachment (similar to file-operations.js)
 function setupOperatorEventListeners() {
-  // Listen for tool selection changes to auto-populate fields
-  document.addEventListener('change', (event) => {
-    if (event.target.id === 'embedded-instance-tool') {
-      const toolId = event.target.value;
-      if (toolId) {
-        autoPopulateOperatorFields(toolId);
-      }
+  console.log(`[${windowId}] 🔧 setupOperatorEventListeners() called - using direct element attachment`);
+  
+  // Get the active document container
+  const container = getActiveDocumentContainer();
+  if (!container) {
+    console.error(`[${windowId}] No active document container found for operator event listeners`);
+    return;
+  }
+  
+  // Clean up existing event listeners first
+  cleanupOperatorEventListeners();
+  
+  // Store current container reference
+  operatorsEventData.currentOperatorsPanel = container;
+  
+  // Create event handlers
+  operatorsEventData.operatorsBtnHandler = () => {
+    console.log(`[${windowId}] operators button clicked`);
+    showOperatorsDialog();
+  };
+  
+  operatorsEventData.addInstanceBtnHandler = () => {
+    showInstanceEditor();
+  };
+  
+  operatorsEventData.backToOperatorsBtnHandler = () => {
+    showOperatorsListView();
+  };
+  
+  operatorsEventData.saveToolBtnHandler = () => {
+    saveTool();
+  };
+  
+  operatorsEventData.cancelToolBtnHandler = () => {
+    showOperatorsListView();
+  };
+  
+  operatorsEventData.saveInstanceBtnHandler = () => {
+    saveInstance();
+  };
+  
+  operatorsEventData.cancelInstanceBtnHandler = () => {
+    showOperatorsListView();
+  };
+  
+  operatorsEventData.closeOperatorsBtnHandler = () => {
+    hideOperatorsDialog();
+  };
+  
+  operatorsEventData.toolSelectionChangeHandler = (e) => {
+    const toolId = e.target.value;
+    if (toolId) {
+      autoPopulateOperatorFields(toolId);
     }
-  });
-
-  // Listen for operator buttons
-  document.addEventListener('click', (event) => {
-    if (event.target.matches('.operators-btn') || event.target.closest('.operators-btn')) {
-      console.log(`[${windowId}] operators button clicked`);
-      showOperatorsDialog();
-    }
-    
-    // Listen for clicks on instance references
-    if (event.target.matches('.instance-reference')) {
-      const instanceName = event.target.textContent.replace('$$', '').replace(/_/g, ' ');
+  };
+  
+  // Dynamic click handler for the operators panel (using event delegation within the panel)
+  operatorsEventData.operatorsPanelClickHandler = (e) => {
+    // Instance references (can be anywhere in template editors)
+    if (e.target.matches('.instance-reference')) {
+      const instanceName = e.target.textContent.replace('$$', '').replace(/_/g, ' ');
       openInstanceFromReference(instanceName).catch(error => {
         console.error('Error opening instance from reference:', error);
       });
+      return;
     }
     
-    if (event.target.matches('.add-instance-btn') || event.target.closest('.add-instance-btn')) {
-      showInstanceEditor();
-    }
-    
-    if (event.target.matches('.back-to-operators-btn') || event.target.closest('.back-to-operators-btn')) {
-      showOperatorsListView();
-    }
-    
-    if (event.target.id === 'save-embedded-tool-btn') {
-      saveTool();
-    }
-    
-    if (event.target.id === 'cancel-embedded-tool-btn') {
-      showOperatorsListView();
-    }
-    
-    if (event.target.id === 'save-embedded-instance-btn') {
-      saveInstance();
-    }
-    
-    if (event.target.id === 'cancel-embedded-instance-btn') {
-      showOperatorsListView();
-    }
-    
-    if (event.target.matches('.instance-execute-btn')) {
-      const instanceId = event.target.getAttribute('data-instance-id');
+    // Instance action buttons
+    if (e.target.matches('.instance-execute-btn')) {
+      const instanceId = e.target.getAttribute('data-instance-id');
       executeInstanceById(instanceId);
+      return;
     }
     
-    if (event.target.matches('.instance-edit-btn')) {
-      const instanceId = event.target.getAttribute('data-instance-id');
+    if (e.target.matches('.instance-edit-btn')) {
+      const instanceId = e.target.getAttribute('data-instance-id');
       showInstanceEditor(instanceId);
+      return;
     }
     
-    if (event.target.matches('.instance-delete-btn')) {
-      const instanceId = event.target.getAttribute('data-instance-id');
+    if (e.target.matches('.instance-delete-btn')) {
+      const instanceId = e.target.getAttribute('data-instance-id');
       deleteInstance(instanceId);
+      return;
     }
 
-    if (event.target.matches('.add-parameter-btn')) {
+    if (e.target.matches('.add-parameter-btn')) {
+      console.log(`[${windowId}] 🔧 Add parameter button clicked`);
       addParameterField();
+      return;
     }
     
-    if (event.target.matches('.add-output-btn')) {
+    if (e.target.matches('.add-output-btn')) {
+      console.log(`[${windowId}] 🔧 Add output button clicked`);
       addOutputField();
+      return;
     }
-    
-    if (event.target.matches('.add-tool-btn-sidebar')) {
-      showToolEditor();
-    }
-    
-    if (event.target.matches('.close-operators-btn') || event.target.closest('.close-operators-btn')) {
-      hideOperatorsDialog();
-    }
-    
-
-  });
+  };
+  
+  // Find and attach to specific elements
+  const operatorsBtn = container.querySelector('.operators-btn');
+  const addInstanceBtn = container.querySelector('.add-instance-btn');
+  const backToOperatorsBtn = container.querySelector('.back-to-operators-btn');
+  const saveToolBtn = container.querySelector(`#${createDocumentElementId('save-embedded-tool-btn')}`);
+  const cancelToolBtn = container.querySelector(`#${createDocumentElementId('cancel-embedded-tool-btn')}`);
+  const saveInstanceBtn = container.querySelector(`#${createDocumentElementId('save-embedded-instance-btn')}`);
+  const cancelInstanceBtn = container.querySelector(`#${createDocumentElementId('cancel-embedded-instance-btn')}`);
+  const closeOperatorsBtn = container.querySelector('.close-operators-btn');
+  const toolSelection = container.querySelector(`#${createDocumentElementId('embedded-instance-tool')}`);
+  
+  // Attach event listeners to found elements
+  if (operatorsBtn) {
+    operatorsBtn.addEventListener('click', operatorsEventData.operatorsBtnHandler);
+    operatorsEventData.currentElements.operatorsBtn = operatorsBtn;
+    console.log(`[${windowId}] ✅ Attached operators button listener`);
+  }
+  
+  if (addInstanceBtn) {
+    addInstanceBtn.addEventListener('click', operatorsEventData.addInstanceBtnHandler);
+    operatorsEventData.currentElements.addInstanceBtn = addInstanceBtn;
+    console.log(`[${windowId}] ✅ Attached add instance button listener`);
+  }
+  
+  if (backToOperatorsBtn) {
+    backToOperatorsBtn.addEventListener('click', operatorsEventData.backToOperatorsBtnHandler);
+    operatorsEventData.currentElements.backToOperatorsBtn = backToOperatorsBtn;
+    console.log(`[${windowId}] ✅ Attached back to operators button listener`);
+  }
+  
+  if (saveToolBtn) {
+    saveToolBtn.addEventListener('click', operatorsEventData.saveToolBtnHandler);
+    operatorsEventData.currentElements.saveToolBtn = saveToolBtn;
+    console.log(`[${windowId}] ✅ Attached save tool button listener`);
+  }
+  
+  if (cancelToolBtn) {
+    cancelToolBtn.addEventListener('click', operatorsEventData.cancelToolBtnHandler);
+    operatorsEventData.currentElements.cancelToolBtn = cancelToolBtn;
+    console.log(`[${windowId}] ✅ Attached cancel tool button listener`);
+  }
+  
+  if (saveInstanceBtn) {
+    saveInstanceBtn.addEventListener('click', operatorsEventData.saveInstanceBtnHandler);
+    operatorsEventData.currentElements.saveInstanceBtn = saveInstanceBtn;
+    console.log(`[${windowId}] ✅ Attached save instance button listener`);
+  }
+  
+  if (cancelInstanceBtn) {
+    cancelInstanceBtn.addEventListener('click', operatorsEventData.cancelInstanceBtnHandler);
+    operatorsEventData.currentElements.cancelInstanceBtn = cancelInstanceBtn;
+    console.log(`[${windowId}] ✅ Attached cancel instance button listener`);
+  }
+  
+  if (closeOperatorsBtn) {
+    closeOperatorsBtn.addEventListener('click', operatorsEventData.closeOperatorsBtnHandler);
+    operatorsEventData.currentElements.closeOperatorsBtn = closeOperatorsBtn;
+    console.log(`[${windowId}] ✅ Attached close operators button listener`);
+  }
+  
+  if (toolSelection) {
+    toolSelection.addEventListener('change', operatorsEventData.toolSelectionChangeHandler);
+    operatorsEventData.currentElements.toolSelection = toolSelection;
+    console.log(`[${windowId}] ✅ Attached tool selection change listener`);
+  }
+  
+  // Attach the panel click handler for dynamic elements
+  if (container) {
+    container.addEventListener('click', operatorsEventData.operatorsPanelClickHandler);
+    console.log(`[${windowId}] ✅ Attached operators panel delegation handler`);
+  }
   
   // Setup tools sidebar event listeners
   setupToolsSidebarEventListeners();
+  
+  // Mark as initialized
+  operatorsEventData.operatorsInitialized = true;
+  
+  console.log(`[${windowId}] ✅ setupOperatorEventListeners completed - direct element attachment`);
+}
+
+// Cleanup function for operator event listeners
+function cleanupOperatorEventListeners() {
+  console.log(`[${windowId}] 🧹 Cleaning up operator event listeners...`);
+  
+  // Remove listeners from tracked elements
+  if (operatorsEventData.currentElements.operatorsBtn && operatorsEventData.operatorsBtnHandler) {
+    operatorsEventData.currentElements.operatorsBtn.removeEventListener('click', operatorsEventData.operatorsBtnHandler);
+    console.log(`[${windowId}] 🧹 Removed operators button listener`);
+  }
+  
+  if (operatorsEventData.currentElements.addInstanceBtn && operatorsEventData.addInstanceBtnHandler) {
+    operatorsEventData.currentElements.addInstanceBtn.removeEventListener('click', operatorsEventData.addInstanceBtnHandler);
+    console.log(`[${windowId}] 🧹 Removed add instance button listener`);
+  }
+  
+  if (operatorsEventData.currentElements.backToOperatorsBtn && operatorsEventData.backToOperatorsBtnHandler) {
+    operatorsEventData.currentElements.backToOperatorsBtn.removeEventListener('click', operatorsEventData.backToOperatorsBtnHandler);
+    console.log(`[${windowId}] 🧹 Removed back to operators button listener`);
+  }
+  
+  if (operatorsEventData.currentElements.saveToolBtn && operatorsEventData.saveToolBtnHandler) {
+    operatorsEventData.currentElements.saveToolBtn.removeEventListener('click', operatorsEventData.saveToolBtnHandler);
+    console.log(`[${windowId}] 🧹 Removed save tool button listener`);
+  }
+  
+  if (operatorsEventData.currentElements.cancelToolBtn && operatorsEventData.cancelToolBtnHandler) {
+    operatorsEventData.currentElements.cancelToolBtn.removeEventListener('click', operatorsEventData.cancelToolBtnHandler);
+    console.log(`[${windowId}] 🧹 Removed cancel tool button listener`);
+  }
+  
+  if (operatorsEventData.currentElements.saveInstanceBtn && operatorsEventData.saveInstanceBtnHandler) {
+    operatorsEventData.currentElements.saveInstanceBtn.removeEventListener('click', operatorsEventData.saveInstanceBtnHandler);
+    console.log(`[${windowId}] 🧹 Removed save instance button listener`);
+  }
+  
+  if (operatorsEventData.currentElements.cancelInstanceBtn && operatorsEventData.cancelInstanceBtnHandler) {
+    operatorsEventData.currentElements.cancelInstanceBtn.removeEventListener('click', operatorsEventData.cancelInstanceBtnHandler);
+    console.log(`[${windowId}] 🧹 Removed cancel instance button listener`);
+  }
+  
+  if (operatorsEventData.currentElements.closeOperatorsBtn && operatorsEventData.closeOperatorsBtnHandler) {
+    operatorsEventData.currentElements.closeOperatorsBtn.removeEventListener('click', operatorsEventData.closeOperatorsBtnHandler);
+    console.log(`[${windowId}] 🧹 Removed close operators button listener`);
+  }
+  
+  if (operatorsEventData.currentElements.toolSelection && operatorsEventData.toolSelectionChangeHandler) {
+    operatorsEventData.currentElements.toolSelection.removeEventListener('change', operatorsEventData.toolSelectionChangeHandler);
+    console.log(`[${windowId}] 🧹 Removed tool selection change listener`);
+  }
+  
+  // Remove panel delegation handler
+  if (operatorsEventData.currentOperatorsPanel && operatorsEventData.operatorsPanelClickHandler) {
+    operatorsEventData.currentOperatorsPanel.removeEventListener('click', operatorsEventData.operatorsPanelClickHandler);
+    console.log(`[${windowId}] 🧹 Removed operators panel delegation handler`);
+  }
+  
+  // Clean up tools sidebar listeners
+  cleanupToolsSidebarEventListeners();
+  
+  // Clear all references
+  operatorsEventData.currentOperatorsPanel = null;
+  operatorsEventData.operatorsBtnHandler = null;
+  operatorsEventData.addInstanceBtnHandler = null;
+  operatorsEventData.backToOperatorsBtnHandler = null;
+  operatorsEventData.saveToolBtnHandler = null;
+  operatorsEventData.cancelToolBtnHandler = null;
+  operatorsEventData.saveInstanceBtnHandler = null;
+  operatorsEventData.cancelInstanceBtnHandler = null;
+  operatorsEventData.closeOperatorsBtnHandler = null;
+  operatorsEventData.toolSelectionChangeHandler = null;
+  operatorsEventData.operatorsPanelClickHandler = null;
+  operatorsEventData.toolsSearchHandler = null;
+  operatorsEventData.addToolBtnSidebarHandler = null;
+  operatorsEventData.toolsSidebarClickHandler = null;
+  
+  // Clear element references
+  Object.keys(operatorsEventData.currentElements).forEach(key => {
+    operatorsEventData.currentElements[key] = null;
+  });
+  
+  operatorsEventData.operatorsInitialized = false;
+  
+  console.log(`[${windowId}] ✅ Operator event listeners cleanup completed`);
 }
 
 // Helper function to get the active document container
@@ -765,7 +1214,7 @@ function getActiveDocumentContainer() {
 }
 
 // UI Functions
-function showOperatorsDialog() {
+async function showOperatorsDialog() {
   // Get the active document container
   const container = getActiveDocumentContainer();
   if (!container) {
@@ -787,13 +1236,17 @@ function showOperatorsDialog() {
     operatorsPanel.classList.add('active');
     
     // Update content title
-    const contentTitle = container.querySelector('#content-title, .content-title');
+    const contentTitle = container.querySelector(`#${createDocumentElementId('content-title')}, .content-title`);
     if (contentTitle) {
       contentTitle.textContent = 'Operators Management';
     }
     
     // Ensure we're showing the list view, not editor views
     showOperatorsListView();
+    
+    // Refresh operators for current document and validate variables
+    const currentDocumentId = window.documentManager?.activeDocumentId || 'default';
+    await operatorManager.refreshForDocument(currentDocumentId);
     
     // Refresh the content
     refreshInstancesList();
@@ -814,7 +1267,7 @@ function hideOperatorsDialog() {
   // Hide the operators panel and show the template panel
   const operatorsPanel = container.querySelector('.operators-panel');
   const templatePanel = container.querySelector('.template-panel');
-  const contentTitle = container.querySelector('#content-title, .content-title');
+  const contentTitle = container.querySelector(`#${createDocumentElementId('content-title')}, .content-title`);
   
   if (operatorsPanel) {
     operatorsPanel.style.display = 'none';
@@ -865,6 +1318,8 @@ function showOperatorsListView() {
 }
 
 function showToolEditor(toolId = null) {
+  console.log(`[${windowId}] 🔧 showToolEditor() EXECUTED - Call #${++window.showToolEditorCallCount || (window.showToolEditorCallCount = 1)}`);
+  
   // Get the active document container
   const container = getActiveDocumentContainer();
   if (!container) {
@@ -876,7 +1331,7 @@ function showToolEditor(toolId = null) {
   const toolEditorView = container.querySelector('.operators-tool-editor-view');
   const instanceEditorView = container.querySelector('.operators-instance-editor-view');
   const breadcrumb = container.querySelector('.nav-breadcrumb');
-  const title = container.querySelector('#tool-editor-title');
+  const title = container.querySelector(`#${createDocumentElementId('tool-editor-title')}`);
   
   if (listView) {
     listView.style.display = 'none';
@@ -919,7 +1374,7 @@ function showInstanceEditor(instanceId = null) {
   const toolEditorView = container.querySelector('.operators-tool-editor-view');
   const instanceEditorView = container.querySelector('.operators-instance-editor-view');
   const breadcrumb = container.querySelector('.nav-breadcrumb');
-  const title = container.querySelector('#instance-editor-title');
+  const title = container.querySelector(`#${createDocumentElementId('instance-editor-title')}`);
   
   if (listView) {
     listView.style.display = 'none';
@@ -933,6 +1388,7 @@ function showInstanceEditor(instanceId = null) {
   
   if (instanceEditorView) {
     instanceEditorView.style.display = 'flex';
+    hideOperatorLoadingIndicator();
     instanceEditorView.classList.add('active');
   }
   
@@ -968,9 +1424,9 @@ function populateToolForm(toolId) {
   if (!container) return;
   
   // Populate form fields
-  const nameInput = container.querySelector('#embedded-tool-name');
-  const descriptionInput = container.querySelector('#embedded-tool-description');
-  const codeEditor = container.querySelector('#embedded-tool-code');
+  const nameInput = container.querySelector(`#${createDocumentElementId('embedded-tool-name')}`);
+  const descriptionInput = container.querySelector(`#${createDocumentElementId('embedded-tool-description')}`);
+  const codeEditor = container.querySelector(`#${createDocumentElementId('embedded-tool-code')}`);
   
   if (nameInput) nameInput.value = tool.name;
   if (descriptionInput) descriptionInput.value = tool.description || '';
@@ -991,9 +1447,9 @@ function clearToolForm() {
   const container = getActiveDocumentContainer();
   if (!container) return;
   
-  const nameInput = container.querySelector('#embedded-tool-name');
-  const descriptionInput = container.querySelector('#embedded-tool-description');
-  const codeEditor = container.querySelector('#embedded-tool-code');
+  const nameInput = container.querySelector(`#${createDocumentElementId('embedded-tool-name')}`);
+  const descriptionInput = container.querySelector(`#${createDocumentElementId('embedded-tool-description')}`);
+  const codeEditor = container.querySelector(`#${createDocumentElementId('embedded-tool-code')}`);
   
   if (nameInput) nameInput.value = '';
   if (descriptionInput) descriptionInput.value = '';
@@ -1008,7 +1464,7 @@ async function populateToolsDropdown() {
   const container = getActiveDocumentContainer();
   if (!container) return;
   
-  const select = container.querySelector('#embedded-instance-tool');
+  const select = container.querySelector(`#${createDocumentElementId('embedded-instance-tool')}`);
   if (!select) return;
 
   // Clear existing options
@@ -1045,10 +1501,16 @@ async function populateVariablesList() {
   const container = getActiveDocumentContainer();
   if (!container) return;
   
-  const allSelects = container.querySelectorAll('#embedded-instance-outputs .output-variable-select');
+  console.log('🔄 Populating all variable dropdowns in instance editor...');
+  
+  const allSelects = container.querySelectorAll(`#${createDocumentElementId('embedded-instance-outputs')} .output-variable-select`);
+  console.log(`📊 Found ${allSelects.length} variable dropdown(s) to populate`);
+  
   for (const select of allSelects) {
     await populateVariablesDropdown(select);
   }
+  
+  console.log('✅ All variable dropdowns populated');
 }
 
 function populateInstanceForm(instanceId) {
@@ -1059,8 +1521,8 @@ function populateInstanceForm(instanceId) {
   const container = getActiveDocumentContainer();
   if (!container) return;
   
-  const nameInput = container.querySelector('#embedded-instance-name');
-  const toolSelect = container.querySelector('#embedded-instance-tool');
+  const nameInput = container.querySelector(`#${createDocumentElementId('embedded-instance-name')}`);
+  const toolSelect = container.querySelector(`#${createDocumentElementId('embedded-instance-tool')}`);
   
   if (nameInput) nameInput.value = instance.name;
   if (toolSelect) toolSelect.value = instance.toolId;
@@ -1080,8 +1542,8 @@ function clearInstanceForm() {
   const container = getActiveDocumentContainer();
   if (!container) return;
   
-  const nameInput = container.querySelector('#embedded-instance-name');
-  const toolSelect = container.querySelector('#embedded-instance-tool');
+  const nameInput = container.querySelector(`#${createDocumentElementId('embedded-instance-name')}`);
+  const toolSelect = container.querySelector(`#${createDocumentElementId('embedded-instance-tool')}`);
   
   if (nameInput) nameInput.value = '';
   if (toolSelect) toolSelect.value = '';
@@ -1097,7 +1559,7 @@ function populateParametersForm(parameters) {
   const documentContainer = getActiveDocumentContainer();
   if (!documentContainer) return;
   
-  const container = documentContainer.querySelector('#embedded-instance-parameters');
+  const container = documentContainer.querySelector(`#${createDocumentElementId('embedded-instance-parameters')}`);
   if (!container) return;
 
   container.innerHTML = '';
@@ -1116,7 +1578,7 @@ function clearParametersForm() {
   const documentContainer = getActiveDocumentContainer();
   if (!documentContainer) return;
   
-  const container = documentContainer.querySelector('#embedded-instance-parameters');
+  const container = documentContainer.querySelector(`#${createDocumentElementId('embedded-instance-parameters')}`);
   if (container) {
     container.innerHTML = '';
   }
@@ -1145,18 +1607,20 @@ function clearOutputsForm() {
   const documentContainer = getActiveDocumentContainer();
   if (!documentContainer) return;
   
-  const container = documentContainer.querySelector('#embedded-instance-outputs');
+  const container = documentContainer.querySelector(`#${createDocumentElementId('embedded-instance-outputs')}`);
   if (container) {
     container.innerHTML = '';
   }
 }
 
 function addParameterField(key = '', value = '', valueType = 'literal') {
+  console.log(`[${windowId}] 🔧 addParameterField() EXECUTED - Call #${++window.addParameterCallCount || (window.addParameterCallCount = 1)}`);
+  
   // Get the active document container
   const documentContainer = getActiveDocumentContainer();
   if (!documentContainer) return;
   
-  const container = documentContainer.querySelector('#embedded-instance-parameters');
+  const container = documentContainer.querySelector(`#${createDocumentElementId('embedded-instance-parameters')}`);
   if (!container) return;
 
   // Get available datasets for the dropdown
@@ -1207,11 +1671,13 @@ function addParameterField(key = '', value = '', valueType = 'literal') {
 }
 
 async function addOutputField(outputConfig = '', outputVariable = '') {
+  console.log(`[${windowId}] 🔧 addOutputField() EXECUTED - Call #${++window.addOutputCallCount || (window.addOutputCallCount = 1)}`);
+  
   // Get the active document container
   const documentContainer = getActiveDocumentContainer();
   if (!documentContainer) return;
   
-  const container = documentContainer.querySelector('#embedded-instance-outputs');
+  const container = documentContainer.querySelector(`#${createDocumentElementId('embedded-instance-outputs')}`);
   if (!container) return;
 
   const field = document.createElement('div');
@@ -1245,9 +1711,9 @@ async function addOutputField(outputConfig = '', outputVariable = '') {
       select.value = outputVariable;
       console.log(`  ✅ Variable "${outputVariable}" found and selected`);
     } else {
-      console.log(`  ⚠️ Variable "${outputVariable}" not found in existing variables. Skipping auto-selection.`);
+      console.log(`  ⚠️ Variable "${outputVariable}" not found in existing variables. Skipping assignment.`);
       console.log(`  Available variables:`, Array.from(select.options).map(opt => opt.value).filter(v => v));
-      // Don't create new variables - only use existing ones
+      // Just skip - don't set any value, leave it unselected
     }
   }
 }
@@ -1264,11 +1730,57 @@ async function populateVariablesDropdown(select) {
   select.innerHTML = '<option value="">Select a variable...</option>';
 
   try {
-    // Try to get variables from the variables manager
-    if (window.variablesManager && window.variablesManager.variables) {
-      const variables = window.variablesManager.variables;
-      console.log(`📊 Found ${variables.size} variables in variables manager`);
+    let variables = null;
+    
+    // Try variables manager first
+    if (window.variablesManager) {
+      console.log('📡 Loading fresh variables from backend via variables manager...');
+      await window.variablesManager.loadVariables();
       
+      if (window.variablesManager.variables && window.variablesManager.variables.size > 0) {
+        variables = window.variablesManager.variables;
+        console.log(`📊 Found ${variables.size} variables in variables manager`);
+      } else {
+        console.log('📊 No variables found in variables manager after loading from backend');
+      }
+    } else {
+      console.log('⚠️ Variables manager not available, falling back to direct API call');
+    }
+    
+    // Fallback: Call API directly if variables manager is null or has no variables
+    if (!variables || variables.size === 0) {
+      console.log('📡 Calling /api/variables directly as fallback...');
+      
+      const documentId = window.documentManager?.activeDocumentId;
+      if (!documentId) {
+        console.warn('No active document ID available for API call');
+        return;
+      }
+      
+      const response = await fetch(`http://127.0.0.1:5000/api/variables?documentId=${encodeURIComponent(documentId)}`);
+      
+      if (!response.ok) {
+        throw new Error(`API responded with status: ${response.status}`);
+      }
+      
+      const result = await response.json();
+      if (result.success && result.variables) {
+        const variablesData = result.variables || {};
+        console.log(`📊 API returned ${Object.keys(variablesData).length} variables`);
+        
+        // Convert API response to Map-like structure for consistent processing
+        variables = new Map();
+        Object.entries(variablesData).forEach(([name, variable]) => {
+          variables.set(name, variable);
+        });
+      } else {
+        console.log('📊 API returned no variables or failed');
+        variables = new Map(); // Empty map
+      }
+    }
+    
+    // Populate dropdown with variables (from either source)
+    if (variables && variables.size > 0) {
       variables.forEach((variable, name) => {
         const option = document.createElement('option');
         option.value = name;
@@ -1277,38 +1789,9 @@ async function populateVariablesDropdown(select) {
         console.log(`  ✓ Added variable: ${name}`);
       });
       
-      if (variables.size > 0) {
-        console.log(`✅ Populated ${variables.size} variables from variables manager`);
-      }
+      console.log(`✅ Populated ${variables.size} variables in dropdown`);
     } else {
-      console.log('⚠️ Variables manager not available or no variables');
-    }
-
-    // Also try to load from backend vars.json if available
-    try {
-      const varsFromBackend = await loadVariablesFromBackend();
-      console.log('📡 Backend variables response:', varsFromBackend);
-      
-      if (varsFromBackend && Object.keys(varsFromBackend).length > 0) {
-        let addedCount = 0;
-        Object.entries(varsFromBackend).forEach(([name, variable]) => {
-          // Check if this variable is already in the list
-          const existingOption = select.querySelector(`option[value="${name}"]`);
-          if (!existingOption) {
-            const option = document.createElement('option');
-            option.value = name;
-            option.textContent = `${name} (${variable.type || 'text'})`;
-            select.appendChild(option);
-            addedCount++;
-            console.log(`  ✓ Added backend variable: ${name}`);
-          }
-        });
-        console.log(`✅ Added ${addedCount} variables from backend`);
-      } else {
-        console.log('⚠️ No backend variables found');
-      }
-    } catch (error) {
-      console.error('❌ Error loading backend variables:', error);
+      console.log('📊 No variables available from any source');
     }
 
   } catch (error) {
@@ -1322,14 +1805,14 @@ function showOperatorLoadingIndicator() {
   if (!container) return;
   
   // Show AI indicator
-  const aiIndicator = container.querySelector('#operator-ai-indicator');
+  const aiIndicator = container.querySelector(`#${createDocumentElementId('operator-ai-indicator')}`);
   if (aiIndicator) {
     aiIndicator.style.display = 'flex';
   }
   
   // Disable form fields during loading
-  const nameInput = container.querySelector('#embedded-instance-name');
-  const toolSelect = container.querySelector('#embedded-instance-tool');
+  const nameInput = container.querySelector(`#${createDocumentElementId('embedded-instance-name')}`);
+  const toolSelect = container.querySelector(`#${createDocumentElementId('embedded-instance-tool')}`);
   
   if (nameInput) nameInput.disabled = true;
   if (toolSelect) toolSelect.disabled = true;
@@ -1343,14 +1826,14 @@ function hideOperatorLoadingIndicator() {
   if (!container) return;
   
   // Hide AI indicator
-  const aiIndicator = container.querySelector('#operator-ai-indicator');
+  const aiIndicator = container.querySelector(`#${createDocumentElementId('operator-ai-indicator')}`);
   if (aiIndicator) {
     aiIndicator.style.display = 'none';
   }
   
   // Re-enable form fields
-  const nameInput = container.querySelector('#embedded-instance-name');
-  const toolSelect = container.querySelector('#embedded-instance-tool');
+  const nameInput = container.querySelector(`#${createDocumentElementId('embedded-instance-name')}`);
+  const toolSelect = container.querySelector(`#${createDocumentElementId('embedded-instance-tool')}`);
   
   if (nameInput) nameInput.disabled = false;
   if (toolSelect) toolSelect.disabled = false;
@@ -1384,6 +1867,7 @@ async function autoPopulateOperatorFields(toolId) {
     }
 
   } catch (error) {
+    hideOperatorLoadingIndicator();
     console.error('Error auto-populating operator fields:', error);
     addMessageToUI('system', `⚠️ Could not auto-populate fields: ${error.message}`);
   } finally {
@@ -1464,7 +1948,7 @@ async function populateSuggestedFields(suggestions, forceRepopulate = false) {
 
   // 1. Populate operator name
   if (suggestions.operatorName && suggestions.operatorName.trim()) {
-    const nameInput = container.querySelector('#embedded-instance-name');
+    const nameInput = container.querySelector(`#${createDocumentElementId('embedded-instance-name')}`);
     if (nameInput && (!nameInput.value.trim() || forceRepopulate)) {
       nameInput.value = suggestions.operatorName.trim();
       console.log(`✅ Set operator name: "${suggestions.operatorName}"`);
@@ -1472,7 +1956,7 @@ async function populateSuggestedFields(suggestions, forceRepopulate = false) {
   }
 
   // 2. Append suggested parameters (don't clear existing ones)
-  const parametersContainer = container.querySelector('#embedded-instance-parameters');
+  const parametersContainer = container.querySelector(`#${createDocumentElementId('embedded-instance-parameters')}`);
   if (parametersContainer && suggestions.parameters && suggestions.parameters.length > 0) {
     const existingParams = parametersContainer.querySelectorAll('.parameter-field');
     
@@ -1498,26 +1982,59 @@ async function populateSuggestedFields(suggestions, forceRepopulate = false) {
   }
 
   // 3. Append suggested outputs (don't clear existing ones)
-  const outputsContainer = container.querySelector('#embedded-instance-outputs');
+  const outputsContainer = container.querySelector(`#${createDocumentElementId('embedded-instance-outputs')}`);
   if (outputsContainer) {
     const existingOutputs = outputsContainer.querySelectorAll('.output-config-field');
     
     if (suggestions.outputs && suggestions.outputs.length > 0) {
-      console.log(`🔧 Appending ${suggestions.outputs.length} suggested outputs to ${existingOutputs.length} existing outputs:`, suggestions.outputs);
+      console.log(`🔧 Processing ${suggestions.outputs.length} suggested outputs...`);
       
-      let addedCount = 0;
-      // Add suggested outputs (append, don't clear)
-      for (const output of suggestions.outputs) {
-        if (output.variable && output.variable.trim()) {
+      // Get valid variables to filter out non-existent ones
+      try {
+        const validVariables = await operatorManager.getValidVariables();
+        const validVariableNames = new Set(Object.keys(validVariables));
+        
+        // Filter outputs to only include those with existing variables
+        const validOutputs = suggestions.outputs.filter(output => {
+          if (!output.variable || !output.variable.trim()) {
+            console.log(`  ⚠️ Skipping output with missing variable:`, output);
+            return false;
+          }
+          
+          const varName = output.variable.trim();
+          if (!validVariableNames.has(varName)) {
+            console.log(`  ⚠️ Skipping output with non-existent variable: ${varName}`);
+            return false;
+          }
+          
+          return true;
+        });
+        
+        console.log(`🔧 Filtered to ${validOutputs.length} valid outputs (from ${suggestions.outputs.length} suggested)`);
+        
+        let addedCount = 0;
+        // Add only valid outputs (append, don't clear)
+        for (const output of validOutputs) {
           console.log(`  ✓ Adding output field: config="${output.config}", variable="${output.variable}"`);
           await addOutputField(output.config || 'output', output.variable.trim());
           addedCount++;
-        } else {
-          console.log(`  ⚠️ Skipping output with missing variable:`, output);
         }
+        
+        console.log(`✅ Added ${addedCount} output fields (${addedCount + existingOutputs.length} total)`);
+        
+      } catch (error) {
+        console.error('❌ Error filtering suggested outputs:', error);
+        // Fallback: just add all suggested outputs (the addOutputField function will handle validation)
+        let addedCount = 0;
+        for (const output of suggestions.outputs) {
+          if (output.variable && output.variable.trim()) {
+            console.log(`  ✓ Adding output field (fallback): config="${output.config}", variable="${output.variable}"`);
+            await addOutputField(output.config || 'output', output.variable.trim());
+            addedCount++;
+          }
+        }
+        console.log(`✅ Added ${addedCount} output fields (fallback mode)`);
       }
-      
-      console.log(`✅ Added ${addedCount} output fields (${addedCount + existingOutputs.length} total)`);
     } else if (existingOutputs.length === 0) {
       // If no outputs suggested and no existing outputs, ensure at least one empty output field
       console.log('🔧 No outputs suggested, adding empty output field');
@@ -1532,64 +2049,16 @@ async function populateSuggestedFields(suggestions, forceRepopulate = false) {
   console.log('✅ Successfully populated suggested fields');
 }
 
-async function loadVariablesFromBackend() {
-  try {
-    // Get the current document ID to load document-specific variables
-    const documentId = window.documentManager?.activeDocumentId;
-    if (!documentId) {
-      console.log('⚠️ No active document ID for loading variables');
-      return {};
-    }
-
-    console.log(`📡 Loading variables for document: ${documentId}`);
-
-    const response = await fetch(`http://127.0.0.1:5000/api/variables?documentId=${encodeURIComponent(documentId)}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      }
-    });
-    
-    console.log(`📡 Backend response status: ${response.status}`);
-    
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    
-    const result = await response.json();
-    console.log('📡 Backend response data:', result);
-    
-    if (result.success && result.variables) {
-      // The backend returns variables directly for the document
-      const documentVariables = result.variables || {};
-      console.log(`✅ Loaded ${Object.keys(documentVariables).length} variables for document ${documentId}:`, documentVariables);
-      return documentVariables;
-    } else {
-      console.log('⚠️ Backend response indicates no variables or failure:', result);
-    }
-    
-    return {};
-  } catch (error) {
-    console.error('❌ Could not load variables from backend:', error);
-    return {};
-  }
-}
-
-
-
-
-
-
-
 function refreshInstancesList() {
   // Get the active document container
   const documentContainer = getActiveDocumentContainer();
   if (!documentContainer) return;
   
-  const container = documentContainer.querySelector('#instances-items');
+  const container = documentContainer.querySelector(`#${createDocumentElementId('instances-items')}`);
   if (!container) return;
 
-  const instances = operatorManager.getAllInstances();
+  // Get only instances for the current document
+  const instances = operatorManager.getCurrentDocumentInstances();
 
   if (instances.length === 0) {
     container.innerHTML = `
@@ -1616,29 +2085,42 @@ function createInstanceElement(instance) {
     ? instance.inputDatasets.join(', ')
     : 'No datasets';
 
-  // Handle multiple outputs display
+  // Handle multiple outputs display with validation warnings
   let outputText = 'No output assignment';
+  let hasInvalidOutputs = false;
   
   if (instance.outputs && instance.outputs.length > 0) {
-    const outputDescriptions = instance.outputs.map(output => 
-      `${output.config || 'result'} → \${${output.variable}}`
-    );
+    const outputDescriptions = instance.outputs.map(output => {
+      let outputDesc = `${output.config || 'result'} → \${${output.variable}}`;
+      // Check if this specific output has invalid variable assignment
+      if (instance.hasInvalidVariableAssignments) {
+        outputDesc += ' ⚠️';
+        hasInvalidOutputs = true;
+      }
+      return outputDesc;
+    });
     outputText = `Output: ${outputDescriptions.join(', ')}`;
   }
 
+  // Add validation warning if there are invalid variable assignments
+  const validationWarning = instance.hasInvalidVariableAssignments 
+    ? `<div class="instance-validation-warning">⚠️ Warning: Some output variables no longer exist</div>` 
+    : '';
+
   return `
-    <div class="instance-item ${statusClass}" data-instance-id="${instance.id}">
+    <div class="instance-item ${statusClass} ${instance.hasInvalidVariableAssignments ? 'has-validation-issues' : ''}" data-instance-id="${instance.id}">
       <div class="instance-item-info">
         <div class="instance-item-icon">🔧</div>
         <div class="instance-item-details">
           <div class="instance-item-name">${escapeHtml(instance.name)}</div>
           <div class="instance-item-tool">Tool: ${escapeHtml(instance.toolName || instance.toolId)}</div>
           <div class="instance-item-datasets">Datasets: ${escapeHtml(datasetsText)}</div>
-          <div class="instance-item-output">${escapeHtml(outputText)}</div>
+          <div class="instance-item-output ${hasInvalidOutputs ? 'has-invalid-outputs' : ''}">${escapeHtml(outputText)}</div>
           <div class="instance-item-meta">
             <span>Status: ${statusText}</span>
             <span>Last run: ${lastExecuted}</span>
           </div>
+          ${validationWarning}
           ${instance.error ? `<div class="instance-error">Error: ${escapeHtml(instance.error)}</div>` : ''}
         </div>
       </div>
@@ -1751,13 +2233,14 @@ function styleInstanceReferences(templateEditor) {
 
   // Form Save Functions
 async function saveTool() {
+  console.log('Saving tool.............');
   // Get the active document container
   const container = getActiveDocumentContainer();
   if (!container) return;
   
-  const nameInput = container.querySelector('#embedded-tool-name');
-  const descriptionInput = container.querySelector('#embedded-tool-description');
-  const codeEditor = container.querySelector('#embedded-tool-code');
+  const nameInput = container.querySelector(`#${createDocumentElementId('embedded-tool-name')}`);
+  const descriptionInput = container.querySelector(`#${createDocumentElementId('embedded-tool-description')}`);
+  const codeEditor = container.querySelector(`#${createDocumentElementId('embedded-tool-code')}`);
 
   const name = nameInput?.value.trim();
   const description = descriptionInput?.value.trim();
@@ -1851,9 +2334,11 @@ function saveInstance() {
   // Get the active document container
   const container = getActiveDocumentContainer();
   if (!container) return;
+  const embeddedInstanceName = createDocumentElementId('embedded-instance-name');
+  const embeddedInstanceTool = createDocumentElementId('embedded-instance-tool');
   
-  const nameInput = container.querySelector('#embedded-instance-name');
-  const toolSelect = container.querySelector('#embedded-instance-tool');
+  const nameInput = container.querySelector(`#${embeddedInstanceName}`);
+  const toolSelect = container.querySelector(`#${embeddedInstanceTool}`);
 
   const name = nameInput?.value.trim();
   const toolId = toolSelect?.value;
@@ -1873,7 +2358,7 @@ function saveInstance() {
 
   // Get output assignments
   const outputs = [];
-  const outputFields = container.querySelectorAll('#embedded-instance-outputs .output-config-field');
+  const outputFields = container.querySelectorAll(`#${createDocumentElementId('embedded-instance-outputs')} .output-config-field`);
   
   // Validate output fields
   for (const field of outputFields) {
@@ -1902,7 +2387,7 @@ function saveInstance() {
 
   // Get parameters
   const parameters = {};
-  const paramFields = container.querySelectorAll('#embedded-instance-parameters .parameter-field');
+  const paramFields = container.querySelectorAll(`#${createDocumentElementId('embedded-instance-parameters')} .parameter-field`);
   paramFields.forEach(field => {
     const key = field.querySelector('.param-key')?.value.trim();
     const typeSelect = field.querySelector('.param-type-select');
@@ -1999,8 +2484,123 @@ export {
   executeRequiredOperatorsForTemplate,
   autoPopulateOperatorFields,
   callLLMForToolAnalysis,
-  populateSuggestedFields
+  populateSuggestedFields,
+  resetOperatorsInitialization
 };
+
+// Reset function for DocumentManager cleanup
+function resetOperatorsInitialization() {
+  console.log('🔄 Operators initialization reset');
+  
+  // Clean up all event listeners first
+  cleanupOperatorEventListeners();
+  
+  // Reset the global operator manager
+  if (operatorManager) {
+    operatorManager = null;
+  }
+  
+  // Reset tools manager
+  if (toolsManager) {
+    toolsManager = null;
+    window.toolsManager = null;
+  }
+  
+  // Clear any operators panel state for open documents
+  const operatorsPanels = document.querySelectorAll('.operators-panel');
+  operatorsPanels.forEach(panel => {
+    if (panel) {
+      panel.style.display = 'none';
+      
+      // Reset to list view
+      const listView = panel.querySelector('.operators-list-view');
+      const toolEditorView = panel.querySelector('.operators-tool-editor-view');
+      const instanceEditorView = panel.querySelector('.operators-instance-editor-view');
+      
+      if (listView) listView.style.display = 'block';
+      if (toolEditorView) toolEditorView.style.display = 'none';
+      if (instanceEditorView) instanceEditorView.style.display = 'none';
+    }
+  });
+  
+  // Clear any styling timeouts
+  if (window.instanceStylingTimeout) {
+    clearTimeout(window.instanceStylingTimeout);
+    window.instanceStylingTimeout = null;
+  }
+  
+  // Reset global operators module reference
+  if (window.operatorsModule) {
+    window.operatorsModule = null;
+  }
+}
+
+// Tool storage management (moved from tools.js)
+class ToolsManager {
+  constructor() {
+    this.tools = [];
+  }
+
+  async init() {
+    await this.loadTools();
+  }
+
+  generateId() {
+    return 'tool_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+  }
+
+  async saveTools() {
+    try {
+      const response = await fetch('http://127.0.0.1:5000/api/tools', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ tools: this.tools })
+      });
+      
+      const result = await response.json();
+      if (!result.success) {
+        console.error('Error saving tools:', result.error);
+      }
+    } catch (error) {
+      console.error('Error saving tools:', error);
+    }
+  }
+
+  async loadTools() {
+    try {
+      const response = await fetch('http://127.0.0.1:5000/api/tools');
+      const result = await response.json();
+      
+      if (result.success) {
+        this.tools = result.tools || [];
+      } else {
+        console.error('Error loading tools:', result.error);
+        this.tools = [];
+      }
+    } catch (error) {
+      console.error('Error loading tools:', error);
+      this.tools = [];
+    }
+  }
+
+  removeTool(toolId) {
+    this.tools = this.tools.filter(t => t.id !== toolId);
+    this.saveTools();
+  }
+}
+
+// Initialize tools manager and make it globally available
+let toolsManager;
+
+async function initToolsManager() {
+  if (!toolsManager) {
+    toolsManager = new ToolsManager();
+    await toolsManager.init();
+    window.toolsManager = toolsManager;
+  }
+}
 
 // Template-Operator Integration Functions
 async function executeRequiredOperatorsForTemplate(templateContent) {
@@ -2065,10 +2665,11 @@ function extractVariablesFromTemplate(templateContent) {
 }
 
 function identifyRequiredOperators(requiredVariables) {
-  const allOperators = operatorManager.getAllInstances();
+  // Only check operators from the current document
+  const currentDocumentOperators = operatorManager.getCurrentDocumentInstances();
   const requiredOperators = [];
   
-  for (const operator of allOperators) {
+  for (const operator of currentDocumentOperators) {
     const outputVariables = getOperatorOutputVariables(operator);
     
     // Check if any of this operator's outputs are needed by the template
@@ -2169,7 +2770,7 @@ async function refreshOperatorsToolsList() {
   const documentContainer = getActiveDocumentContainer();
   if (!documentContainer) return;
   
-  const toolsContainer = documentContainer.querySelector('#operators-tools-items');
+  const toolsContainer = documentContainer.querySelector(`#${createDocumentElementId('operators-tools-items')}`);
   if (!toolsContainer) return;
   
   // Get available tools
@@ -2193,7 +2794,7 @@ async function refreshOperatorsToolsList() {
   toolsContainer.innerHTML = '';
   
   if (tools.length === 0) {
-    const noToolsDiv = documentContainer.querySelector('#operators-no-tools-message');
+    const noToolsDiv = documentContainer.querySelector(`#${createDocumentElementId('operators-no-tools-message')}`);
     if (noToolsDiv) {
       noToolsDiv.style.display = 'block';
     }
@@ -2201,7 +2802,7 @@ async function refreshOperatorsToolsList() {
   }
   
   // Hide no tools message
-  const noToolsDiv = documentContainer.querySelector('#operators-no-tools-message');
+  const noToolsDiv = documentContainer.querySelector(`#${createDocumentElementId('operators-no-tools-message')}`);
   if (noToolsDiv) {
     noToolsDiv.style.display = 'none';
   }
@@ -2232,26 +2833,33 @@ function createOperatorsSidebarToolElement(tool) {
 }
 
 function setupToolsSidebarEventListeners() {
-  // Tools sidebar search
-  document.addEventListener('input', (e) => {
-    if (e.target.id === 'operators-tools-search') {
-      filterOperatorsTools(e.target.value);
-    }
-  });
+  console.log(`[${windowId}] 🔧 Setting up tools sidebar event listeners using direct element attachment...`);
   
-  // Add tool button in sidebar
-  document.addEventListener('click', (e) => {
-    if (e.target.classList.contains('add-tool-btn-sidebar')) {
-      // Import and use tools manager
-      if (window.toolsManager && window.toolsManager.showAddToolDialog) {
-        window.toolsManager.showAddToolDialog();
-      } else {
-        // Fallback: try to find tools module functions
-        const addToolBtn = document.querySelector('.add-tool-btn');
-        if (addToolBtn) {
-          addToolBtn.click();
-        }
-      }
+  // Get the active document container
+  const container = getActiveDocumentContainer();
+  if (!container) {
+    console.error(`[${windowId}] No active document container found for tools sidebar event listeners`);
+    return;
+  }
+  
+  // Clean up existing tools sidebar listeners first
+  cleanupToolsSidebarEventListeners();
+  
+  // Create event handlers
+  operatorsEventData.toolsSearchHandler = (e) => {
+    filterOperatorsTools(e.target.value);
+  };
+  
+  operatorsEventData.addToolBtnSidebarHandler = () => {
+    console.log(`[${windowId}] 🔧 Add tool button clicked - setupToolsSidebarEventListeners`);
+    showToolEditor();
+  };
+  
+  operatorsEventData.toolsSidebarClickHandler = (e) => {
+    // Log clicks for debugging
+    if (e.target.classList.contains('sidebar-tool-delete-btn') ||
+        e.target.closest('.operators-sidebar-tool-item')) {
+      console.log(`[${windowId}] 🔧 Tools sidebar click event detected on:`, e.target.className, e.target.id);
     }
     
     // Delete tool button
@@ -2260,18 +2868,80 @@ function setupToolsSidebarEventListeners() {
       const toolId = e.target.getAttribute('data-tool-id');
       if (window.toolsManager) {
         window.toolsManager.removeTool(toolId);
+        // Refresh the tools list UI immediately after deletion
+        refreshOperatorsToolsList();
+        addMessageToUI('system', '🗑️ Tool deleted successfully');
       }
+      return;
     }
-  });
-  
-  // Tool selection in sidebar - show tool editor
-  document.addEventListener('click', (e) => {
+    
+    // Tool selection in sidebar - show tool editor
     const toolItem = e.target.closest('.operators-sidebar-tool-item');
     if (toolItem && !e.target.classList.contains('sidebar-tool-delete-btn')) {
       const toolId = toolItem.dataset.toolId;
       showToolEditor(toolId);
     }
-  });
+  };
+  
+  // Find and attach to specific elements
+  const toolsSearch = container.querySelector(`#${createDocumentElementId('operators-tools-search')}`);
+  const addToolBtnSidebar = container.querySelector('.add-tool-btn-sidebar');
+  const toolsContainer = container.querySelector(`#${createDocumentElementId('operators-tools-items')}`);
+  
+  // Attach event listeners to found elements
+  if (toolsSearch) {
+    toolsSearch.addEventListener('input', operatorsEventData.toolsSearchHandler);
+    operatorsEventData.currentElements.toolsSearch = toolsSearch;
+    console.log(`[${windowId}] ✅ Attached tools search listener`);
+  }
+  
+  if (addToolBtnSidebar) {
+    addToolBtnSidebar.addEventListener('click', operatorsEventData.addToolBtnSidebarHandler);
+    operatorsEventData.currentElements.addToolBtnSidebar = addToolBtnSidebar;
+    console.log(`[${windowId}] ✅ Attached add tool sidebar button listener`);
+  }
+  
+  // Attach click delegation to tools container for dynamic tool items
+  if (toolsContainer) {
+    toolsContainer.addEventListener('click', operatorsEventData.toolsSidebarClickHandler);
+    operatorsEventData.currentElements.toolsContainer = toolsContainer;
+    console.log(`[${windowId}] ✅ Attached tools container delegation handler`);
+  }
+  
+  console.log(`[${windowId}] ✅ Tools sidebar event listeners setup complete - direct element attachment`);
+}
+
+// Cleanup function for tools sidebar event listeners
+function cleanupToolsSidebarEventListeners() {
+  console.log(`[${windowId}] 🧹 Cleaning up tools sidebar event listeners...`);
+  
+  // Remove listeners from tracked tools sidebar elements
+  if (operatorsEventData.currentElements.toolsSearch && operatorsEventData.toolsSearchHandler) {
+    operatorsEventData.currentElements.toolsSearch.removeEventListener('input', operatorsEventData.toolsSearchHandler);
+    console.log(`[${windowId}] 🧹 Removed tools search listener`);
+  }
+  
+  if (operatorsEventData.currentElements.addToolBtnSidebar && operatorsEventData.addToolBtnSidebarHandler) {
+    operatorsEventData.currentElements.addToolBtnSidebar.removeEventListener('click', operatorsEventData.addToolBtnSidebarHandler);
+    console.log(`[${windowId}] 🧹 Removed add tool sidebar button listener`);
+  }
+  
+  if (operatorsEventData.currentElements.toolsContainer && operatorsEventData.toolsSidebarClickHandler) {
+    operatorsEventData.currentElements.toolsContainer.removeEventListener('click', operatorsEventData.toolsSidebarClickHandler);
+    console.log(`[${windowId}] 🧹 Removed tools container delegation handler`);
+  }
+  
+  // Clear handler references
+  operatorsEventData.toolsSearchHandler = null;
+  operatorsEventData.addToolBtnSidebarHandler = null;
+  operatorsEventData.toolsSidebarClickHandler = null;
+  
+  // Clear tools sidebar element references
+  operatorsEventData.currentElements.toolsSearch = null;
+  operatorsEventData.currentElements.addToolBtnSidebar = null;
+  operatorsEventData.currentElements.toolsContainer = null;
+  
+  console.log(`[${windowId}] ✅ Tools sidebar event listeners cleanup completed`);
 }
 
 function filterOperatorsTools(searchTerm) {

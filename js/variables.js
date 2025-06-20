@@ -1,5 +1,6 @@
 // Variables Management Module
 import { state, elements, updateState } from './state.js';
+import { createDocumentDialog, createDocumentElementId, getDocumentElement, registerElement } from './element-id-manager.js';
 
 /**
  * Variables Management System
@@ -34,20 +35,14 @@ class VariablesManager {
       this.createFloatingButton();
       console.log('✓ Floating button created');
       
-      this.createVariableDialog();
-      console.log('✓ Variable dialog created');
-      
       this.setupVariablesEventListeners();
       console.log('✓ Variables event listeners setup');
-      
-      this.createVariablesPanelDialog();
-      console.log('✓ Variables panel dialog created');
       
       this.setupTextSelection();
       console.log('✓ Text selection setup complete');
       
-      this.loadVariables();
-      console.log('✓ Variables loaded');
+      // Note: Dialogs are created lazily when needed to ensure document context
+      console.log('✓ Dialogs will be created when needed (lazy loading)');
       
       this.initialized = true;
       console.log('Variables Manager initialization complete');
@@ -117,6 +112,11 @@ class VariablesManager {
    * Handle text selection events
    */
   handleTextSelection(e) {
+    // Skip processing if no active document
+    if (!window.documentManager?.activeDocumentId) {
+      return;
+    }
+    
     const selection = window.getSelection();
     const selectedText = selection.toString().trim();
     
@@ -232,16 +232,10 @@ class VariablesManager {
   }
 
   /**
-   * Create variable creation dialog
+   * Create variable creation dialog with document-specific IDs
    */
   createVariableDialog() {
-    this.variableDialog = document.createElement('div');
-    this.variableDialog.className = 'variable-dialog';
-    this.variableDialog.style.display = 'none';
-    // Add to body for global access
-    document.body.appendChild(this.variableDialog);
-
-    this.variableDialog.innerHTML = `
+    const dialogHtml = `
       <div class="dialog-overlay">
         <div class="dialog-content">
           <div class="dialog-header">
@@ -301,6 +295,14 @@ class VariablesManager {
       </div>
     `;
 
+    // Create dialog with document-specific IDs (all IDs in HTML will be auto-prefixed)
+    this.variableDialog = createDocumentDialog('variable-dialog', dialogHtml, 'variables');
+    this.variableDialog.className = 'variable-dialog';
+    this.variableDialog.style.display = 'none';
+    
+    // Add to body for global access
+    document.body.appendChild(this.variableDialog);
+
     this.variableDialog.addEventListener('click', (e) => {
       if (e.target.classList.contains('dialog-overlay')) {
         this.hideVariableDialog();
@@ -334,15 +336,10 @@ class VariablesManager {
   }
 
   /**
-   * Create Variables panel dialog
+   * Create Variables panel dialog with document-specific IDs
    */
   createVariablesPanelDialog() {
-    // Add to body for global access across all documents
-    // This way the panel can show variables from any active document
-    
-    const panelDialog = document.createElement('div');
-    panelDialog.className = 'variables-panel-dialog';
-    panelDialog.innerHTML = `
+    const panelHtml = `
       <div class="dialog-overlay">
         <div class="dialog-content variables-panel-content">
           <div class="dialog-header">
@@ -351,10 +348,6 @@ class VariablesManager {
           </div>
           
           <div class="variables-list" id="variables-list">
-            <div class="no-variables-message" id="no-variables-message">
-              <p>No variables created yet.</p>
-              <p>Select text in your template and click "Suggest Variables".</p>
-            </div>
           </div>
           
           <div class="dialog-actions">
@@ -364,11 +357,26 @@ class VariablesManager {
       </div>
     `;
     
-    panelDialog.style.display = 'none';
+    // Debug: Log what document ID we're using
+    const currentDocId = window.documentManager?.activeDocumentId;
+    console.log('Creating variables panel for document:', currentDocId);
+    
+    // Create panel with document-specific IDs
+    this.variablesPanel = createDocumentDialog('variables-panel-dialog', panelHtml, 'variables');
+    this.variablesPanel.className = 'variables-panel-dialog';
+    this.variablesPanel.style.display = 'none';
+    
+    // Debug: Check what IDs were actually created
+    console.log('Variables panel dialog ID:', this.variablesPanel.id);
+    const listElement = this.variablesPanel.querySelector('[id*="variables-list"]');
+    const msgElement = this.variablesPanel.querySelector('[id*="no-variables-message"]');
+    console.log('Found list element:', listElement?.id);
+    console.log('Found message element:', msgElement?.id);
+    
     // Add to body for global access
-    document.body.appendChild(panelDialog);
+    document.body.appendChild(this.variablesPanel);
 
-    panelDialog.addEventListener('click', (e) => {
+    this.variablesPanel.addEventListener('click', (e) => {
       if (e.target.classList.contains('dialog-overlay') || 
           e.target.getAttribute('data-action') === 'close-panel') {
         this.hideVariablesPanel();
@@ -386,8 +394,6 @@ class VariablesManager {
         this.removeVariable(variableName);
       }
     });
-
-    this.variablesPanel = panelDialog;
   }
 
   /**
@@ -498,10 +504,10 @@ class VariablesManager {
     // Store the current suggestion for later use in form data
     this.currentSuggestion = suggestions;
     
-    const nameInput = this.variableDialog.querySelector('#variable-name');
-    const descInput = this.variableDialog.querySelector('#variable-description');
-    const typeSelect = this.variableDialog.querySelector('#variable-type');
-    const formatInput = this.variableDialog.querySelector('#variable-format');
+    const nameInput = getDocumentElement('variable-name');
+    const descInput = getDocumentElement('variable-description');
+    const typeSelect = getDocumentElement('variable-type');
+    const formatInput = getDocumentElement('variable-format');
     
     if (nameInput) nameInput.value = suggestions.name || '';
     if (descInput) descInput.value = suggestions.description || '';
@@ -520,21 +526,21 @@ class VariablesManager {
   }
 
   /**
-   * Show loading state in dialog
+   * Show loading state in dialog - Updated to use document-specific IDs
    */
   showLoadingInDialog() {
     if (!this.variableDialog) return;
     
-    // Show AI indicator
-    const aiIndicator = this.variableDialog.querySelector('#variable-ai-indicator');
+    // Show AI indicator using document-specific getter
+    const aiIndicator = getDocumentElement('variable-ai-indicator');
     if (aiIndicator) {
       aiIndicator.style.display = 'flex';
     }
     
-    const nameInput = this.variableDialog.querySelector('#variable-name');
-    const descInput = this.variableDialog.querySelector('#variable-description');
-    const typeSelect = this.variableDialog.querySelector('#variable-type');
-    const formatInput = this.variableDialog.querySelector('#variable-format');
+    const nameInput = getDocumentElement('variable-name');
+    const descInput = getDocumentElement('variable-description');
+    const typeSelect = getDocumentElement('variable-type');
+    const formatInput = getDocumentElement('variable-format');
     
     if (nameInput) {
       nameInput.value = 'Generating suggestions...';
@@ -549,21 +555,21 @@ class VariablesManager {
   }
 
   /**
-   * Hide loading state in dialog
+   * Hide loading state in dialog - Updated to use document-specific IDs
    */
   hideLoadingInDialog() {
     if (!this.variableDialog) return;
     
-    // Hide AI indicator
-    const aiIndicator = this.variableDialog.querySelector('#variable-ai-indicator');
+    // Hide AI indicator using document-specific getter
+    const aiIndicator = getDocumentElement('variable-ai-indicator');
     if (aiIndicator) {
       aiIndicator.style.display = 'none';
     }
     
-    const nameInput = this.variableDialog.querySelector('#variable-name');
-    const descInput = this.variableDialog.querySelector('#variable-description');
-    const typeSelect = this.variableDialog.querySelector('#variable-type');
-    const formatInput = this.variableDialog.querySelector('#variable-format');
+    const nameInput = getDocumentElement('variable-name');
+    const descInput = getDocumentElement('variable-description');
+    const typeSelect = getDocumentElement('variable-type');
+    const formatInput = getDocumentElement('variable-format');
     
     if (nameInput) nameInput.disabled = false;
     if (descInput) descInput.disabled = false;
@@ -626,8 +632,25 @@ class VariablesManager {
    */
   showVariableDialog(isEditing = false) {
     console.log('showVariableDialog called for text:', this.selectedText, 'isEditing:', isEditing);
+    
+    // Check if the current dialog reference is valid (still in DOM)
+    const dialogExists = this.variableDialog && document.body.contains(this.variableDialog);
+    
+    // Create dialog if it doesn't exist or if it's been removed from DOM
+    if (!this.variableDialog || !dialogExists) {
+      console.log('Creating variable dialog lazily...');
+      
+      // Clear stale reference if it exists but not in DOM
+      if (this.variableDialog && !dialogExists) {
+        console.log('Clearing stale variable dialog reference');
+        this.variableDialog = null;
+      }
+      
+      this.createVariableDialog();
+    }
+    
     if (!this.variableDialog) {
-      console.error('Variable dialog not found!');
+      console.error('Variable dialog could not be created!');
       return;
     }
     
@@ -660,10 +683,35 @@ class VariablesManager {
 
   showVariablesPanel() {
     console.log('showVariablesPanel called');
+    
+    // Check if the current panel reference is valid (still in DOM)
+    const panelExists = this.variablesPanel && document.body.contains(this.variablesPanel);
+    
+    // Create panel if it doesn't exist or if it's been removed from DOM
+    if (!this.variablesPanel || !panelExists) {
+      console.log('Creating variables panel lazily...');
+      
+      // Clear stale reference if it exists but not in DOM
+      if (this.variablesPanel && !panelExists) {
+        console.log('Clearing stale variables panel reference');
+        this.variablesPanel = null;
+      }
+      
+      // IMPORTANT: Remove any existing variables panels to prevent duplicate IDs
+      const existingPanels = document.querySelectorAll('.variables-panel-dialog');
+      existingPanels.forEach((panel, index) => {
+        console.log(`Removing existing variables panel ${index}: ${panel.id}`);
+        panel.remove();
+      });
+      
+      this.createVariablesPanelDialog();
+    }
+    
     if (!this.variablesPanel) {
-      console.error('Variables panel not found!');
+      console.error('Variables panel could not be created!');
       return;
     }
+    
     console.log('Updating variables list and showing panel');
     this.updateVariablesList();
     this.variablesPanel.style.display = 'flex';
@@ -713,17 +761,24 @@ class VariablesManager {
   }
 
   /**
-   * Form handling methods
+   * Form handling methods - Updated to use document-specific element IDs
    */
   getVariableFormData() {
     if (!this.variableDialog) return {};
     
+    // Use document-specific element getters
+    const nameInput = getDocumentElement('variable-name');
+    const descInput = getDocumentElement('variable-description');
+    const typeSelect = getDocumentElement('variable-type');
+    const formatInput = getDocumentElement('variable-format');
+    const requiredCheckbox = getDocumentElement('variable-required');
+    
     return {
-      name: this.variableDialog.querySelector('#variable-name')?.value?.trim() || '',
-      description: this.variableDialog.querySelector('#variable-description')?.value?.trim() || '',
-      type: this.variableDialog.querySelector('#variable-type')?.value || 'text',
-      format: this.variableDialog.querySelector('#variable-format')?.value?.trim() || '',
-      required: this.variableDialog.querySelector('#variable-required')?.checked || false,
+      name: nameInput?.value?.trim() || '',
+      description: descInput?.value?.trim() || '',
+      type: typeSelect?.value || 'text',
+      format: formatInput?.value?.trim() || '',
+      required: requiredCheckbox?.checked || false,
       // Include smart replacement fields from current LLM suggestion
       value_to_replace: this.currentSuggestion?.value_to_replace || this.selectedText,
       static_prefix: this.currentSuggestion?.static_prefix || '',
@@ -839,29 +894,28 @@ class VariablesManager {
   }
 
   /**
-   * Update variables list in panel
+   * Update variables list in panel - Updated to use document-specific IDs
    */
   updateVariablesList() {
     console.log('updateVariablesList called, variables count:', this.variables.size);
     
-    const variablesList = this.variablesPanel?.querySelector('#variables-list');
-    const noVariablesMsg = this.variablesPanel?.querySelector('#no-variables-message');
+    // Debug: Check what document ID we're using
+    const currentDocId = window.documentManager?.activeDocumentId;
+    console.log('Current document ID:', currentDocId);
+    
+    // Get the variables list element
+    const variablesList = this.variablesPanel.querySelector('.variables-list');
     
     if (!variablesList) {
       console.error('Variables list element not found in panel');
       return;
     }
+    console.log('Using variables list element:', variablesList);
     
+    // Clear existing content
     variablesList.innerHTML = '';
-
-    if (this.variables.size === 0) {
-      console.log('No variables to display, showing empty message');
-      if (noVariablesMsg) noVariablesMsg.style.display = 'block';
-      return;
-    }
     
     console.log('Displaying', this.variables.size, 'variables');
-    if (noVariablesMsg) noVariablesMsg.style.display = 'none';
     
     this.variables.forEach((variable, name) => {
       console.log('Adding variable to list:', name, variable);
@@ -883,8 +937,15 @@ class VariablesManager {
         </div>
       `;
       
+      console.log('Created variable item:', variableItem);
+      console.log('Variable item HTML:', variableItem.outerHTML);
+      
       variablesList.appendChild(variableItem);
+      console.log('Variable item appended, variables list now has', variablesList.children.length, 'children');
+      console.log('Variables list content:', variablesList.innerHTML);
     });
+
+    this.variablesPanel.style.display = 'flex';
   }
 
   /**
@@ -955,7 +1016,12 @@ class VariablesManager {
       }
       
       // Load from backend via API
-      const response = await fetch(`http://127.0.0.1:5000/api/variables?documentId=${encodeURIComponent(documentId)}`);
+      const response = await fetch(`http://127.0.0.1:5000/api/variables?documentId=${encodeURIComponent(documentId)}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
       
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -1019,11 +1085,11 @@ class VariablesManager {
     
     // Fill the dialog with existing variable data
     if (this.variableDialog) {
-      const nameInput = this.variableDialog.querySelector('#variable-name');
-      const descInput = this.variableDialog.querySelector('#variable-description');
-      const typeSelect = this.variableDialog.querySelector('#variable-type');
-      const formatInput = this.variableDialog.querySelector('#variable-format');
-      const requiredCheckbox = this.variableDialog.querySelector('#variable-required');
+      const nameInput = getDocumentElement('variable-name');
+      const descInput = getDocumentElement('variable-description');
+      const typeSelect = getDocumentElement('variable-type');
+      const formatInput = getDocumentElement('variable-format');
+      const requiredCheckbox = getDocumentElement('variable-required');
       
       if (nameInput) nameInput.value = variable.name || '';
       if (descInput) descInput.value = variable.description || '';
@@ -1147,11 +1213,11 @@ class VariablesManager {
        }
        
        // Clear form fields
-       const nameInput = this.variableDialog.querySelector('#variable-name');
-       const descInput = this.variableDialog.querySelector('#variable-description');
-       const typeSelect = this.variableDialog.querySelector('#variable-type');
-       const formatInput = this.variableDialog.querySelector('#variable-format');
-       const requiredCheckbox = this.variableDialog.querySelector('#variable-required');
+       const nameInput = getDocumentElement('variable-name');
+       const descInput = getDocumentElement('variable-description');
+       const typeSelect = getDocumentElement('variable-type');
+       const formatInput = getDocumentElement('variable-format');
+       const requiredCheckbox = getDocumentElement('variable-required');
        
        if (nameInput) nameInput.value = '';
        if (descInput) descInput.value = '';
@@ -1169,17 +1235,6 @@ class VariablesManager {
   }
 
   /**
-   * Set variables from object
-   */
-  setVariables(variablesObj) {
-    this.variables.clear();
-    Object.entries(variablesObj || {}).forEach(([name, variable]) => {
-      this.variables.set(name, variable);
-    });
-    this.updateVariablesUI();
-  }
-
-  /**
    * Set a variable value programmatically (for operator outputs)
    */
   async setVariableValue(variableName, value) {
@@ -1192,30 +1247,15 @@ class VariablesManager {
       throw new Error('Variable name must be a valid identifier (letters, numbers, underscore, starting with letter or underscore)');
     }
 
-    // Create or update the variable
-    const variable = {
-      id: `var_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      name: variableName,
-      description: `Operator output variable`,
-      type: this.inferTypeFromValue(value),
-      format: this.getDefaultFormatForType(this.inferTypeFromValue(value)),
-      required: false,
-      originalText: String(value),
-      placeholder: `{{${variableName}}}`,
-      createdAt: new Date().toISOString(),
-      value: value, // Store the actual value
-      isOperatorOutput: true // Mark as operator-generated
-    };
-
-    // If variable already exists, update it; otherwise create new
-    if (this.variables.has(variableName)) {
-      const existingVariable = this.variables.get(variableName);
-      variable.id = existingVariable.id; // Keep original ID
-      variable.createdAt = existingVariable.createdAt; // Keep original creation time
-      variable.description = existingVariable.description || variable.description; // Keep custom description if set
+    // If variable is not in vars manager, skip it.
+    if (!this.variables.has(variableName)) {
+      console.warn(`Variable ${variableName} not found in variables manager, skipping`);
+      return;
     }
 
-    this.variables.set(variableName, variable);
+    const existingVariable = this.variables.get(variableName);
+    existingVariable.value = value;
+    this.variables.set(variableName, existingVariable);
     this.updateVariablesUI();
 
     // Save to vars.json for persistence (operator outputs are also saved via document auto-save)
@@ -1223,8 +1263,6 @@ class VariablesManager {
 
     console.log(`Variable ${variableName} set to:`, value);
   }
-
-  
 
   /**
    * Show a brief notification when variables are updated
@@ -1272,15 +1310,108 @@ class VariablesManager {
    */
   async loadVariablesFromBackend() {
     try {
-      // Load only from backend API (vars.json)
-      await this.loadVariables();
+      // CRITICAL: Clear all UI state first when loading variables for a new document
+      this.clearDocumentVariables();
+      
+      // Load variables from backend API for the current document
+      const documentId = window.documentManager?.activeDocumentId;
+      if (!documentId) {
+        console.log('No active document to load variables for');
+        return;
+      }
+      
+      const response = await fetch(`http://127.0.0.1:5000/api/variables?documentId=${encodeURIComponent(documentId)}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.variables) {
+          // Clear existing variables and load from backend
+          this.variables.clear();
+          
+          Object.entries(data.variables).forEach(([name, variable]) => {
+            this.variables.set(name, variable);
+          });
+          
+          console.log(`📊 Loaded ${this.variables.size} variables from backend for document ${documentId}`);
+        }
+      } else {
+        console.log('No variables found in backend for document:', documentId);
+      }
       
       this.updateVariablesUI();
-      console.log(`📊 Loaded variables for document: ${this.variables.size} total (from vars.json only)`);
 
     } catch (error) {
       console.error('Error loading variables for document:', error);
     }
+  }
+
+  /**
+   * Clear all variables for current document (called before loading new document)
+   */
+  clearDocumentVariables() {
+    console.log('🧹 Clearing variables UI for document switch');
+    
+    // Clear variables from memory
+    this.variables.clear();
+    
+    // Hide all dialogs
+    this.hideVariableDialog();
+    this.hideVariablesPanel();
+    this.hideFloatingButton();
+    
+    // Clear dialog references so they get recreated for new document
+    if (this.variableDialog) {
+      console.log('Removing variable dialog from DOM');
+      this.variableDialog.remove();
+      this.variableDialog = null;
+    }
+    if (this.variablesPanel) {
+      console.log('Removing variables panel from DOM');
+      this.variablesPanel.remove();
+      this.variablesPanel = null;
+    }
+    
+    // Clear any active text selection
+    this.selectedText = null;
+    this.selectedRange = null;
+    this.currentSuggestion = null;
+    
+    console.log('✅ Variables UI cleared for document switch');
+  }
+
+  /**
+   * Load variables for a document (when opening/creating) with registration
+   */
+  loadDocumentVariables() {
+    console.log('🏗️ Loading variables for document');
+    
+    const activeDocumentId = window.documentManager?.activeDocumentId;
+    if (!activeDocumentId) {
+      console.log('No active document - skipping variables UI creation');
+      return;
+    }
+    
+    // Ensure initialization is complete
+    if (!this.initialized) {
+      this.init();
+    }
+    
+    // Clear any existing dialogs first to prevent conflicts
+    if (this.variableDialog) {
+      this.variableDialog.remove();
+      this.variableDialog = null;
+    }
+    if (this.variablesPanel) {
+      this.variablesPanel.remove();
+      this.variablesPanel = null;
+    }
+    // Load variables for this document
+    this.loadVariablesFromBackend();
   }
 
   /**
@@ -1338,4 +1469,15 @@ class VariablesManager {
 
 // Create and export singleton instance
 export const variablesManager = new VariablesManager();
-export default variablesManager; 
+export default variablesManager;
+
+// Export functions for DocumentManager integration
+export function resetVariablesInitialization() {
+  console.log('resetVariablesInitialization called by DocumentManager');
+  variablesManager.clearDocumentVariables();
+}
+
+export function initVariablesForDocument() {
+  console.log('initVariablesForDocument called by DocumentManager');
+  variablesManager.loadDocumentVariables();
+} 

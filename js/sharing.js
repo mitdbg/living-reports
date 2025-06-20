@@ -3,6 +3,7 @@ import { state, elements, windowId } from './state.js';
 import { addMessageToUI } from './chat.js';
 import { getCurrentUser } from './auth.js';
 import { getTextContentWithLineBreaks } from './utils.js';
+import { createDocumentDialog, createDocumentElementId, getDocumentElement, registerElement } from './element-id-manager.js';
 
 // Create window-specific storage for initialization flags and handlers
 const SHARING_KEY = `sharing_${windowId}`;
@@ -32,9 +33,9 @@ function getOnlineUsers() {
   return AVAILABLE_USERS.filter(user => user.id !== currentUser?.id);
 }
 
-// Show user selection dialog
+// Show user selection dialog with document-specific elements
 function showShareDialog(doc) {
-  const dialog = document.getElementById('share-dialog') || createShareDialog();
+  const dialog = getDocumentElement('share-dialog') || createShareDialog();
   
   // Set up event listeners if not already done
   if (!dialog.hasAttribute('data-listeners-setup')) {
@@ -43,12 +44,12 @@ function showShareDialog(doc) {
     dialog.setAttribute('data-listeners-setup', 'true');
   }
   
-  // Update document info
-  const titleEl = dialog.querySelector('#share-document-title');
-  const previewEl = dialog.querySelector('#share-document-preview');
+  // Update document info using document-specific element getters
+  const titleEl = getDocumentElement('share-document-title');
+  const previewEl = getDocumentElement('share-document-preview');
   
-  titleEl.textContent = doc.title;
-  previewEl.textContent = (doc.template_content || '').substring(0, 100) + ((doc.template_content || '').length > 100 ? '...' : '');
+  if (titleEl) titleEl.textContent = doc.title;
+  if (previewEl) previewEl.textContent = (doc.template_content || '').substring(0, 100) + ((doc.template_content || '').length > 100 ? '...' : '');
   
   // Populate user list
   populateUserList(dialog);
@@ -61,24 +62,9 @@ function showShareDialog(doc) {
   sharingData.currentDocument = doc;
 }
 
-// Create share dialog if it doesn't exist
+// Create share dialog with document-specific IDs
 function createShareDialog() {
-  // Use the existing dialog from HTML
-  let dialog = document.getElementById('share-dialog');
-  if (dialog) {
-    console.log('Using existing share dialog from HTML');
-    return dialog;
-  }
-  
-  console.log('Creating new share dialog (fallback)');
-  
-  // Create new dialog as fallback
-  dialog = document.createElement('div');
-  dialog.id = 'share-dialog';
-  dialog.className = 'share-dialog';
-  dialog.style.display = 'none';
-  
-  dialog.innerHTML = `
+  const dialogHtml = `
     <div class="dialog-overlay">
       <div class="dialog-content">
         <h3>📤 Share Document</h3>
@@ -104,15 +90,37 @@ function createShareDialog() {
     </div>
   `;
 
+  console.log('Creating share dialog with document-specific IDs');
+  
+  // Create dialog with document-specific IDs (all IDs in HTML will be auto-prefixed)
+  const dialog = createDocumentDialog('share-dialog', dialogHtml, 'sharing');
+  dialog.className = 'share-dialog';
+  dialog.style.display = 'none';
+  
   document.body.appendChild(dialog);
+
+  // Register the dialog with the document manager
+  const activeDocumentId = window.documentManager?.activeDocumentId;
+  if (activeDocumentId && dialog.id) {
+    window.documentManager.constructor.registerDynamicElement(
+      activeDocumentId, 
+      dialog.id, 
+      'sharing'
+    );
+  }
 
   return dialog;
 }
 
-// Populate user list in the dialog
+// Populate user list in the dialog using document-specific elements
 function populateUserList(dialog) {
-  const userList = dialog.querySelector('#share-user-list');
+  const userList = getDocumentElement('share-user-list');
   const onlineUsers = getOnlineUsers();
+  
+  if (!userList) {
+    console.error('Could not find share-user-list element');
+    return;
+  }
   
   userList.innerHTML = '';
   
@@ -172,12 +180,16 @@ function setupDialogEventListeners(dialog) {
     console.log('Target tagName:', e.target.tagName);
     console.log('========================');
     
-    if (e.target.id === 'confirm-share-btn') {
+    // Get document-specific button elements for comparison
+    const confirmBtn = getDocumentElement('confirm-share-btn');
+    const cancelBtn = getDocumentElement('cancel-share-btn');
+    
+    if (e.target === confirmBtn || e.target.id === confirmBtn?.id) {
       console.log('Confirm button clicked via delegation');
       e.preventDefault();
       e.stopPropagation();
       shareWithSelectedUsers();
-    } else if (e.target.id === 'cancel-share-btn') {
+    } else if (e.target === cancelBtn || e.target.id === cancelBtn?.id) {
       console.log('Cancel button clicked via delegation');
       e.preventDefault();
       e.stopPropagation();
@@ -190,9 +202,9 @@ function setupDialogEventListeners(dialog) {
     }
   });
   
-  // Also try direct event listeners as backup
-  const confirmBtn = dialog.querySelector('#confirm-share-btn');
-  const cancelBtn = dialog.querySelector('#cancel-share-btn');
+  // Also try direct event listeners as backup using getDocumentElement
+  const confirmBtn = getDocumentElement('confirm-share-btn');
+  const cancelBtn = getDocumentElement('cancel-share-btn');
   
   console.log('Direct button references:', {
     confirmBtn: !!confirmBtn,
@@ -225,13 +237,15 @@ function setupDialogEventListeners(dialog) {
 
 // Update share button state
 function updateShareButton(dialog) {
-  const confirmBtn = dialog.querySelector('#confirm-share-btn');
+  const confirmBtn = getDocumentElement('confirm-share-btn');
   const hasSelection = sharingData.selectedUsers.size > 0;
   
-  confirmBtn.disabled = !hasSelection;
-  confirmBtn.textContent = hasSelection 
-    ? `Share with ${sharingData.selectedUsers.size} user${sharingData.selectedUsers.size > 1 ? 's' : ''}`
-    : 'Select users to share';
+  if (confirmBtn) {
+    confirmBtn.disabled = !hasSelection;
+    confirmBtn.textContent = hasSelection 
+      ? `Share with ${sharingData.selectedUsers.size} user${sharingData.selectedUsers.size > 1 ? 's' : ''}`
+      : 'Select users to share';
+  }
 }
 
 // Hide share dialog

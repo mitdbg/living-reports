@@ -1,5 +1,6 @@
 // Template Execution Module
-import { state, elements, updateState, windowId } from './state.js';
+import { state, getElements, updateState, windowId } from './state.js';
+import { createDocumentElementId, createDocumentElement, registerElement } from './element-id-manager.js';
 import { switchToPreview, switchToTemplate, switchToDiff, canUserSwitchModes } from './modes.js';
 import { addMessageToUI } from './chat.js';
 import { refreshHighlightEventListeners } from './comments.js';
@@ -20,6 +21,16 @@ if (!window[TEMPLATE_EXEC_KEY]) {
 }
 
 const templateExecData = window[TEMPLATE_EXEC_KEY];
+
+// Utility function to create document-specific comment IDs
+function createDocumentCommentId(baseId) {
+  return createDocumentElementId(`comment-${baseId}`);
+}
+
+// Utility function to create document-specific annotation IDs
+function createDocumentAnnotationId(baseId) {
+  return createDocumentElementId(`annotation-${baseId}`);
+}
 
 // Operators Integration - Execute required operators before template processing
 async function executeRequiredOperatorsBeforeTemplate(templateText, isLiveUpdate = false) {
@@ -70,24 +81,25 @@ async function executeRequiredOperatorsBeforeTemplate(templateText, isLiveUpdate
 
 // Basic template execution
 export async function executeTemplate(clearCache = false, isLiveUpdate = false) {
-  if (!elements.templateEditor) {
+  const templateEditor = getElements.templateEditor;
+  if (!templateEditor) {
     setExecutionStatus('Template editor not found', 'error');
     return;
   }
   
   // Check if the template editor contains rich HTML content that should be preserved
-  const hasRichHTML = elements.templateEditor.innerHTML && 
-                      elements.templateEditor.innerHTML !== elements.templateEditor.textContent &&
-                      isRichHTMLContent(elements.templateEditor.innerHTML);
+  const hasRichHTML = templateEditor.innerHTML && 
+                      templateEditor.innerHTML !== templateEditor.textContent &&
+                      isRichHTMLContent(templateEditor.innerHTML);
   
   let templateText;
   if (hasRichHTML) {
     // Preserve rich HTML content (like PPTX2HTML)
-    templateText = elements.templateEditor.innerHTML;
+    templateText = templateEditor.innerHTML;
     console.log('Detected rich HTML content, preserving HTML structure');
   } else {
     // Convert to plain text for simple content
-    templateText = getTextContentWithLineBreaks(elements.templateEditor);
+    templateText = getTextContentWithLineBreaks(templateEditor);
   }
   
   if (!templateText.trim()) {
@@ -147,13 +159,19 @@ async function executeTemplateRequest(templateText, clearCache = false, isLiveUp
       }
       
       // Update preview (simplified)
-      elements.previewContent.innerHTML = escapeAndFormatOutput(data.rendered_output);
+      const previewContent = getElements.previewContent;
+      if (previewContent) {
+        previewContent.innerHTML = escapeAndFormatOutput(data.rendered_output);
+      }
       
       // Re-attach event listeners to highlighted text after content update
       refreshHighlightEventListeners();
     } else {
       setExecutionStatus('Execution failed', 'error');
-      elements.previewContent.innerHTML = `<div style="color: red;">Error: ${data.error}</div>`;
+      const previewContent = getElements.previewContent;
+      if (previewContent) {
+        previewContent.innerHTML = `<div style="color: red;">Error: ${data.error}</div>`;
+      }
       
       // Re-attach event listeners to highlighted text after content update
       refreshHighlightEventListeners();
@@ -161,7 +179,10 @@ async function executeTemplateRequest(templateText, clearCache = false, isLiveUp
   } catch (error) {
     console.error('Error executing template:', error);
     setExecutionStatus('Execution failed', 'error');
-    elements.previewContent.innerHTML = `<div style="color: red;">Error: ${error.message}</div>`;
+    const previewContent = getElements.previewContent;
+    if (previewContent) {
+      previewContent.innerHTML = `<div style="color: red;">Error: ${error.message}</div>`;
+    }
     
     // Re-attach event listeners to highlighted text after content update
     refreshHighlightEventListeners();
@@ -256,15 +277,16 @@ function preserveRichHTML(text) {
 }
 
 function setExecutionStatus(message, type) {
-  if (!elements.templateExecutionStatus) return;
+  const templateExecutionStatus = getElements.templateExecutionStatus;
+  if (!templateExecutionStatus) return;
   
-  elements.templateExecutionStatus.textContent = message;
-  elements.templateExecutionStatus.className = `template-execution-status ${type}`;
+  templateExecutionStatus.textContent = message;
+  templateExecutionStatus.className = `template-execution-status ${type}`;
   
   if (type !== 'error') {
     setTimeout(() => {
-      elements.templateExecutionStatus.textContent = '';
-      elements.templateExecutionStatus.className = 'template-execution-status';
+      templateExecutionStatus.textContent = '';
+      templateExecutionStatus.className = 'template-execution-status';
     }, 3000);
   }
 }
@@ -333,8 +355,9 @@ async function createAISuggestionComment(lineDiffs, currentTemplate, suggestedTe
     // Get the entire code editor content as selected text (for now)
     const selectedText = currentTemplate;
     
-    // Create a special AI suggestion comment
-    const commentId = `ai-suggestion-${incrementCommentCounter()}`;
+    // Create a special AI suggestion comment with document-specific ID
+    const baseCommentId = `ai-suggestion-${incrementCommentCounter()}`;
+    const commentId = createDocumentCommentId(baseCommentId);
     
     // Get AI as the author but include user context
     const aiAuthor = {
@@ -439,7 +462,7 @@ function summarizeChanges(lineDiffs) {
 
 // Apply inline diff highlighting directly in the code editor
 function applyInlineDiffHighlighting(lineDiffs, commentId) {
-  const templateEditor = elements.templateEditor;
+  const templateEditor = getElements.templateEditor;
   if (!templateEditor) return;
   
   const lines = templateEditor.textContent.split('\n');
@@ -526,7 +549,10 @@ export async function acceptAISuggestion(commentId) {
   if (!comment || !comment.isAISuggestion) return;
   
   // Apply the suggested template
-  elements.templateEditor.textContent = comment.suggestedTemplate;
+  const templateEditor = getElements.templateEditor;
+  if (templateEditor) {
+    templateEditor.textContent = comment.suggestedTemplate;
+  }
   
   // Remove diff highlighting
   removeAIDiffHighlighting(commentId);
@@ -562,7 +588,10 @@ export async function rejectAISuggestion(commentId) {
   if (!comment || !comment.isAISuggestion) return;
   
   // Restore original template (remove diff highlighting)
-  elements.templateEditor.textContent = comment.currentTemplate;
+  const templateEditor = getElements.templateEditor;
+  if (templateEditor) {
+    templateEditor.textContent = comment.currentTemplate;
+  }
   
   // Remove diff highlighting
   removeAIDiffHighlighting(commentId);
@@ -590,7 +619,10 @@ export async function rejectAISuggestion(commentId) {
 
 // Remove AI diff highlighting
 function removeAIDiffHighlighting(commentId) {
-  const highlights = elements.templateEditor.querySelectorAll(`[data-comment-id="${commentId}"]`);
+  const templateEditor = getElements.templateEditor;
+  if (!templateEditor) return;
+  
+  const highlights = templateEditor.querySelectorAll(`[data-comment-id="${commentId}"]`);
   highlights.forEach(highlight => {
     highlight.replaceWith(document.createTextNode(highlight.textContent));
   });
@@ -667,8 +699,10 @@ function displayContentInPreview(content) {
   const currentUser = getCurrentUser();
   const canCopyToCode = currentUser && currentUser.role !== 'Report Consumer';
   
+  // Create document-specific copy button ID
+  const copyButtonId = createDocumentElementId('copy-to-editor-btn');
   const copyButton = canCopyToCode ? 
-    '<button onclick="copyTotemplateEditor()" class="copy-to-editor-btn">Copy to Code Editor</button>' : '';
+    `<button id="${copyButtonId}" onclick="copyTotemplateEditor()" class="copy-to-editor-btn">Copy to Code Editor</button>` : '';
   
   if (content.includes('{{') && content.includes('}}')) {
     // Looks like a template - display as code with highlighting
@@ -715,7 +749,10 @@ function displayContentInPreview(content) {
   window.lastExtractedContent = content;
   
   // Display in preview
-  elements.previewContent.innerHTML = renderedContent;
+  const previewContent = getElements.previewContent;
+  if (previewContent) {
+    previewContent.innerHTML = renderedContent;
+  }
   
   // Re-attach event listeners to highlighted text after content update
   refreshHighlightEventListeners();
@@ -770,8 +807,9 @@ window.copyTotemplateEditor = function() {
     return;
   }
   
-  if (window.lastExtractedContent && elements.templateEditor) {
-    elements.templateEditor.textContent = window.lastExtractedContent;
+  const templateEditor = getElements.templateEditor;
+  if (window.lastExtractedContent && templateEditor) {
+    templateEditor.textContent = window.lastExtractedContent;
     addMessageToUI('system', 'Content copied to code editor');
     // Switch to code mode only if user can switch modes
     if (state.currentMode !== 'template' && canUserSwitchModes()) {
@@ -787,7 +825,8 @@ function escapeHtml(text) {
 }
 
 export function initTemplateExecution() {
-  if (!elements.executeTemplateBtn) {
+  const executeTemplateBtn = getElements.executeTemplateBtn;
+  if (!executeTemplateBtn) {
     console.error(`[${windowId}] Execute template button not found!`);
     return;
   }
@@ -796,7 +835,7 @@ export function initTemplateExecution() {
   const currentUser = getCurrentUser();
   if (currentUser && currentUser.role === 'Report Consumer') {
     console.log(`[${windowId}] Hiding execute template button for consumer: ${currentUser.name}`);
-    elements.executeTemplateBtn.style.display = 'none';
+    executeTemplateBtn.style.display = 'none';
     return; // Don't add event listeners for consumers
   }
   
@@ -813,12 +852,12 @@ export function initTemplateExecution() {
   };
   
   // Add the event listener to the current button
-  elements.executeTemplateBtn.addEventListener('click', templateExecData.executeHandler);
+  executeTemplateBtn.addEventListener('click', templateExecData.executeHandler);
   
   // Track which button currently has the listener
-  templateExecData.currentExecuteBtn = elements.executeTemplateBtn;
+  templateExecData.currentExecuteBtn = executeTemplateBtn;
   
-  console.log(`[${windowId}] Template execution initialized, button:`, elements.executeTemplateBtn);
+  console.log(`[${windowId}] Template execution initialized, button:`, executeTemplateBtn);
   
   // Mark as initialized
   templateExecData.templateExecutionInitialized = true;

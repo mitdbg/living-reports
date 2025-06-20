@@ -1,7 +1,7 @@
 // Mode Management Module
-import { state, elements, updateState, windowId } from './state.js';
+import { state, getElements, updateState, windowId } from './state.js';
 import { updateAnnotationsVisibility } from './annotations.js';
-import { refreshHighlightEventListeners, updateCodeHighlights, updateSourceHighlights } from './comments.js';
+import { refreshHighlightEventListeners } from './comments.js';
 import { getCurrentUser } from './auth.js';
 
 // Create window-specific storage for initialization flags and handlers
@@ -55,42 +55,19 @@ function setupModeButtonEventDelegation() {
   window[MODES_KEY] = modesData;
 }
 
-// Helper function to get the active document container
-function getActiveDocumentContainer() {
-  // Find the active document tab content (not the template)
-  const activeContent = document.querySelector('.tab-content.active:not(.document-tab-template)');
-  if (activeContent) {
-    return activeContent;
-  }
-  
-  // Fallback: find any visible tab content that's not the template
-  const visibleContent = document.querySelector('.tab-content[style*="flex"]:not(.document-tab-template), .tab-content:not([style*="none"]):not(.document-tab-template)');
-  if (visibleContent) {
-    return visibleContent;
-  }
-  
-  return null;
-}
-
-// Update active button states
+// Update active button states using document-specific elements
 function updateModeButtonStates(activeMode) {
-  // Find the active document container first
-  const container = getActiveDocumentContainer();
-  if (!container) {
-    return;
-  }
-  
-  // Find buttons within the active document container
-  const sourceModeBtn = container.querySelector('.source-mode-btn');
-  const templateModeBtn = container.querySelector('.template-mode-btn');
-  const previewModeBtn = container.querySelector('.preview-mode-btn');
+  const sourceModeBtn = getElements.sourceModeBtn;
+  const templateModeBtn = getElements.templateModeBtn;
+  const previewModeBtn = getElements.previewModeBtn;
   
   if (!templateModeBtn || !previewModeBtn) {
+    console.log(`[${windowId}] Mode buttons not found for current document`);
     return;
   }
   
   // Remove active class from all buttons
-  // sourceModeBtn.classList.remove('active');
+  if (sourceModeBtn) sourceModeBtn.classList.remove('active');
   templateModeBtn.classList.remove('active');
   previewModeBtn.classList.remove('active');
   
@@ -113,19 +90,15 @@ export function switchToSource() {
   
   updateState({ currentMode: 'source' });
   
-  // Find the active document container first
-  const container = getActiveDocumentContainer();
-  if (!container) {
-    return;
-  }
+  // Use document-specific elements from state.js
+  const sourcePanel = getElements.sourcePanel;
+  const templatePanel = getElements.templatePanel;
+  const previewPanel = getElements.previewPanel;
+  const diffView = getElements.diffView;
+  const contentTitle = getElements.contentTitle;
   
-  // Find panels within the active document container
-  const sourcePanel = container.querySelector('.source-panel');
-  const templatePanel = container.querySelector('.template-panel');
-  const previewPanel = container.querySelector('.preview-panel');
-  const operatorsPanel = container.querySelector('.operators-panel');
-  const diffView = container.querySelector('.diff-view');
-  const contentTitle = container.querySelector('#content-title, .content-title');
+  // Also handle operators panel
+  const operatorsPanel = getElements.operatorsPanel || document.querySelector('.operators-panel.active');
   
   if (sourcePanel) {
     sourcePanel.classList.add('active');
@@ -142,6 +115,7 @@ export function switchToSource() {
     previewPanel.style.display = 'none';
   }
   
+  // Hide operators panel if it's active
   if (operatorsPanel) {
     operatorsPanel.classList.remove('active');
     operatorsPanel.style.display = 'none';
@@ -173,19 +147,15 @@ export function switchToTemplate() {
   
   updateState({ currentMode: 'template' });
   
-  // Find the active document container first
-  const container = getActiveDocumentContainer();
-  if (!container) {
-    return;
-  }
+  // Use document-specific elements from state.js
+  const sourcePanel = getElements.sourcePanel;
+  const templatePanel = getElements.templatePanel;
+  const previewPanel = getElements.previewPanel;
+  const diffView = getElements.diffView;
+  const contentTitle = getElements.contentTitle;
   
-  // Find panels within the active document container
-  const sourcePanel = container.querySelector('.source-panel');
-  const templatePanel = container.querySelector('.template-panel');
-  const previewPanel = container.querySelector('.preview-panel');
-  const operatorsPanel = container.querySelector('.operators-panel');
-  const diffView = container.querySelector('.diff-view');
-  const contentTitle = container.querySelector('#content-title, .content-title');
+  // Also handle operators panel
+  const operatorsPanel = getElements.operatorsPanel || document.querySelector('.operators-panel.active');
   
   if (sourcePanel) {
     sourcePanel.classList.remove('active');
@@ -202,6 +172,7 @@ export function switchToTemplate() {
     previewPanel.style.display = 'none';
   }
   
+  // Hide operators panel if it's active
   if (operatorsPanel) {
     operatorsPanel.classList.remove('active');
     operatorsPanel.style.display = 'none';
@@ -227,19 +198,15 @@ export function switchToPreview() {
   
   updateState({ currentMode: 'preview' });
   
-  // Find the active document container first
-  const container = getActiveDocumentContainer();
-  if (!container) {
-    return;
-  }
+  // Use document-specific elements from state.js
+  const sourcePanel = getElements.sourcePanel;
+  const templatePanel = getElements.templatePanel;
+  const previewPanel = getElements.previewPanel;
+  const diffView = getElements.diffView;
+  const contentTitle = getElements.contentTitle;
   
-  // Find panels within the active document container
-  const sourcePanel = container.querySelector('.source-panel');
-  const templatePanel = container.querySelector('.template-panel');
-  const previewPanel = container.querySelector('.preview-panel');
-  const operatorsPanel = container.querySelector('.operators-panel');
-  const diffView = container.querySelector('.diff-view');
-  const contentTitle = container.querySelector('#content-title, .content-title');
+  // Also handle operators panel
+  const operatorsPanel = getElements.operatorsPanel || document.querySelector('.operators-panel.active');
   
   if (sourcePanel) {
     sourcePanel.classList.remove('active');
@@ -256,6 +223,7 @@ export function switchToPreview() {
     previewPanel.style.display = 'block';
   }
   
+  // Hide operators panel if it's active
   if (operatorsPanel) {
     operatorsPanel.classList.remove('active');
     operatorsPanel.style.display = 'none';
@@ -284,12 +252,32 @@ export function switchToDiff() {
   }
   
   updateState({ currentMode: 'diff' });
-  elements.sourcePanel.classList.remove('active');
-  elements.templatePanel.classList.remove('active');
-  elements.previewPanel.classList.remove('active');
-  elements.diffView.classList.add('active');
   
-  elements.contentTitle.textContent = 'Template Comparison';
+  // Use document-specific elements from state.js
+  const sourcePanel = getElements.sourcePanel;
+  const templatePanel = getElements.templatePanel;
+  const previewPanel = getElements.previewPanel;
+  const diffView = getElements.diffView;
+  const contentTitle = getElements.contentTitle;
+  
+  // Also handle operators panel
+  const operatorsPanel = getElements.operatorsPanel || document.querySelector('.operators-panel.active');
+  
+  if (sourcePanel) sourcePanel.classList.remove('active');
+  if (templatePanel) templatePanel.classList.remove('active');
+  if (previewPanel) previewPanel.classList.remove('active');
+  
+  // Hide operators panel if it's active
+  if (operatorsPanel) {
+    operatorsPanel.classList.remove('active');
+    operatorsPanel.style.display = 'none';
+  }
+  
+  if (diffView) diffView.classList.add('active');
+  
+  if (contentTitle) {
+    contentTitle.textContent = 'Template Comparison';
+  }
   // Don't update button states for diff mode - keep the previous active button
   updateAnnotationsVisibility();
 }
@@ -301,35 +289,41 @@ export function exitDiffMode() {
 
 // Force preview mode for consumers
 function enforceConsumerMode() {
+  // Check if we have an active document before enforcing mode
+  if (!window.documentManager?.activeDocumentId) {
+    console.log(`[${windowId}] No active document for enforcing consumer mode`);
+    return;
+  }
+  
   const currentUser = getCurrentUser();
   if (currentUser && currentUser.role === 'Report Consumer') {
-    // Consumer should always be in preview mode, but only if elements are initialized
-    if (elements.previewPanel && state.currentMode !== 'preview') {
+    // Consumer should always be in preview mode
+    if (getElements.previewPanel && state.currentMode !== 'preview') {
       switchToPreview();
     }
     
-    // Hide mode buttons for consumers
+    // Hide mode buttons for consumers using document-specific selectors
     const modeButtons = document.querySelector('.mode-buttons');
     if (modeButtons) {
       modeButtons.style.display = 'none';
     }
     
     // Hide source and template panels for consumers
-    if (elements.sourcePanel) {
-      elements.sourcePanel.style.display = 'none';
+    if (getElements.sourcePanel) {
+      getElements.sourcePanel.style.display = 'none';
     }
     
-    if (elements.templatePanel) {
-      elements.templatePanel.style.display = 'none';
+    if (getElements.templatePanel) {
+      getElements.templatePanel.style.display = 'none';
     }
     
     // Hide execute buttons for consumers (they can't execute code or templates)
-    if (elements.executeSourceBtn) {
-      elements.executeSourceBtn.style.display = 'none';
+    if (getElements.executeSourceBtn) {
+      getElements.executeSourceBtn.style.display = 'none';
     }
     
-    if (elements.executeTemplateBtn) {
-      elements.executeTemplateBtn.style.display = 'none';
+    if (getElements.executeTemplateBtn) {
+      getElements.executeTemplateBtn.style.display = 'none';
     }
     
     // Hide the source and template controls sections
@@ -355,14 +349,14 @@ export function initModes() {
   
   // Simple fix: wait a moment for the tab to become visible
   setTimeout(() => {
-    // Check if buttons exist
-    if (!elements.templateModeBtn || !elements.previewModeBtn) {
-      console.log(`[${windowId}] Mode buttons not found, they might be in different document tabs`);
+    // Check if buttons exist using document-specific access
+    if (!getElements.templateModeBtn || !getElements.previewModeBtn) {
+      console.log(`[${windowId}] Mode buttons not found for current document`);
       return;
     }
     
     // Check if buttons are actually visible and have dimensions
-    const buttonRect = elements.templateModeBtn.getBoundingClientRect();
+    const buttonRect = getElements.templateModeBtn.getBoundingClientRect();
     if (buttonRect.width === 0 || buttonRect.height === 0) {
       console.log(`[${windowId}] Mode buttons not visible yet, but event delegation is set up`);
       return;
@@ -394,8 +388,11 @@ export function resetModesInitialization() {
   modesData.modesInitialized = false;
   window[MODES_KEY] = modesData;
   
-  // Re-enforce consumer mode restrictions after reset
+  // Only re-enforce consumer mode if there's still an active document
   setTimeout(() => {
-    enforceConsumerMode();
+    // Check if we still have an active document before trying to enforce mode
+    if (window.documentManager?.activeDocumentId) {
+      enforceConsumerMode();
+    }
   }, 50);
 }
