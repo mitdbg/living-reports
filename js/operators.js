@@ -2126,8 +2126,8 @@ function saveInstance() {
   // Get the active document container
   const container = getActiveDocumentContainer();
   if (!container) return;
-  const embeddedInstanceName = createDocumentElmentId('embedded-instance-name');
-  const embeddedInstanceTool = createDocumentElmentId('embedded-instance-tool');
+  const embeddedInstanceName = createDocumentElementId('embedded-instance-name');
+  const embeddedInstanceTool = createDocumentElementId('embedded-instance-tool');
   
   const nameInput = container.querySelector(`#${embeddedInstanceName}`);
   const toolSelect = container.querySelector(`#${embeddedInstanceTool}`);
