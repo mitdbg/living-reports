@@ -125,14 +125,6 @@ export class DocumentManager {
     
     // Use event delegation on the document list container
     this.documentList.addEventListener('click', async (e) => {
-      console.log(`🔍 Document list click detected:`, {
-        target: e.target.tagName + '.' + e.target.className,
-        documentId: e.target.getAttribute('data-document-id'),
-        action: e.target.getAttribute('data-action'),
-        closestItem: e.target.closest('.document-item')?.getAttribute('data-document-id'),
-        isButton: e.target.matches('button')
-      });
-      
       const documentId = e.target.getAttribute('data-document-id');
       const action = e.target.getAttribute('data-action');
       
@@ -148,6 +140,13 @@ export class DocumentManager {
         console.log(`🔍 Executing SHARE action for document: ${documentId}`);
         e.stopPropagation(); // Prevent event bubbling
         await this.shareDocument(documentId);
+      } else if (e.target.closest('.document-item') && !action) {
+        // Click on document item itself
+        const item = e.target.closest('.document-item');
+        const docId = item.getAttribute('data-document-id');
+        if (docId) {
+          this.openExistingDocument(docId);
+        }
       } else {
         console.log(`🔍 No action taken - conditions not met`);
       }
