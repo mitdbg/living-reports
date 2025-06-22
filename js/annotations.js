@@ -173,7 +173,7 @@ export function createFloatingAnnotation(selectedText, commentContent, commentDa
   
   // Trigger auto-save for comment changes
   if (window.documentManager) {
-    window.documentManager.onCommentChange();
+    window.documentManager.onContentChange();
   }
 }
 
@@ -317,7 +317,7 @@ export function removeFloatingAnnotation(annotationId) {
     
     // Trigger auto-save for comment changes
     if (window.documentManager) {
-      window.documentManager.onCommentChange();
+      window.documentManager.onContentChange();
     }
   }
   
@@ -365,7 +365,7 @@ export function deleteFloatingAnnotation(annotationId) {
   
   // Trigger auto-save for comment changes
   if (window.documentManager) {
-    window.documentManager.onCommentChange();
+    window.documentManager.onContentChange();
   }
 }
 
@@ -410,7 +410,7 @@ export function addMessageToAnnotation(annotationId, message, author = null) {
   
   // Trigger auto-save for comment changes
   if (window.documentManager) {
-    window.documentManager.onCommentChange();
+    window.documentManager.onContentChange();
   }
 }
 
@@ -918,7 +918,7 @@ export function resolveFloatingAnnotation(annotationId) {
   
   // Trigger auto-save for comment changes
   if (window.documentManager) {
-    window.documentManager.onCommentChange();
+    window.documentManager.onContentChange();
   }
 }
 

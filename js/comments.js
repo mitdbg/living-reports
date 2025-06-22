@@ -189,7 +189,7 @@ export function clearAllComments() {
   
   // Trigger auto-save for comment changes
   if (window.documentManager && commentsToRemove.length > 0) {
-    window.documentManager.onCommentChange();
+    window.documentManager.onContentChange();
   }
   
   console.log('All comments cleared successfully');
@@ -215,7 +215,7 @@ export function clearCurrentModeComments() {
   
   // Trigger auto-save for comment changes
   if (window.documentManager && commentsToRemove.length > 0) {
-    window.documentManager.onCommentChange();
+    window.documentManager.onContentChange();
   }
   
   console.log(`Removed ${commentsToRemove.length} comments from current mode`);
@@ -265,7 +265,7 @@ export function createTextComment(selectedText, commentContent) {
   addMessageToUI('system', `Comment added: "${commentContent}" for text "${selectedText.substring(0, 30)}${selectedText.length > 30 ? '...' : ''}"`);
 
   if (window.documentManager) {
-    window.documentManager.onCommentChange();
+    window.documentManager.onContentChange();
   }
 }
 
@@ -937,7 +937,7 @@ async function createAISuggestionFromParsed(selectedText, userRequest, parsedSug
     
     // Trigger auto-save
     if (window.documentManager) {
-      window.documentManager.onCommentChange();
+      window.documentManager.onContentChange();
     }
 
   } catch (error) {
