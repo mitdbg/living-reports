@@ -3,6 +3,6 @@ flask-cors
 openai
 pandas
 beautifulsoup4
-PyPDF2
+fitz
 openpyxl
 python-pptx 

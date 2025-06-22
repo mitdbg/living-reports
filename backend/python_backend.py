@@ -4,7 +4,7 @@ import json
 import os
 import logging
 from datetime import datetime
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from openai import OpenAI
 
@@ -18,7 +18,8 @@ from chat_manager import ChatManager
 from template import Template
 from execution_result import ExecutionResult
 from simple_view import SimpleView
-from file_processor import process_excel_file, process_pdf_file, process_html_file, process_pptx_file
+from file_processor import process_excel_file, process_html_file, process_pptx_file
+from pdf_processor import process_pdf_file
 from pathlib import Path
 import os
 
@@ -365,7 +366,12 @@ def set_file_context():
         file_name = data.get('fileName', '')
         content = data.get('content', '')
         session_id = data.get('session_id', 'default')
+        redirect_output_file_path = data.get('redirect_output_file_path', '')
         
+        if redirect_output_file_path != "":
+            with open(redirect_output_file_path, 'r') as f:
+                content = f.read()
+
         # Create a template from the file content
         template = Template(content)
         execution_result = ExecutionResult()
@@ -532,7 +538,7 @@ JSON:"""
                     model="gpt-4.1-mini",
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.3,
-                    max_tokens=2000
+                    max_tokens=8000
                 )
                 suggestion_text = response.choices[0].message.content.strip()
             else:
@@ -541,7 +547,7 @@ JSON:"""
                     model="Qwen/Qwen2.5-Coder-32B-Instruct",
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.3,
-                    max_tokens=500
+                    max_tokens=8000
                 )
                 suggestion_text = response.choices[0].message.content.strip()
             
@@ -640,14 +646,17 @@ def process_file():
         file_content = data.get('content', '')  # Base64 encoded for binary files
         file_path = data.get('filePath', '')
         session_id = data.get('session_id', 'default')
-        
+        output_json_path_dir = "database/files/" + session_id
         # Determine file type and process accordingly
         file_ext = Path(file_name).suffix.lower()
-        
+        output_json_path = ""
+
         if file_ext in ['.xlsx', '.xls']:
             processed_content = process_excel_file(file_content, file_name)
         elif file_ext == '.pdf':
-            processed_content = process_pdf_file(file_content, file_name)
+            output_json_path = output_json_path_dir+"/"+file_name+".json"
+            output_image_dir = output_json_path_dir+"/"+file_name+"_images"
+            processed_content = process_pdf_file(file_path, json_path=output_json_path, clean_image_dir=output_image_dir)
         elif file_ext in ['.html', '.htm']:
             processed_content = process_html_file(file_content, file_name)
         elif file_ext in ['.pptx', '.ppt']:
@@ -656,7 +665,7 @@ def process_file():
             # For other file types, return as-is (assuming text)
             processed_content = file_content
         
-        return jsonify({'success': True, 'message': 'File processed successfully', 'content': processed_content, 'fileName': file_name, 'filePath': file_path})
+        return jsonify({'success': True, 'message': 'File processed successfully', 'content': processed_content, 'fileName': file_name, 'filePath': file_path, 'output_file_path': output_json_path})
         
     except Exception as e:
         logger.error(f"Error processing file: {e}")
@@ -1823,6 +1832,38 @@ def build_enhanced_prompt(user_prompt, context):
             enhanced_parts.append(f"\nDocument type: {context['document_type']}")
     
     return '\n'.join(enhanced_parts)
+
+
+# File serving endpoint for PDF images and other files
+@app.route('/api/serve-file/<path:file_path>')
+def serve_file(file_path):
+    """Serve files from the database directory (for PDF images, etc.)"""
+    try:
+        # Security check: ensure the path is within the database directory
+        safe_path = os.path.normpath(file_path)
+        if '..' in safe_path or safe_path.startswith('/'):
+            logger.warning(f"🚫 Blocked potentially unsafe file path: {file_path}")
+            return jsonify({'error': 'Invalid file path'}), 400
+        
+        # Construct full file path - note: file_path should start with 'database/'
+        full_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), safe_path)
+        
+        # Check if file exists
+        if not os.path.exists(full_path):
+            logger.warning(f"📄 File not found: {full_path}")
+            return jsonify({'error': 'File not found'}), 404
+        
+        # Check if it's actually a file (not a directory)
+        if not os.path.isfile(full_path):
+            logger.warning(f"🚫 Not a file: {full_path}")
+            return jsonify({'error': 'Not a file'}), 400
+        
+        logger.info(f"📎 Serving file: {safe_path}")
+        return send_file(full_path)
+        
+    except Exception as e:
+        logger.error(f"❌ Error serving file {file_path}: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 if __name__ == '__main__':

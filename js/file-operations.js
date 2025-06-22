@@ -5,7 +5,6 @@ import { switchToPreview, switchToTemplate } from './modes.js';
 import { refreshHighlightEventListeners } from './comments.js';
 import { addToDataLake } from './data-lake.js';
 import { createDocumentDialog, createDocumentElementId, getDocumentElement } from './element-id-manager.js';
-
 const { ipcRenderer } = require('electron');
 
 // Create window-specific storage for initialization flags and handlers
@@ -209,16 +208,14 @@ async function loadContextFile() {
     
     addMessageToUI('system', `Context file loaded: ${file.name}`);
     
-    // Check if file needs backend processing (Excel, PDF, HTML - but not PowerPoint)
     const fileExt = file.name.split('.').pop().toLowerCase();
-    const needsBackendProcessing = ['xlsx', 'xls', 'pdf', 'html', 'htm'].includes(fileExt);
+    const needsBackendProcessing = ['xlsx', 'xls', 'html', 'htm', 'pdf'].includes(fileExt);
     const isPowerPoint = ['pptx', 'ppt'].includes(fileExt);
     
     let processedFile = file;
-    
     if (needsBackendProcessing) {
       try {
-        addMessageToUI('system', `Processing ${fileExt.toUpperCase()} file...`);
+        addMessageToUI('system', `Processing ${file.name} file...`);
         
         // Send file to backend for processing
         const response = await fetch('http://127.0.0.1:5000/api/process-file', {
@@ -243,9 +240,10 @@ async function loadContextFile() {
           processedFile = {
             name: processedData.fileName,
             path: processedData.filePath,
-            content: processedData.content
+            content: processedData.content,
+            redirect_output_file_path: processedData.output_file_path,
           };
-          addMessageToUI('system', `File processed successfully. Extracted ${processedData.content.length} characters.`);
+          addMessageToUI('system', `File processed successfully. Saved JSON file to ${processedData.output_file_path}`);
         } else {
           throw new Error(processedData.error || 'Failed to process file');
         }
@@ -276,6 +274,7 @@ async function loadContextFile() {
           fileName: processedFile.name,
           filePath: processedFile.path,
           content: processedFile.content,
+          redirect_output_file_path: processedFile.redirect_output_file_path,
           session_id: state.sessionId,
           action: 'load_context'
         })
@@ -288,13 +287,6 @@ async function loadContextFile() {
       const data = await response.json();
       addMessageToUI('system', data.message);
       backendSaved = true;
-      
-      // Update the context file to mark it as backend saved - removed since using Data Lake
-      // const contextFile = state.loadedContextFiles.find(f => f.name === processedFile.name);
-      // if (contextFile) {
-      //   contextFile.backendSaved = true;
-      //   updateContextFilesDisplay();
-      // }
     } catch (error) {
       console.error('Error saving context to backend:', error);
       addMessageToUI('system', 'Warning: Could not save to backend (backend may not be running). File still available for display.');
@@ -431,7 +423,7 @@ function displayContextInPreview(file) {
       renderedContent = renderCSV(file.content);
       break;
     case 'pdf':
-      renderedContent = renderPDF(file);
+      renderedContent = renderPDF(file.content);
       break;
     case 'json':
       renderedContent = renderJSON(file.content);
@@ -444,21 +436,13 @@ function displayContextInPreview(file) {
       renderedContent = renderPlainText(file.content);
   }
   
-  // Display in preview panel
-  elements.previewContent.innerHTML = `
-    <div class="context-file-header">
-      <h2>📄 Context File: ${file.name}</h2>
-      <p class="file-path">${file.path}</p>
-      <p class="file-type">Format: ${fileExt.toUpperCase()}</p>
-    </div>
-    <div class="context-file-content">
-      ${renderedContent}
-    </div>
-  `;
+  // Display in preview panel - show only the content without the header info box
+  elements.previewContent.innerHTML = renderedContent;
   
-  // Load all file types into both preview and template panels
-  console.log('🔍 DEBUG: About to load to template, file:', file.name, 'renderedContent length:', renderedContent.length);
-  loadContentToTemplate(file, renderedContent);
+  // Load content into template editor
+  if (elements.templateEditor) {
+    elements.templateEditor.innerHTML = renderedContent;
+  }
   addMessageToUI('system', `Content loaded into both preview and template panels: ${file.name}`);
   
   // Re-attach event listeners to highlighted text after content update
@@ -468,14 +452,7 @@ function displayContextInPreview(file) {
   switchToPreview();
 }
 
-function loadContentToTemplate(file, renderedContent) {
-  // Load content into template panel
-  console.log('🔍 DEBUG: Loading to template, elements.templateEditor:', elements.templateEditor);
-  if (elements.templateEditor) {
-    // Load only the raw content without any headers or processing info
-    elements.templateEditor.innerHTML = renderedContent;
-  }
-}
+
 
 // Format renderers
 function renderMarkdown(content) {
@@ -547,19 +524,90 @@ function renderCSV(content) {
   return `<div class="csv-content">${tableHTML}</div>`;
 }
 
-function renderPDF(file) {
-  // For PDF, we'll show a placeholder and link
-  return `
-    <div class="pdf-content">
-      <div class="pdf-placeholder">
-        <h3>📄 PDF File</h3>
-        <p>PDF content cannot be displayed directly in preview.</p>
-        <p><strong>File:</strong> ${file.name}</p>
-        <p><strong>Path:</strong> ${file.path}</p>
-        <p>The PDF content has been sent to the backend for context processing.</p>
-      </div>
-    </div>
-  `;
+function renderPDF(content) {
+  const containerId = `pdf-container-${Date.now()}`;
+  
+  // Create actual DOM element instead of just HTML string
+  const container = document.createElement("div");
+  container.id = containerId;
+  container.className = "pdf-container";
+
+  // Parse content if it's a string
+  let pages = content;
+  if (typeof content === 'string') {
+    try {
+      pages = JSON.parse(content);
+    } catch (error) {
+      console.error('Error parsing PDF content:', error);
+      container.innerHTML = `<div class="pdf-error">Error parsing PDF content: ${error.message}</div>`;
+      return `<div class="pdf-content">${container.outerHTML}</div>`;
+    }
+  }
+
+  pages.forEach(page => {
+    // Create page container with background image
+    const pageDiv = document.createElement("div");
+    pageDiv.className = "pdf-page";
+    pageDiv.style.width = page.width + "px";
+    pageDiv.style.height = page.height + "px";
+    
+    // Convert file path to HTTP URL for serving through backend
+    const backgroundUrl = page.background.startsWith('database/') 
+      ? `http://127.0.0.1:5000/api/serve-file/${page.background}`
+      : `http://127.0.0.1:5000/api/serve-file/${page.background}`;
+    
+    pageDiv.style.backgroundImage = `url(${backgroundUrl})`;
+    pageDiv.style.backgroundSize = "cover";
+    pageDiv.style.position = "relative";
+
+    // Loop over all elements on the page
+    page.elements.forEach(el => {
+      if (el.type === "text") {
+        // Measure actual rendered width using a hidden span
+        const measure = document.createElement("span");
+        measure.style.position = "absolute";
+        measure.style.visibility = "hidden";
+        measure.style.whiteSpace = "nowrap";
+        measure.style.fontSize = el.font_size + "px";
+        measure.style.fontFamily = el.font;
+        measure.textContent = el.text;
+        document.body.appendChild(measure);
+        const measuredWidth = measure.offsetWidth;
+        document.body.removeChild(measure);
+
+        // Choose the larger of original width or measured width
+        const finalWidth = Math.max(el.width, measuredWidth);
+
+        // Create editable text element
+        const textDiv = document.createElement("div");
+        textDiv.className = "text-box";
+        textDiv.contentEditable = true;
+        textDiv.textContent = el.text;
+
+        Object.assign(textDiv.style, {
+          position: "absolute",
+          left: el.x + "px",
+          top: el.y + "px",
+          width: finalWidth + "px",
+          height: el.height + "px",
+          fontSize: el.font_size + "px",
+          fontFamily: el.font,
+          color: el.color,
+          whiteSpace: "nowrap",      // Prevent line breaks
+          overflow: "visible",       // Allow overflow if needed
+          backgroundColor: "transparent",
+          lineHeight: "1",           // Match PDF more closely
+        });
+
+        pageDiv.appendChild(textDiv);
+      }
+    });
+
+    container.appendChild(pageDiv);
+  });
+  
+  // Return the HTML string wrapped in pdf-content div
+  return `<div class="pdf-content">${container.outerHTML}</div>`;
 }
 
 function renderJSON(content) {

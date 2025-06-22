@@ -227,14 +227,59 @@ ipcMain.handle('open-file-dialog', async () => {
   const fileExt = path.extname(fileName).toLowerCase();
   
   try {
+    // Define file types that should skip content reading entirely
+    const skipContentTypes = [
+      '.exe', '.dll', '.bin', '.so', '.dylib',
+      '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2',
+      '.iso', '.dmg', '.img', '.pdf'
+    ];
+    
+    // Define large file types that need user confirmation
+    const largeFileTypes = [
+      '.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm', '.mkv',
+      '.mp3', '.wav', '.ogg', '.m4a', '.flac'
+    ];
+    
+    // Check if we should skip reading content
+    if (skipContentTypes.includes(fileExt)) {
+      return {
+        path: filePath,
+        name: fileName,
+        content: null, // No content for skipped types
+        type: 'application/octet-stream',
+        size: fs.statSync(filePath).size,
+        isBinary: false,
+        fileType: fileExt,
+        contentSkipped: true,
+        skipReason: 'File type not supported for content reading'
+      };
+    }
+    
+    // Get file size for large file check
+    const fileSize = fs.statSync(filePath).size;
+    const maxSizeBeforeWarning = 50 * 1024 * 1024; // 50MB
+    
+    // Check if file is too large or is a large media file
+    if (fileSize > maxSizeBeforeWarning || largeFileTypes.includes(fileExt)) {
+      const fileSizeMB = (fileSize / (1024 * 1024)).toFixed(2);
+      return {
+        path: filePath,
+        name: fileName,
+        content: null,
+        type: 'application/octet-stream',
+        size: fileSize,
+        isBinary: true,
+        fileType: fileExt,
+        contentSkipped: true,
+        skipReason: `Large file (${fileSizeMB}MB) - content reading skipped for performance`,
+        requiresConfirmation: true
+      };
+    }
+    
     // Determine if file should be read as binary
     const binaryExtensions = [
-      '.xlsx', '.xls', '.pdf', '.pptx', '.ppt',
-      '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp', '.svg',
-      '.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm', '.mkv',
-      '.mp3', '.wav', '.ogg', '.m4a', '.flac',
-      '.zip', '.rar', '.7z', '.tar', '.gz',
-      '.exe', '.dmg', '.app', '.deb', '.rpm'
+      '.xlsx', '.xls', '.pptx', '.ppt',
+      '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp', '.svg'
     ];
     const isBinary = binaryExtensions.includes(fileExt);
     
@@ -246,7 +291,7 @@ ipcMain.handle('open-file-dialog', async () => {
       const buffer = fs.readFileSync(filePath);
       content = buffer.toString('base64');
       
-      // Determine MIME type for images and videos
+      // Determine MIME type for images and supported binary files
       const mimeMap = {
         '.jpg': 'image/jpeg',
         '.jpeg': 'image/jpeg',
@@ -256,16 +301,31 @@ ipcMain.handle('open-file-dialog', async () => {
         '.tiff': 'image/tiff',
         '.webp': 'image/webp',
         '.svg': 'image/svg+xml',
-        '.mp4': 'video/mp4',
-        '.avi': 'video/x-msvideo',
-        '.mov': 'video/quicktime',
-        '.wmv': 'video/x-ms-wmv',
-        '.flv': 'video/x-flv',
-        '.webm': 'video/webm',
-        '.mkv': 'video/x-matroska'
+        '.pdf': 'application/pdf',
+        '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        '.xls': 'application/vnd.ms-excel',
+        '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        '.ppt': 'application/vnd.ms-powerpoint'
       };
       mimeType = mimeMap[fileExt];
     } else {
+      // For text files, also check size before reading
+      if (fileSize > 10 * 1024 * 1024) { // 10MB limit for text files
+        const fileSizeMB = (fileSize / (1024 * 1024)).toFixed(2);
+        return {
+          path: filePath,
+          name: fileName,
+          content: null,
+          type: `text/${fileExt.substring(1)}`,
+          size: fileSize,
+          isBinary: false,
+          fileType: fileExt,
+          contentSkipped: true,
+          skipReason: `Large text file (${fileSizeMB}MB) - content reading skipped for performance`,
+          requiresConfirmation: true
+        };
+      }
+      
       // Read text files as UTF-8
       content = fs.readFileSync(filePath, 'utf8');
     }
@@ -275,9 +335,10 @@ ipcMain.handle('open-file-dialog', async () => {
       name: fileName,
       content: content,
       type: mimeType || `text/${fileExt.substring(1)}`, // Add MIME type
-      size: fs.statSync(filePath).size, // Add file size
+      size: fileSize, // Use already calculated file size
       isBinary: isBinary,
-      fileType: fileExt
+      fileType: fileExt,
+      contentSkipped: false
     };
   } catch (error) {
     console.error('Error reading file:', error);
