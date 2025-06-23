@@ -5,7 +5,23 @@
   <title>Collaborative Workspace</title>
   <link rel="stylesheet" href="css/styles.css">
   <link rel="stylesheet" href="css/pptx2html.css">
-</head>
+  
+  <!-- App Scripts -->
+  <script type="module" src="js/app.js"></script>
+  <script type="module" src="js/auth.js"></script>
+  <script type="module" src="js/chat.js"></script>
+  <script type="module" src="js/comments.js"></script>
+  <script type="module" src="js/document-manager.js"></script>
+  <script type="module" src="js/file-operations.js"></script>
+  <script type="module" src="js/modes.js"></script>
+  <script type="module" src="js/operators.js"></script>
+  <script type="module" src="js/sharing.js"></script>
+  <script type="module" src="js/state.js"></script>
+  <script type="module" src="js/utils.js"></script>
+  <script type="module" src="js/variables.js"></script>
+  <script type="module" src="js/verification.js"></script>
+  
+ </head>
 <body>
   <!-- Tab Navigation -->
   <div class="tab-navigation">
@@ -145,12 +161,12 @@
           <div class="action-buttons">
             <button class="share-btn mode-toggle">📤 Share</button>
             <button class="data-lake-btn mode-toggle">🗄️ Data Lake</button>
-            <button class="variables-btn mode-toggle">📊 Vars</button>
+            <button class="variables-btn mode-toggle">📊 Variables</button>
 
             <button class="operators-btn mode-toggle">🔧 Operators</button>
             <div class="mode-buttons">
-              <button class="mode-btn template-mode-btn active" data-mode="template" title="Template">📝</button>
-              <button class="mode-btn preview-mode-btn" data-mode="preview" title="Preview">👁️</button>
+              <button class="mode-btn template-mode-btn active" data-mode="template" title="Template">Template</button>
+              <button class="mode-btn preview-mode-btn" data-mode="preview" title="Preview">Preview</button>
             </div>
           </div>
         </div>
@@ -321,10 +337,7 @@ def calculate():
               <h2>Report Preview</h2>
               <p>Execute source code first to generate data, then execute template to see the final report here.</p>
             </div>
-            <div class="variables-display" style="display: none;">
-              <h4>Available Variables</h4>
-              <div class="variables-list"></div>
-            </div>
+
           </div>
           
           <!-- Diff view mode -->
@@ -393,7 +406,6 @@ def calculate():
     </div>
   </div>
 
-  <script type="module" src="js/app.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 
 </body>

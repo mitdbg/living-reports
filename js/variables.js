@@ -1,6 +1,7 @@
 // Variables Management Module
 import { state, elements, updateState } from './state.js';
 import { createDocumentDialog, createDocumentElementId, getDocumentElement, registerElement } from './element-id-manager.js';
+import { variableToolGenerator } from './variable-operator-generator.js';
 
 /**
  * Variables Management System
@@ -40,6 +41,10 @@ class VariablesManager {
       
       this.setupTextSelection();
       console.log('✓ Text selection setup complete');
+      
+      // Initialize variable tool generator
+      variableToolGenerator.init();
+      console.log('✓ Variable tool generator initialized');
       
       // Note: Dialogs are created lazily when needed to ensure document context
       console.log('✓ Dialogs will be created when needed (lazy loading)');
@@ -244,7 +249,10 @@ class VariablesManager {
               <span class="ai-spinner">🤖</span>
               <span class="ai-text">AI is analyzing...</span>
             </div>
-            <button class="close-btn" data-action="close">×</button>
+            <div class="header-actions">
+              <button class="tool-generator-btn" data-action="open-tool-generator" title="Generate Tool for Variable">🔧</button>
+              <button class="close-btn" data-action="close">×</button>
+            </div>
           </div>
           
           <div class="selected-text-preview">
@@ -303,7 +311,7 @@ class VariablesManager {
     // Add to body for global access
     document.body.appendChild(this.variableDialog);
 
-    this.variableDialog.addEventListener('click', (e) => {
+    this.variableDialog.addEventListener('click', async (e) => {
       if (e.target.classList.contains('dialog-overlay')) {
         this.hideVariableDialog();
       }
@@ -316,6 +324,8 @@ class VariablesManager {
       } else if (action === 'update-variable') {
         const variableName = e.target.getAttribute('data-variable-name');
         this.updateVariable(variableName);
+      } else if (action === 'open-tool-generator') {
+        await this.openToolGenerator();
       }
     });
   }
@@ -376,7 +386,7 @@ class VariablesManager {
     // Add to body for global access
     document.body.appendChild(this.variablesPanel);
 
-    this.variablesPanel.addEventListener('click', (e) => {
+    this.variablesPanel.addEventListener('click', async (e) => {
       if (e.target.classList.contains('dialog-overlay') || 
           e.target.getAttribute('data-action') === 'close-panel') {
         this.hideVariablesPanel();
@@ -386,6 +396,12 @@ class VariablesManager {
       if (e.target.classList.contains('edit-variable-btn')) {
         const variableName = e.target.getAttribute('data-variable-name');
         this.editVariable(variableName);
+      }
+      
+      // Handle generate tool button
+      if (e.target.classList.contains('generate-tool-btn')) {
+        const variableName = e.target.getAttribute('data-variable-name');
+        await this.generateToolForVariable(variableName);
       }
       
       // Handle remove variable button
@@ -660,10 +676,19 @@ class VariablesManager {
       console.log('Set selected text display to:', this.selectedText);
     }
     
+    // If we're in editing mode, populate the form with existing variable data
+    if (isEditing && this._editingVariable && this._editingVariableName) {
+      console.log('Populating dialog for editing variable:', this._editingVariableName);
+      // Use setTimeout to ensure DOM elements are ready after dialog creation
+      setTimeout(() => {
+        this.populateEditForm(this._editingVariable, this._editingVariableName);
+      }, 0);
+    }
+    
     this.variableDialog.style.display = 'flex';
     this.hideFloatingButton();
     console.log('Variable dialog should now be visible');
-    
+
     // Only call LLM suggestions when creating a new variable, not when editing
     if (!isEditing) {
       console.log('Calling AI suggestions for new variable');
@@ -927,6 +952,7 @@ class VariablesManager {
           <span class="variable-type">${variable.type}</span>
           <div class="variable-actions">
             <button class="edit-variable-btn" data-variable-name="${name}" title="Edit Variable">✏️</button>
+            <button class="generate-tool-btn" data-variable-name="${name}" title="Generate Tool for Variable">🔧</button>
             <button class="remove-variable-btn" data-variable-name="${name}" title="Remove Variable">🗑️</button>
           </div>
         </div>
@@ -1083,37 +1109,9 @@ class VariablesManager {
     this.selectedText = variable.originalText;
     this.currentSuggestion = variable;
     
-    // Fill the dialog with existing variable data
-    if (this.variableDialog) {
-      const nameInput = getDocumentElement('variable-name');
-      const descInput = getDocumentElement('variable-description');
-      const typeSelect = getDocumentElement('variable-type');
-      const formatInput = getDocumentElement('variable-format');
-      const requiredCheckbox = getDocumentElement('variable-required');
-      
-      if (nameInput) nameInput.value = variable.name || '';
-      if (descInput) descInput.value = variable.description || '';
-      if (typeSelect) typeSelect.value = variable.type || 'text';
-      if (formatInput) formatInput.value = variable.format || '';
-      if (requiredCheckbox) requiredCheckbox.checked = variable.required !== false;
-      
-      // Update the selected text display
-      const textDisplay = this.variableDialog.querySelector('.selected-text-display');
-      if (textDisplay) {
-        textDisplay.textContent = `"${variable.originalText}"`;
-      }
-      
-      // Change dialog title and button text for editing
-      const dialogTitle = this.variableDialog.querySelector('h3');
-      const addButton = this.variableDialog.querySelector('[data-action="add-variable"]');
-      
-      if (dialogTitle) dialogTitle.textContent = '✏️ Edit Variable';
-      if (addButton) {
-        addButton.textContent = 'Update Variable';
-        addButton.setAttribute('data-action', 'update-variable');
-        addButton.setAttribute('data-variable-name', variableName);
-      }
-    }
+    // Store the variable data for editing mode
+    this._editingVariable = variable;
+    this._editingVariableName = variableName;
     
     // Hide variables panel and show edit dialog
     this.hideVariablesPanel();
@@ -1197,35 +1195,202 @@ class VariablesManager {
      console.log(`Variable "${variableName}" updated successfully`);
    }
 
-   /**
-    * Reset dialog back to create mode
-    */
-   resetDialogToCreateMode() {
-     if (this.variableDialog) {
-       const dialogTitle = this.variableDialog.querySelector('h3');
-       const addButton = this.variableDialog.querySelector('[data-action="update-variable"]');
-       
-       if (dialogTitle) dialogTitle.textContent = '✨ Create Variable';
-       if (addButton) {
-         addButton.textContent = 'Add Variable';
-         addButton.setAttribute('data-action', 'add-variable');
-         addButton.removeAttribute('data-variable-name');
-       }
-       
-       // Clear form fields
-       const nameInput = getDocumentElement('variable-name');
-       const descInput = getDocumentElement('variable-description');
-       const typeSelect = getDocumentElement('variable-type');
-       const formatInput = getDocumentElement('variable-format');
-       const requiredCheckbox = getDocumentElement('variable-required');
-       
-       if (nameInput) nameInput.value = '';
-       if (descInput) descInput.value = '';
-       if (typeSelect) typeSelect.value = 'text';
-       if (formatInput) formatInput.value = '';
-       if (requiredCheckbox) requiredCheckbox.checked = true;
-     }
-   }
+     /**
+   * Populate the edit form with variable data
+   */
+  populateEditForm(variable, variableName) {
+    console.log('populateEditForm called with variable:', variable);
+    
+    try {
+      // Fill the dialog with existing variable data
+      const nameInput = getDocumentElement('variable-name');
+      const descInput = getDocumentElement('variable-description');
+      const typeSelect = getDocumentElement('variable-type');
+      const formatInput = getDocumentElement('variable-format');
+      const requiredCheckbox = getDocumentElement('variable-required');
+      
+      console.log('Form elements found:', {
+        nameInput: !!nameInput,
+        descInput: !!descInput,
+        typeSelect: !!typeSelect,
+        formatInput: !!formatInput,
+        requiredCheckbox: !!requiredCheckbox
+      });
+      
+      if (nameInput) nameInput.value = variable.name || '';
+      if (descInput) descInput.value = variable.description || '';
+      if (typeSelect) typeSelect.value = variable.type || 'text';
+      if (formatInput) formatInput.value = variable.format || '';
+      if (requiredCheckbox) requiredCheckbox.checked = variable.required !== false;
+      
+      // Update the selected text display
+      const textDisplay = this.variableDialog.querySelector('.selected-text-display');
+      if (textDisplay) {
+        textDisplay.textContent = `"${variable.originalText}"`;
+      }
+      
+      // Change dialog title and button text for editing
+      const dialogTitle = this.variableDialog.querySelector('h3');
+      const addButton = this.variableDialog.querySelector('[data-action="add-variable"]');
+      
+      if (dialogTitle) dialogTitle.textContent = '✏️ Edit Variable';
+      if (addButton) {
+        addButton.textContent = 'Update Variable';
+        addButton.setAttribute('data-action', 'update-variable');
+        addButton.setAttribute('data-variable-name', variableName);
+      }
+      
+      console.log('✓ Edit form populated successfully for variable:', variableName);
+      
+    } catch (error) {
+      console.error('Error populating edit form:', error);
+    }
+  }
+
+  /**
+   * Reset dialog back to create mode
+   */
+  resetDialogToCreateMode() {
+    if (this.variableDialog) {
+      const dialogTitle = this.variableDialog.querySelector('h3');
+      const addButton = this.variableDialog.querySelector('[data-action="update-variable"]');
+      
+      if (dialogTitle) dialogTitle.textContent = '✨ Create Variable';
+      if (addButton) {
+        addButton.textContent = 'Add Variable';
+        addButton.setAttribute('data-action', 'add-variable');
+        addButton.removeAttribute('data-variable-name');
+      }
+      
+      // Clear form fields
+      const nameInput = getDocumentElement('variable-name');
+      const descInput = getDocumentElement('variable-description');
+      const typeSelect = getDocumentElement('variable-type');
+      const formatInput = getDocumentElement('variable-format');
+      const requiredCheckbox = getDocumentElement('variable-required');
+      
+      if (nameInput) nameInput.value = '';
+      if (descInput) descInput.value = '';
+      if (typeSelect) typeSelect.value = 'text';
+      if (formatInput) formatInput.value = '';
+      if (requiredCheckbox) requiredCheckbox.checked = true;
+    }
+    
+    // Clear editing state
+    this._editingVariable = null;
+    this._editingVariableName = null;
+  }
+
+  /**
+   * Generate tool for an existing variable from the variables panel
+   */
+  async generateToolForVariable(variableName) {
+    console.log('Generating tool for existing variable:', variableName);
+    
+    const variable = this.variables.get(variableName);
+    if (!variable) {
+      console.error('Variable not found:', variableName);
+      alert('Variable not found');
+      return;
+    }
+    
+    // Create variable data object for tool generator
+    const variableData = {
+      name: variable.name,
+      description: variable.description || '',
+      type: variable.type || 'text',
+      format: variable.format || '',
+      required: variable.required || false,
+      originalText: variable.originalText || ''
+    };
+    
+    console.log('Variable data for tool generator:', variableData);
+    
+    // Show the tool generator (variables panel should already be open)
+    await variableToolGenerator.show(variableData, this.variablesPanel);
+  }
+
+  /**
+   * Open the tool generator for the current variable
+   */
+  async openToolGenerator() {
+    console.log('Opening tool generator for variable...');
+    
+    // Get current variable data from form
+    const formData = this.getVariableFormData();
+    
+    // Validate that we have at least a variable name
+    if (!formData.name || !formData.name.trim()) {
+      alert('Please enter a variable name first');
+      return;
+    }
+    
+    // Validate the form
+    if (!this.validateVariableForm(formData)) {
+      return;
+    }
+
+    try {
+      // Step 1: Save the variable to backend
+      console.log('Step 1: Saving variable to backend...');
+      
+      const variable = {
+        id: `var_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        name: formData.name,
+        description: formData.description,
+        type: formData.type,
+        format: formData.format,
+        required: formData.required,
+        originalText: this.selectedText,
+        placeholder: `{{${formData.name}}}`,
+        createdAt: new Date().toISOString(),
+        // Add smart replacement fields if available from LLM suggestions
+        value_to_replace: formData.value_to_replace || this.selectedText,
+        static_prefix: formData.static_prefix || '',
+        static_suffix: formData.static_suffix || ''
+      };
+      
+      // Save to variables manager
+      this.variables.set(variable.name, variable);
+      
+      // Replace text with placeholder
+      this.replaceSelectedTextWithPlaceholder(variable);
+      
+      // Save to backend
+      await this.saveVariables();
+      
+      // Update UI
+      this.updateVariablesUI();
+      
+      console.log('✓ Variable saved successfully:', variable.name);
+      
+      // Step 2: Hide the variable dialog
+      console.log('Step 2: Hiding variable dialog...');
+      this.hideVariableDialog();
+      
+      // Step 3: Show the floating window for tool/operator editing
+      console.log('Step 3: Showing tool generator floating window...');
+      
+      // Create variable data object for tool generator
+      const variableData = {
+        name: formData.name,
+        description: formData.description || '',
+        type: formData.type || 'text',
+        format: formData.format || '',
+        required: formData.required || false,
+        originalText: this.selectedText || ''
+      };
+      
+      console.log('Variable data for tool generator:', variableData);
+      
+      // Show the tool generator (no parent dialog since we closed the variable dialog)
+      await variableToolGenerator.show(variableData, null);
+      
+    } catch (error) {
+      console.error('Error in openToolGenerator workflow:', error);
+      alert('Error saving variable: ' + error.message);
+    }
+  }
 
   /**
    * Get all variables as object
@@ -1376,6 +1541,17 @@ class VariablesManager {
       this.variablesPanel = null;
     }
     
+    // Clear variable tool generator dialog if it exists
+    if (window.variableToolGenerator && window.variableToolGenerator.generatorDialog) {
+      console.log('Removing variable tool generator dialog from DOM');
+      window.variableToolGenerator.hide();
+      window.variableToolGenerator.generatorDialog.remove();
+      window.variableToolGenerator.generatorDialog = null;
+      window.variableToolGenerator.isVisible = false;
+      window.variableToolGenerator.currentVariable = null;
+      window.variableToolGenerator.parentDialog = null;
+    }
+    
     // Clear any active text selection
     this.selectedText = null;
     this.selectedRange = null;
@@ -1475,6 +1651,11 @@ export default variablesManager;
 export function resetVariablesInitialization() {
   console.log('resetVariablesInitialization called by DocumentManager');
   variablesManager.clearDocumentVariables();
+  
+  // Clear window reference
+  if (window.variablesManager) {
+    window.variablesManager = null;
+  }
 }
 
 export function initVariablesForDocument() {

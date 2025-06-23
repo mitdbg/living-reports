@@ -9,7 +9,7 @@ A modern collaborative document creation and management platform with AI-powered
 - **Frontend**: Electron application with HTML/CSS/JavaScript
 - **Backend**: Python Flask server with REST API
 - **AI Integration**: OpenAI GPT models or Together AI
-- **File Processing**: pandas, PyPDF2, openpyxl, BeautifulSoup
+- **File Processing**: pandas, PyMuPDF, openpyxl, BeautifulSoup
 
 ## 📋 Prerequisites
 

@@ -2,7 +2,7 @@ import io
 import base64
 import openpyxl
 import pandas as pd
-import PyPDF2
+import json
 from bs4 import BeautifulSoup
 import os
 
@@ -43,30 +43,6 @@ def process_excel_file(file_content, file_name):
     except Exception as e:
         return f"Error processing Excel file: {str(e)}"
 
-def process_pdf_file(file_content, file_name):
-    """Process PDF file and extract text content."""
-    try:
-        # Create a BytesIO object from the content
-        file_buffer = io.BytesIO(base64.b64decode(file_content))
-        
-        # Read PDF file
-        pdf_reader = PyPDF2.PdfReader(file_buffer)
-        content = f"PDF File: {file_name}\n"
-        content += f"Number of pages: {len(pdf_reader.pages)}\n\n"
-        
-        for page_num, page in enumerate(pdf_reader.pages, 1):
-            content += f"Page {page_num}:\n"
-            content += "-" * 40 + "\n"
-            try:
-                page_text = page.extract_text()
-                content += page_text + "\n\n"
-            except Exception as e:
-                content += f"Error extracting text from page {page_num}: {str(e)}\n\n"
-        
-        return content
-        
-    except Exception as e:
-        return f"Error processing PDF file: {str(e)}"
 
 def process_html_file(file_content, file_name):
     """Process HTML file and extract text content."""

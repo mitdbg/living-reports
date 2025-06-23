@@ -4,7 +4,7 @@ import json
 import os
 import logging
 from datetime import datetime
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from openai import OpenAI
 
@@ -18,7 +18,9 @@ from chat_manager import ChatManager
 from template import Template
 from execution_result import ExecutionResult
 from simple_view import SimpleView
-from file_processor import process_excel_file, process_pdf_file, process_html_file, process_pptx_file
+from file_processor import process_excel_file, process_html_file, process_pptx_file
+from pdf_processor import process_pdf_file
+from local_code_executor.code_executor import execute_code_locally
 from pathlib import Path
 import os
 
@@ -211,14 +213,25 @@ def load_tools():
         if os.path.exists(TOOLS_FILE):
             with open(TOOLS_FILE, 'r') as f:
                 tools = json.load(f)
-                logger.info(f"🔧 Loaded {len(tools)} tools from {TOOLS_FILE}")
-                return tools
+                # Handle migration from array format to document_id keyed format
+                if isinstance(tools, list):
+                    # Migrate old format: move all tools to a 'global' document_id
+                    logger.info(f"🔧 Migrating {len(tools)} tools from array to document-keyed format")
+                    migrated_tools = {'global': tools}
+                    save_tools(migrated_tools)
+                    return migrated_tools
+                elif isinstance(tools, dict):
+                    logger.info(f"🔧 Loaded tools for {len(tools)} documents from {TOOLS_FILE}")
+                    return tools
+                else:
+                    logger.warning("🔧 Invalid tools format, starting fresh")
+                    return {}
         else:
             logger.info("🔧 No existing tools file found. Starting fresh.")
-            return []
+            return {}
     except Exception as e:
         logger.error(f"❌ Error loading tools: {e}")
-        return []
+        return {}
 
 def save_tools(tools):
     """Save all tools to file"""
@@ -226,7 +239,8 @@ def save_tools(tools):
         ensure_database_dir()
         with open(TOOLS_FILE, 'w') as f:
             json.dump(tools, f, indent=2)
-        logger.info(f"💾 Saved {len(tools)} tools to {TOOLS_FILE}")
+        total_tools = sum(len(doc_tools) for doc_tools in tools.values())
+        logger.info(f"💾 Saved tools for {len(tools)} documents ({total_tools} total tools) to {TOOLS_FILE}")
     except Exception as e:
         logger.error(f"❌ Error saving tools: {e}")
 
@@ -365,7 +379,12 @@ def set_file_context():
         file_name = data.get('fileName', '')
         content = data.get('content', '')
         session_id = data.get('session_id', 'default')
+        redirect_output_file_path = data.get('redirect_output_file_path', '')
         
+        if redirect_output_file_path != "":
+            with open(redirect_output_file_path, 'r') as f:
+                content = f.read()
+
         # Create a template from the file content
         template = Template(content)
         execution_result = ExecutionResult()
@@ -532,7 +551,7 @@ JSON:"""
                     model="gpt-4.1-mini",
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.3,
-                    max_tokens=2000
+                    max_tokens=8000
                 )
                 suggestion_text = response.choices[0].message.content.strip()
             else:
@@ -541,7 +560,7 @@ JSON:"""
                     model="Qwen/Qwen2.5-Coder-32B-Instruct",
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.3,
-                    max_tokens=500
+                    max_tokens=8000
                 )
                 suggestion_text = response.choices[0].message.content.strip()
             
@@ -640,14 +659,17 @@ def process_file():
         file_content = data.get('content', '')  # Base64 encoded for binary files
         file_path = data.get('filePath', '')
         session_id = data.get('session_id', 'default')
-        
+        output_json_path_dir = "database/files/" + session_id
         # Determine file type and process accordingly
         file_ext = Path(file_name).suffix.lower()
-        
+        output_json_path = ""
+
         if file_ext in ['.xlsx', '.xls']:
             processed_content = process_excel_file(file_content, file_name)
         elif file_ext == '.pdf':
-            processed_content = process_pdf_file(file_content, file_name)
+            output_json_path = output_json_path_dir+"/"+file_name+".json"
+            output_image_dir = output_json_path_dir+"/"+file_name+"_images"
+            processed_content = process_pdf_file(file_path, json_path=output_json_path, clean_image_dir=output_image_dir)
         elif file_ext in ['.html', '.htm']:
             processed_content = process_html_file(file_content, file_name)
         elif file_ext in ['.pptx', '.ppt']:
@@ -656,7 +678,7 @@ def process_file():
             # For other file types, return as-is (assuming text)
             processed_content = file_content
         
-        return jsonify({'success': True, 'message': 'File processed successfully', 'content': processed_content, 'fileName': file_name, 'filePath': file_path})
+        return jsonify({'success': True, 'message': 'File processed successfully', 'content': processed_content, 'fileName': file_name, 'filePath': file_path, 'output_file_path': output_json_path})
         
     except Exception as e:
         logger.error(f"Error processing file: {e}")
@@ -845,6 +867,14 @@ def delete_document(document_id):
                 save_verifications(verifications)
                 cleanup_summary.append(f"{verifications_count} verifications")
                 logger.info(f"📋 Cleaned up {verifications_count} verifications for document {document_id} (session {session_id})")
+            
+            # Clean up tools for this document
+            if document_id in tools_storage:
+                tools_count = len(tools_storage[document_id])
+                del tools_storage[document_id]
+                save_tools(tools_storage)
+                cleanup_summary.append(f"{tools_count} tools")
+                logger.info(f"🔧 Cleaned up {tools_count} tools for document {document_id}")
             
             cleanup_message = f'Document "{document_title}" has been deleted'
             if cleanup_summary:
@@ -1651,11 +1681,28 @@ JSON:"""
 # Tools API endpoints
 @app.route('/api/tools', methods=['GET'])
 def get_tools():
-    """Get all tools"""
+    """Get tools for a specific document"""
     try:
+        document_id = request.args.get('documentId')
+        window_id = request.args.get('windowId', 'default')
+        session_id = request.args.get('session_id', 'default')
+        
+        if not document_id:
+            return jsonify({
+                'success': False,
+                'error': 'Missing documentId parameter'
+            }), 400
+        
+        # Get tools for this document
+        document_tools = tools_storage.get(document_id, [])
+        
+        logger.info(f"🔧 Returning {len(document_tools)} tools for document {document_id}")
+        
         return jsonify({
             'success': True,
-            'tools': tools_storage
+            'tools': document_tools,
+            'documentId': document_id,
+            'count': len(document_tools)
         })
     except Exception as e:
         logger.error(f"❌ Error getting tools: {e}")
@@ -1666,17 +1713,20 @@ def get_tools():
 
 @app.route('/api/tools', methods=['POST'])
 def save_tools_endpoint():
-    """Save tools to file"""
+    """Save tools for a specific document"""
     try:
         data = request.get_json()
         
-        if not data or 'tools' not in data:
+        document_id = data.get('documentId')
+        window_id = data.get('windowId', 'default')
+        session_id = data.get('session_id', 'default')
+        tools = data.get('tools', [])
+        
+        if not document_id:
             return jsonify({
                 'success': False,
-                'error': 'Missing tools data'
+                'error': 'Missing documentId in request'
             }), 400
-        
-        tools = data['tools']
         
         # Validate tools structure
         if not isinstance(tools, list):
@@ -1693,16 +1743,19 @@ def save_tools_endpoint():
                     'error': 'Each tool must have id and name fields'
                 }), 400
         
-        # Update global storage
-        global tools_storage
-        tools_storage = tools
+        # Store tools for this document
+        tools_storage[document_id] = tools
         
-        # Save to file
-        save_tools(tools)
+        # Persist to file
+        save_tools(tools_storage)
+        
+        logger.info(f"🔧 Saved {len(tools)} tools for document {document_id}")
         
         return jsonify({
             'success': True,
-            'message': f'Successfully saved {len(tools)} tools'
+            'message': f'Tools saved for document {document_id}',
+            'documentId': document_id,
+            'count': len(tools)
         })
         
     except Exception as e:
@@ -1714,30 +1767,252 @@ def save_tools_endpoint():
 
 @app.route('/api/tools/<tool_id>', methods=['DELETE'])
 def delete_tool(tool_id):
-    """Delete a specific tool"""
+    """Delete a specific tool from a document"""
     try:
-        global tools_storage
+        document_id = request.args.get('documentId')
+        
+        if not document_id:
+            return jsonify({
+                'success': False,
+                'error': 'Missing documentId parameter'
+            }), 400
+        
+        # Get tools for this document
+        document_tools = tools_storage.get(document_id, [])
         
         # Find and remove the tool
-        original_count = len(tools_storage)
-        tools_storage = [tool for tool in tools_storage if tool.get('id') != tool_id]
+        original_count = len(document_tools)
+        updated_tools = [tool for tool in document_tools if tool.get('id') != tool_id]
         
-        if len(tools_storage) == original_count:
+        if len(updated_tools) == original_count:
             return jsonify({
                 'success': False,
                 'error': 'Tool not found'
             }), 404
         
+        # Update storage for this document
+        tools_storage[document_id] = updated_tools
+        
         # Save updated tools
         save_tools(tools_storage)
         
+        logger.info(f"🔧 Deleted tool {tool_id} from document {document_id}")
+        
         return jsonify({
             'success': True,
-            'message': f'Successfully deleted tool {tool_id}'
+            'message': f'Successfully deleted tool {tool_id} from document {document_id}',
+            'documentId': document_id
         })
         
     except Exception as e:
         logger.error(f"❌ Error deleting tool: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/tools', methods=['DELETE'])
+def delete_tools():
+    """Delete all tools for a specific document."""
+    try:
+        document_id = request.args.get('documentId')
+        
+        if not document_id:
+            return jsonify({
+                'success': False,
+                'error': 'Missing documentId parameter'
+            }), 400
+        
+        # Remove tools for this document
+        if document_id in tools_storage:
+            tools_count = len(tools_storage[document_id])
+            del tools_storage[document_id]
+            
+            # Persist changes
+            save_tools(tools_storage)
+            
+            logger.info(f"🔧 Deleted {tools_count} tools for document {document_id}")
+            
+            return jsonify({
+                'success': True,
+                'message': f'Tools deleted for document {document_id}',
+                'documentId': document_id,
+                'deleted_count': tools_count
+            })
+        else:
+            return jsonify({
+                'success': True,
+                'message': f'No tools found for document {document_id}',
+                'documentId': document_id,
+                'deleted_count': 0
+            })
+        
+    except Exception as e:
+        logger.error(f"Error deleting tools for document: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/generate-variable-code', methods=['POST'])
+def generate_variable_code():
+    """Generate code for a variable using LLM"""
+    try:
+        data = request.get_json()
+        
+        variable_name = data.get('variable_name', '')
+        variable_type = data.get('variable_type', 'text')
+        variable_description = data.get('variable_description', '')
+        data_source = data.get('data_source', '')
+        document_id = data.get('document_id', 'default')
+        
+        if not variable_name:
+            return jsonify({
+                'success': False,
+                'error': 'Variable name is required'
+            }), 400
+        
+        if not data_source:
+            return jsonify({
+                'success': False,
+                'error': 'Data source is required'
+            }), 400
+        
+        # Check if LLM client is available
+        if client is None:
+            return jsonify({
+                'success': False,
+                'error': 'AI service not available (API key not configured)'
+            })
+        
+        # Get data source information from data lake
+        data_lake_data = data_lake_storage.get(document_id, [])
+        selected_data_source = None
+        
+        for item in data_lake_data:
+            if item.get('filePath') == data_source:
+                selected_data_source = item
+                break
+        
+        if not selected_data_source:
+            return jsonify({
+                'success': False,
+                'error': f'Data source "{data_source}" not found'
+            }), 404
+        
+        # Create LLM prompt for code generation
+        prompt = f"""
+Generate Python code to extract data for a variable from a data source.
+
+Variable Details:
+- Name: {variable_name}
+- Type: {variable_type}
+- Description: {variable_description}
+
+Data Source Details:
+- Name: {selected_data_source.get('name', 'Unknown')}
+- Type: {selected_data_source.get('type', 'unknown')}
+- Reference: ${data_source}
+
+Requirements:
+1. Generate Python code that processes the data source to extract the value for this variable
+2. The code should return a single value of the appropriate type ({variable_type})
+3. Use appropriate data processing libraries (pandas, numpy, etc.)
+4. Handle common data formats (CSV, Excel, JSON, etc.)
+5. Include error handling
+6. The data source will be available as a variable named 'data_source'
+7. Please write functions, and call the function at the end. You can assume you get the parameters from parameters dict like parameters['data_source'].
+7. Return the final result in a variable named 'output'
+
+Example structure:
+```python
+import pandas as pd
+import numpy as np
+
+# Process the data source
+# data_source contains the loaded data
+function extract_metrics(data_source)
+    try:
+        # Your processing code here
+        result = processed_value
+    except Exception as e:
+        result = f"Error: {{e}}"
+    return result
+
+output = extract_metrics(parameters['data_source'])
+```
+
+Generate ONLY the Python code, no explanations or markdown formatting.
+"""
+        
+        # Call LLM
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a helpful Python code generator. Generate clean, efficient Python code based on the requirements."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.1,
+            max_tokens=5000
+        )
+        
+        generated_code = response.choices[0].message.content.strip()
+        
+        # Clean up code (remove markdown formatting if present)
+        if generated_code.startswith('```python'):
+            generated_code = generated_code[9:]
+        elif generated_code.startswith('```'):
+            generated_code = generated_code[3:]
+        
+        if generated_code.endswith('```'):
+            generated_code = generated_code[:-3]
+        
+        generated_code = generated_code.strip()
+        
+        logger.info(f"✅ Generated code for variable {variable_name}")
+        
+        return jsonify({
+            'success': True,
+            'code': generated_code,
+            'variable_name': variable_name,
+            'data_source': data_source
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Error generating variable code: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/execute-code', methods=['POST'])
+def execute_code_endpoint():
+    """Execute generated code in a safe environment"""
+    try:
+        data = request.get_json()
+        code = data.get('code', '')
+        parameters = data.get('parameters', {})
+        
+        if not code:
+            return jsonify({
+                'success': False,
+                'error': 'Code is required'
+            }), 400
+        
+        result = execute_code_locally(code, parameters)
+        print("================================================")
+        print(result)
+        print("================================================")
+        if result.get('status') and result.get('status') == "success": 
+            return jsonify({
+                'success': True,
+                'output': result.get('result').get('output')
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': result
+            })
+
+    except Exception as e:
+        logger.error(f"❌ Error generating variable code: {e}")
         return jsonify({
             'success': False,
             'error': str(e)
@@ -1823,6 +2098,38 @@ def build_enhanced_prompt(user_prompt, context):
             enhanced_parts.append(f"\nDocument type: {context['document_type']}")
     
     return '\n'.join(enhanced_parts)
+
+
+# File serving endpoint for PDF images and other files
+@app.route('/api/serve-file/<path:file_path>')
+def serve_file(file_path):
+    """Serve files from the database directory (for PDF images, etc.)"""
+    try:
+        # Security check: ensure the path is within the database directory
+        safe_path = os.path.normpath(file_path)
+        if '..' in safe_path or safe_path.startswith('/'):
+            logger.warning(f"🚫 Blocked potentially unsafe file path: {file_path}")
+            return jsonify({'error': 'Invalid file path'}), 400
+        
+        # Construct full file path - note: file_path should start with 'database/'
+        full_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), safe_path)
+        
+        # Check if file exists
+        if not os.path.exists(full_path):
+            logger.warning(f"📄 File not found: {full_path}")
+            return jsonify({'error': 'File not found'}), 404
+        
+        # Check if it's actually a file (not a directory)
+        if not os.path.isfile(full_path):
+            logger.warning(f"🚫 Not a file: {full_path}")
+            return jsonify({'error': 'Not a file'}), 400
+        
+        logger.info(f"📎 Serving file: {safe_path}")
+        return send_file(full_path)
+        
+    except Exception as e:
+        logger.error(f"❌ Error serving file {file_path}: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 if __name__ == '__main__':

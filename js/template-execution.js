@@ -428,7 +428,7 @@ async function createAISuggestionComment(lineDiffs, currentTemplate, suggestedTe
     
     // Trigger auto-save for comment changes
     if (window.documentManager) {
-      window.documentManager.onCommentChange();
+      window.documentManager.onContentChange();
     }
     
     console.log('AI suggestion comment created successfully');
@@ -577,7 +577,7 @@ export async function acceptAISuggestion(commentId) {
   
   // Trigger auto-save
   if (window.documentManager) {
-    window.documentManager.onCommentChange();
+    window.documentManager.onContentChange();
   }
 }
 
@@ -613,7 +613,7 @@ export async function rejectAISuggestion(commentId) {
   
   // Trigger auto-save
   if (window.documentManager) {
-    window.documentManager.onCommentChange();
+    window.documentManager.onContentChange();
   }
 }
 
