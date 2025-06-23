@@ -288,7 +288,14 @@ class OperatorManager {
     
     // Fallback to API
     try {
-      const response = await fetch('http://127.0.0.1:5000/api/tools');
+      const currentDocumentId = window.documentManager?.activeDocumentId;
+      
+      if (!currentDocumentId) {
+        console.warn(`[${windowId}] Cannot load tools from API: no current document set`);
+        return null;
+      }
+      
+      const response = await fetch(`http://127.0.0.1:5000/api/tools?documentId=${currentDocumentId}&windowId=${windowId}`);
       const result = await response.json();
       if (result.success) {
         const tools = result.tools || [];
@@ -646,6 +653,8 @@ export function initOperators() {
   
   if (!operatorManager) {
     operatorManager = new OperatorManager();
+    // Expose to window for external access
+    window.operatorManager = operatorManager;
   }
   
   // Initialize tools manager (moved from tools.js)
@@ -1284,7 +1293,14 @@ async function populateToolsDropdown() {
   } else {
     // Fallback to API
     try {
-      const response = await fetch('http://127.0.0.1:5000/api/tools');
+      const currentDocumentId = window.documentManager?.activeDocumentId;
+      
+      if (!currentDocumentId) {
+        console.warn(`[${windowId}] Cannot load tools from API: no current document set`);
+        return;
+      }
+      
+      const response = await fetch(`http://127.0.0.1:5000/api/tools?documentId=${currentDocumentId}&windowId=${windowId}`);
       const result = await response.json();
       if (result.success) {
         tools = result.tools || [];
@@ -2305,6 +2321,7 @@ function resetOperatorsInitialization() {
   // Reset the global operator manager
   if (operatorManager) {
     operatorManager = null;
+    window.operatorManager = null;
   }
   
   // Reset tools manager
@@ -2358,16 +2375,29 @@ class ToolsManager {
 
   async saveTools() {
     try {
+      const currentDocumentId = window.documentManager?.activeDocumentId;
+      
+      if (!currentDocumentId) {
+        console.warn(`[${windowId}] Cannot save tools: no current document set`);
+        return;
+      }
+      
       const response = await fetch('http://127.0.0.1:5000/api/tools', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ tools: this.tools })
+        body: JSON.stringify({ 
+          documentId: currentDocumentId,
+          windowId: windowId,
+          tools: this.tools 
+        })
       });
       
       const result = await response.json();
-      if (!result.success) {
+      if (result.success) {
+        console.log(`[${windowId}] Saved ${this.tools.length} tools for document ${currentDocumentId}`);
+      } else {
         console.error('Error saving tools:', result.error);
       }
     } catch (error) {
@@ -2377,11 +2407,20 @@ class ToolsManager {
 
   async loadTools() {
     try {
-      const response = await fetch('http://127.0.0.1:5000/api/tools');
+      const currentDocumentId = window.documentManager?.activeDocumentId;
+      
+      if (!currentDocumentId) {
+        console.warn(`[${windowId}] Cannot load tools: no current document set`);
+        this.tools = [];
+        return;
+      }
+      
+      const response = await fetch(`http://127.0.0.1:5000/api/tools?documentId=${currentDocumentId}&windowId=${windowId}`);
       const result = await response.json();
       
       if (result.success) {
         this.tools = result.tools || [];
+        console.log(`[${windowId}] Loaded ${this.tools.length} tools for document ${currentDocumentId}`);
       } else {
         console.error('Error loading tools:', result.error);
         this.tools = [];
@@ -2392,9 +2431,25 @@ class ToolsManager {
     }
   }
 
-  removeTool(toolId) {
-    this.tools = this.tools.filter(t => t.id !== toolId);
-    this.saveTools();
+  async removeTool(toolId) {
+    try {
+      const currentDocumentId = window.documentManager?.activeDocumentId;
+      
+      if (!currentDocumentId) {
+        console.warn(`[${windowId}] Cannot remove tool: no current document set`);
+        return;
+      }
+      
+      // Remove from local array
+      this.tools = this.tools.filter(t => t.id !== toolId);
+      
+      // Save the updated tools
+      await this.saveTools();
+      
+      console.log(`[${windowId}] Removed tool ${toolId} from document ${currentDocumentId}`);
+    } catch (error) {
+      console.error('Error removing tool:', error);
+    }
   }
 }
 
@@ -2587,7 +2642,14 @@ async function refreshOperatorsToolsList() {
   } else {
     // Fallback to API
     try {
-      const response = await fetch('http://127.0.0.1:5000/api/tools');
+      const currentDocumentId = window.documentManager?.activeDocumentId;
+      
+      if (!currentDocumentId) {
+        console.warn(`[${windowId}] Cannot load tools from API: no current document set`);
+        return;
+      }
+      
+      const response = await fetch(`http://127.0.0.1:5000/api/tools?documentId=${currentDocumentId}&windowId=${windowId}`);
       const result = await response.json();
       if (result.success) {
         tools = result.tools || [];

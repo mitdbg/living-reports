@@ -213,14 +213,25 @@ def load_tools():
         if os.path.exists(TOOLS_FILE):
             with open(TOOLS_FILE, 'r') as f:
                 tools = json.load(f)
-                logger.info(f"🔧 Loaded {len(tools)} tools from {TOOLS_FILE}")
-                return tools
+                # Handle migration from array format to document_id keyed format
+                if isinstance(tools, list):
+                    # Migrate old format: move all tools to a 'global' document_id
+                    logger.info(f"🔧 Migrating {len(tools)} tools from array to document-keyed format")
+                    migrated_tools = {'global': tools}
+                    save_tools(migrated_tools)
+                    return migrated_tools
+                elif isinstance(tools, dict):
+                    logger.info(f"🔧 Loaded tools for {len(tools)} documents from {TOOLS_FILE}")
+                    return tools
+                else:
+                    logger.warning("🔧 Invalid tools format, starting fresh")
+                    return {}
         else:
             logger.info("🔧 No existing tools file found. Starting fresh.")
-            return []
+            return {}
     except Exception as e:
         logger.error(f"❌ Error loading tools: {e}")
-        return []
+        return {}
 
 def save_tools(tools):
     """Save all tools to file"""
@@ -228,7 +239,8 @@ def save_tools(tools):
         ensure_database_dir()
         with open(TOOLS_FILE, 'w') as f:
             json.dump(tools, f, indent=2)
-        logger.info(f"💾 Saved {len(tools)} tools to {TOOLS_FILE}")
+        total_tools = sum(len(doc_tools) for doc_tools in tools.values())
+        logger.info(f"💾 Saved tools for {len(tools)} documents ({total_tools} total tools) to {TOOLS_FILE}")
     except Exception as e:
         logger.error(f"❌ Error saving tools: {e}")
 
@@ -855,6 +867,14 @@ def delete_document(document_id):
                 save_verifications(verifications)
                 cleanup_summary.append(f"{verifications_count} verifications")
                 logger.info(f"📋 Cleaned up {verifications_count} verifications for document {document_id} (session {session_id})")
+            
+            # Clean up tools for this document
+            if document_id in tools_storage:
+                tools_count = len(tools_storage[document_id])
+                del tools_storage[document_id]
+                save_tools(tools_storage)
+                cleanup_summary.append(f"{tools_count} tools")
+                logger.info(f"🔧 Cleaned up {tools_count} tools for document {document_id}")
             
             cleanup_message = f'Document "{document_title}" has been deleted'
             if cleanup_summary:
@@ -1661,11 +1681,28 @@ JSON:"""
 # Tools API endpoints
 @app.route('/api/tools', methods=['GET'])
 def get_tools():
-    """Get all tools"""
+    """Get tools for a specific document"""
     try:
+        document_id = request.args.get('documentId')
+        window_id = request.args.get('windowId', 'default')
+        session_id = request.args.get('session_id', 'default')
+        
+        if not document_id:
+            return jsonify({
+                'success': False,
+                'error': 'Missing documentId parameter'
+            }), 400
+        
+        # Get tools for this document
+        document_tools = tools_storage.get(document_id, [])
+        
+        logger.info(f"🔧 Returning {len(document_tools)} tools for document {document_id}")
+        
         return jsonify({
             'success': True,
-            'tools': tools_storage
+            'tools': document_tools,
+            'documentId': document_id,
+            'count': len(document_tools)
         })
     except Exception as e:
         logger.error(f"❌ Error getting tools: {e}")
@@ -1676,17 +1713,20 @@ def get_tools():
 
 @app.route('/api/tools', methods=['POST'])
 def save_tools_endpoint():
-    """Save tools to file"""
+    """Save tools for a specific document"""
     try:
         data = request.get_json()
         
-        if not data or 'tools' not in data:
+        document_id = data.get('documentId')
+        window_id = data.get('windowId', 'default')
+        session_id = data.get('session_id', 'default')
+        tools = data.get('tools', [])
+        
+        if not document_id:
             return jsonify({
                 'success': False,
-                'error': 'Missing tools data'
+                'error': 'Missing documentId in request'
             }), 400
-        
-        tools = data['tools']
         
         # Validate tools structure
         if not isinstance(tools, list):
@@ -1703,16 +1743,19 @@ def save_tools_endpoint():
                     'error': 'Each tool must have id and name fields'
                 }), 400
         
-        # Update global storage
-        global tools_storage
-        tools_storage = tools
+        # Store tools for this document
+        tools_storage[document_id] = tools
         
-        # Save to file
-        save_tools(tools)
+        # Persist to file
+        save_tools(tools_storage)
+        
+        logger.info(f"🔧 Saved {len(tools)} tools for document {document_id}")
         
         return jsonify({
             'success': True,
-            'message': f'Successfully saved {len(tools)} tools'
+            'message': f'Tools saved for document {document_id}',
+            'documentId': document_id,
+            'count': len(tools)
         })
         
     except Exception as e:
@@ -1724,26 +1767,41 @@ def save_tools_endpoint():
 
 @app.route('/api/tools/<tool_id>', methods=['DELETE'])
 def delete_tool(tool_id):
-    """Delete a specific tool"""
+    """Delete a specific tool from a document"""
     try:
-        global tools_storage
+        document_id = request.args.get('documentId')
+        
+        if not document_id:
+            return jsonify({
+                'success': False,
+                'error': 'Missing documentId parameter'
+            }), 400
+        
+        # Get tools for this document
+        document_tools = tools_storage.get(document_id, [])
         
         # Find and remove the tool
-        original_count = len(tools_storage)
-        tools_storage = [tool for tool in tools_storage if tool.get('id') != tool_id]
+        original_count = len(document_tools)
+        updated_tools = [tool for tool in document_tools if tool.get('id') != tool_id]
         
-        if len(tools_storage) == original_count:
+        if len(updated_tools) == original_count:
             return jsonify({
                 'success': False,
                 'error': 'Tool not found'
             }), 404
         
+        # Update storage for this document
+        tools_storage[document_id] = updated_tools
+        
         # Save updated tools
         save_tools(tools_storage)
         
+        logger.info(f"🔧 Deleted tool {tool_id} from document {document_id}")
+        
         return jsonify({
             'success': True,
-            'message': f'Successfully deleted tool {tool_id}'
+            'message': f'Successfully deleted tool {tool_id} from document {document_id}',
+            'documentId': document_id
         })
         
     except Exception as e:
@@ -1752,6 +1810,46 @@ def delete_tool(tool_id):
             'success': False,
             'error': str(e)
         }), 500
+
+@app.route('/api/tools', methods=['DELETE'])
+def delete_tools():
+    """Delete all tools for a specific document."""
+    try:
+        document_id = request.args.get('documentId')
+        
+        if not document_id:
+            return jsonify({
+                'success': False,
+                'error': 'Missing documentId parameter'
+            }), 400
+        
+        # Remove tools for this document
+        if document_id in tools_storage:
+            tools_count = len(tools_storage[document_id])
+            del tools_storage[document_id]
+            
+            # Persist changes
+            save_tools(tools_storage)
+            
+            logger.info(f"🔧 Deleted {tools_count} tools for document {document_id}")
+            
+            return jsonify({
+                'success': True,
+                'message': f'Tools deleted for document {document_id}',
+                'documentId': document_id,
+                'deleted_count': tools_count
+            })
+        else:
+            return jsonify({
+                'success': True,
+                'message': f'No tools found for document {document_id}',
+                'documentId': document_id,
+                'deleted_count': 0
+            })
+        
+    except Exception as e:
+        logger.error(f"Error deleting tools for document: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/generate-variable-code', methods=['POST'])
 def generate_variable_code():

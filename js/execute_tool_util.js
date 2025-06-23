@@ -214,7 +214,7 @@ export async function executeToolWithData(tool, datasets, parameters, windowId='
     }
   }
 
-  export async function executeCodeForAuthorLocal(code, datasets, windowId='default') {
+  export async function executeCodeForAuthorLocal(code, datasets, variableName, windowId='default') {
     try {
       // Process parameters to separate datasets from literal values
       const plainTextCode = convertHtmlCodeToPlainText(code);
@@ -227,8 +227,6 @@ export async function executeToolWithData(tool, datasets, parameters, windowId='
       };
 
       console.log(`[${windowId}] Executing code for author...`);
-      console.log(`[${windowId}] Datasets:`, Object.keys(executionPayload.parameters));
-
       const response = await fetch('http://127.0.0.1:5000/api/execute-code', {
         method: 'POST',
         headers: {
@@ -249,9 +247,8 @@ export async function executeToolWithData(tool, datasets, parameters, windowId='
           
           // If execution was successful and returned a value, offer to populate the variable
           if (result.output) {
-            const shouldPopulate = confirm('Code executed successfully! Would you like to populate the variable with this result?');
-            if (shouldPopulate && window.variablesManager) {
-              await window.variablesManager.setVariableValue(this.currentVariable.name, result.output);
+            if (window.variablesManager) {
+              await window.variablesManager.setVariableValue(variableName, result.output);
             }
           }
           

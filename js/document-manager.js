@@ -392,6 +392,11 @@ export class DocumentManager {
         variablesManager.init();
       }
       
+      // Expose variables manager to window for global access
+      if (variablesManager) {
+        window.variablesManager = variablesManager;
+      }
+      
       // Initialize variables for this specific document
       initVariablesForDocument();
       
