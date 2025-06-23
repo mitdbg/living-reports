@@ -1903,7 +1903,10 @@ def execute_code_endpoint():
         print(result)
         print("================================================")
         if result.get('status') and result.get('status') == "success": 
-            return jsonify(result.get('result').get('output'))
+            return jsonify({
+                'success': True,
+                'output': result.get('result').get('output')
+            })
         else:
             return jsonify({
                 'success': False,

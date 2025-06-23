@@ -229,7 +229,7 @@ export async function executeToolWithData(tool, datasets, parameters, windowId='
       console.log(`[${windowId}] Executing code for author...`);
       console.log(`[${windowId}] Datasets:`, Object.keys(executionPayload.parameters));
 
-      const result = await fetch('http://127.0.0.1:5000/api/execute-code', {
+      const response = await fetch('http://127.0.0.1:5000/api/execute-code', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -241,18 +241,30 @@ export async function executeToolWithData(tool, datasets, parameters, windowId='
         })
       });
 
-      if (result.ok) {
-        showExecutionResult(result.output, result.error);
+      if (response.ok) {
+        const result = await response.json();
         
-        // If execution was successful and returned a value, offer to populate the variable
-        if (result.output && !result.error) {
-          const shouldPopulate = confirm('Code executed successfully! Would you like to populate the variable with this result?');
-          if (shouldPopulate && window.variablesManager) {
-            await window.variablesManager.setVariableValue(this.currentVariable.name, result.output);
+        if (result.success) {
+          showExecutionResult(result.output, null);
+          
+          // If execution was successful and returned a value, offer to populate the variable
+          if (result.output) {
+            const shouldPopulate = confirm('Code executed successfully! Would you like to populate the variable with this result?');
+            if (shouldPopulate && window.variablesManager) {
+              await window.variablesManager.setVariableValue(this.currentVariable.name, result.output);
+            }
           }
+          
+          return result.output;
+        } else {
+          // Handle backend error response
+          showExecutionResult(null, result.error || 'Code execution failed');
+          throw new Error(result.error || 'Code execution failed');
         }
+
       } else {
-        throw new Error(result.error || 'Code execution failed');
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
       }
 
     }  catch (error) {
