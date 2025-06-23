@@ -9,11 +9,24 @@ cd "$SCRIPT_DIR"
 
 echo "📍 Working directory: $(pwd)"
 
+# Set venv directory name
+VENV_DIR="venv"
+
+# Create venv if it doesn't exist
+echo "🐍 Checking for Python virtual environment..."
+if [ ! -d "$VENV_DIR" ]; then
+    echo "🐍 Creating Python virtual environment in $VENV_DIR..."
+    python3 -m venv "$VENV_DIR"
+fi
+
+# Activate venv
+source "$VENV_DIR/bin/activate"
+
 # Check if Python dependencies are installed
 echo "📦 Checking Python dependencies..."
-if ! python3 -c "import websockets" 2>/dev/null; then
+if ! "$VENV_DIR/bin/python" -c "import websockets" 2>/dev/null; then
     echo "Installing Python dependencies..."
-    pip3 install -r requirements.txt
+    "$VENV_DIR/bin/pip" install -r requirements.txt
 fi
 
 # Check if Node dependencies are installed
@@ -85,7 +98,7 @@ echo "✅ Ready to start fresh backend processes"
 
 # Start Python backend (optional, for AI features)
 echo "🐍 Starting Python backend..."
-cd backend && python3 python_backend.py &
+cd backend && ../$VENV_DIR/bin/python python_backend.py &
 BACKEND_PID=$!
 cd "$SCRIPT_DIR"
 sleep 2
