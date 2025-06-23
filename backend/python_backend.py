@@ -1752,6 +1752,258 @@ def delete_tool(tool_id):
             'error': str(e)
         }), 500
 
+@app.route('/api/generate-variable-code', methods=['POST'])
+def generate_variable_code():
+    """Generate code for a variable using LLM"""
+    try:
+        data = request.get_json()
+        
+        variable_name = data.get('variable_name', '')
+        variable_type = data.get('variable_type', 'text')
+        variable_description = data.get('variable_description', '')
+        data_source = data.get('data_source', '')
+        document_id = data.get('document_id', 'default')
+        
+        if not variable_name:
+            return jsonify({
+                'success': False,
+                'error': 'Variable name is required'
+            }), 400
+        
+        if not data_source:
+            return jsonify({
+                'success': False,
+                'error': 'Data source is required'
+            }), 400
+        
+        # Check if LLM client is available
+        if client is None:
+            return jsonify({
+                'success': False,
+                'error': 'AI service not available (API key not configured)'
+            })
+        
+        # Get data source information from data lake
+        data_lake_data = data_lake_storage.get(document_id, [])
+        selected_data_source = None
+        
+        for item in data_lake_data:
+            if item.get('referenceName') == data_source:
+                selected_data_source = item
+                break
+        
+        if not selected_data_source:
+            return jsonify({
+                'success': False,
+                'error': f'Data source "{data_source}" not found'
+            }), 404
+        
+        # Create LLM prompt for code generation
+        prompt = f"""
+Generate Python code to extract data for a variable from a data source.
+
+Variable Details:
+- Name: {variable_name}
+- Type: {variable_type}
+- Description: {variable_description}
+
+Data Source Details:
+- Name: {selected_data_source.get('name', 'Unknown')}
+- Type: {selected_data_source.get('type', 'unknown')}
+- Reference: ${data_source}
+
+Requirements:
+1. Generate Python code that processes the data source to extract the value for this variable
+2. The code should return a single value of the appropriate type ({variable_type})
+3. Use appropriate data processing libraries (pandas, numpy, etc.)
+4. Handle common data formats (CSV, Excel, JSON, etc.)
+5. Include error handling
+6. The data source will be available as a variable named 'data_source'
+7. Return the final result in a variable named 'result'
+
+Example structure:
+```python
+import pandas as pd
+import numpy as np
+
+# Process the data source
+# data_source contains the loaded data
+try:
+    # Your processing code here
+    result = processed_value
+except Exception as e:
+    result = f"Error: {{e}}"
+```
+
+Generate ONLY the Python code, no explanations or markdown formatting.
+"""
+        
+        # Call LLM
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a helpful Python code generator. Generate clean, efficient Python code based on the requirements."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.1,
+            max_tokens=5000
+        )
+        
+        generated_code = response.choices[0].message.content.strip()
+        
+        # Clean up code (remove markdown formatting if present)
+        if generated_code.startswith('```python'):
+            generated_code = generated_code[9:]
+        elif generated_code.startswith('```'):
+            generated_code = generated_code[3:]
+        
+        if generated_code.endswith('```'):
+            generated_code = generated_code[:-3]
+        
+        generated_code = generated_code.strip()
+        
+        logger.info(f"✅ Generated code for variable {variable_name}")
+        
+        return jsonify({
+            'success': True,
+            'code': generated_code,
+            'variable_name': variable_name,
+            'data_source': data_source
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Error generating variable code: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/execute-code', methods=['POST'])
+def execute_code():
+    """Execute generated code in a safe environment"""
+    try:
+        data = request.get_json()
+        
+        code = data.get('code', '')
+        document_id = data.get('document_id', 'default')
+        
+        if not code:
+            return jsonify({
+                'success': False,
+                'error': 'Code is required'
+            }), 400
+        
+        # Create a safe execution environment
+        import io
+        import sys
+        from contextlib import redirect_stdout, redirect_stderr
+        
+        # Capture stdout and stderr
+        stdout_capture = io.StringIO()
+        stderr_capture = io.StringIO()
+        
+        # Prepare safe globals with common libraries
+        safe_globals = {
+            '__builtins__': {
+                'len': len,
+                'str': str,
+                'int': int,
+                'float': float,
+                'list': list,
+                'dict': dict,
+                'set': set,
+                'tuple': tuple,
+                'range': range,
+                'enumerate': enumerate,
+                'zip': zip,
+                'min': min,
+                'max': max,
+                'sum': sum,
+                'abs': abs,
+                'round': round,
+                'sorted': sorted,
+                'reversed': reversed,
+                'print': print,
+            },
+            'pd': None,
+            'np': None,
+            'json': None,
+            'csv': None,
+            'datetime': None,
+            'data_source': None,  # Will be populated with actual data
+            'result': None
+        }
+        
+        # Try to import common libraries
+        try:
+            import pandas as pd
+            safe_globals['pd'] = pd
+        except ImportError:
+            pass
+        
+        try:
+            import numpy as np
+            safe_globals['np'] = np
+        except ImportError:
+            pass
+        
+        try:
+            import json
+            safe_globals['json'] = json
+        except ImportError:
+            pass
+        
+        try:
+            import csv
+            safe_globals['csv'] = csv
+        except ImportError:
+            pass
+        
+        try:
+            import datetime
+            safe_globals['datetime'] = datetime
+        except ImportError:
+            pass
+        
+        # TODO: Load actual data source here based on document_id
+        # For now, use sample data
+        safe_globals['data_source'] = "Sample data - implement data loading here"
+        
+        try:
+            with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
+                exec(code, safe_globals)
+            
+            result = safe_globals.get('result', 'No result returned')
+            stdout_output = stdout_capture.getvalue()
+            stderr_output = stderr_capture.getvalue()
+            
+            if stderr_output:
+                return jsonify({
+                    'success': False,
+                    'error': stderr_output,
+                    'output': stdout_output
+                })
+            
+            return jsonify({
+                'success': True,
+                'output': str(result),
+                'stdout': stdout_output
+            })
+            
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'error': str(e),
+                'output': stdout_capture.getvalue()
+            })
+        
+    except Exception as e:
+        logger.error(f"❌ Error executing code: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 
 # Coding Agent Integration
 @app.route('/api/agents/coding', methods=['POST'])

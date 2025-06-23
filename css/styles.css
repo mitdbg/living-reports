@@ -7255,3 +7255,46 @@ p {
 .pdf-page-simple {
   border-radius: 4px;
 }
+
+/* Variable Tool Generator Styles */
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tool-generator-btn {
+  background: #f0f7ff;
+  border: 1px solid #007bff;
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: #007bff;
+  line-height: 1;
+}
+
+.tool-generator-btn:hover {
+  background: #007bff;
+  color: white;
+  transform: scale(1.05);
+}
+
+.generate-tool-btn {
+  background: #f0f7ff;
+  border: 1px solid #28a745;
+  border-radius: 3px;
+  padding: 4px 6px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: #28a745;
+  margin: 0 2px;
+}
+
+.generate-tool-btn:hover {
+  background: #28a745;
+  color: white;
+  transform: scale(1.05);
+}
