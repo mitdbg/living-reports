@@ -53,7 +53,6 @@ TOGETHER_API_KEY=your_together_api_key_here
 ```
 
 This script will:
-- Check for required `.env` file
 - Start the Python backend server
 - Launch the Electron application
 - Handle cleanup when you close the app
@@ -84,11 +83,10 @@ googledoc_demo/
 ## 🔧 Configuration
 
 ### API Keys
-- Create a `.env` file in the project root
+- The `.env` file is automatically created from `env.example` template during installation
 - Set `OPENAI_API_KEY` for OpenAI GPT models
 - Set `TOGETHER_API_KEY` for Together AI models
 - Without API keys, the app runs in basic mode without AI features
-- The `.env` file is automatically created from `env.example` template during installation
 
 ### Database
 - Documents are stored in `backend/database/documents.json`
