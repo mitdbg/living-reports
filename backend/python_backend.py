@@ -8,6 +8,13 @@ from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from openai import OpenAI
 
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # python-dotenv not installed, continue without .env support
+
 # Make together import optional
 try:
     from together import Together
@@ -44,7 +51,7 @@ try:
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         logger.warning("OPENAI_API_KEY not set! AI features will be limited.")
-        logger.info("Set it with: export OPENAI_API_KEY='your-key'")
+        logger.info("Set it in your .env file: OPENAI_API_KEY='your-key'")
     
     client = OpenAI(api_key=api_key) if api_key else None
     if client:
@@ -271,7 +278,7 @@ def handle_chat():
             return jsonify({
                 'error': 'OpenAI API key not configured',
                 'response': 'Sorry, I cannot process chat messages because the OpenAI API key is not set. Please set the OPENAI_API_KEY environment variable and restart the server.',
-                'content': 'To enable AI chat features, please:\n1. Get an OpenAI API key from https://platform.openai.com/\n2. Set it as an environment variable: export OPENAI_API_KEY="your-key-here"\n3. Restart the Python backend',
+                'content': 'To enable AI chat features, please:\n1. Get an OpenAI API key from https://platform.openai.com/\n2. Set it in your .env file: OPENAI_API_KEY="your-key-here"\n3. Restart the Python backend',
                 'result': '',
                 'variables': {},
                 'cache_info': {'variables_count': 0, 'cached': False},

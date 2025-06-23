@@ -1,8 +1,11 @@
 flask
 flask-cors
 openai
+requests
+together
 pandas
 beautifulsoup4
-fitz
+PyMuPDF
 openpyxl
-python-pptx 
+python-pptx
+python-dotenv 

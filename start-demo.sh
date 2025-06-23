@@ -9,42 +9,33 @@ cd "$SCRIPT_DIR"
 
 echo "📍 Working directory: $(pwd)"
 
+# Check for .env file
+echo "🔐 Checking environment configuration..."
+if [ ! -f ".env" ]; then
+    echo "❌ .env file not found!"
+    echo "📝 Please create a .env file with your API keys:"
+    echo "   OPENAI_API_KEY=your_openai_api_key_here"
+    echo "   TOGETHER_API_KEY=your_together_api_key_here"
+    echo "   Or run ./install-deps.sh to create one from template."
+    exit 1
+fi
+
 # Set venv directory name
 VENV_DIR="venv"
 
-# Create venv if it doesn't exist
-echo "🐍 Checking for Python virtual environment..."
+# Check if venv exists
 if [ ! -d "$VENV_DIR" ]; then
-    echo "🐍 Creating Python virtual environment in $VENV_DIR..."
-    python3 -m venv "$VENV_DIR"
+    echo "❌ Virtual environment not found!"
+    echo "📦 Please run ./install-deps.sh first to install dependencies."
+    exit 1
 fi
 
 # Activate venv
 source "$VENV_DIR/bin/activate"
 
-# Check if Python dependencies are installed
-echo "📦 Checking Python dependencies..."
-if ! "$VENV_DIR/bin/python" -c "import websockets" 2>/dev/null; then
-    echo "Installing Python dependencies..."
-    "$VENV_DIR/bin/pip" install -r requirements.txt
-fi
-
-# Check if Node dependencies are installed
-echo "📦 Checking Node.js dependencies..."
-if [ ! -d "node_modules" ]; then
-    echo "Installing Node.js dependencies..."
-    npm install
-fi
-
 # Function to cleanup background processes
 cleanup() {
     echo "🧹 Cleaning up..."
-    
-    # WebSocket server cleanup disabled - not using WebSocket anymore
-    # if [ ! -z "$WEBSOCKET_PID" ]; then
-    #     echo "🔌 Stopping WebSocket server (PID: $WEBSOCKET_PID)..."
-    #     kill $WEBSOCKET_PID 2>/dev/null
-    # fi
     
     # Kill Python backend
     if [ ! -z "$BACKEND_PID" ]; then
@@ -90,13 +81,7 @@ fi
 
 echo "✅ Ready to start fresh backend processes"
 
-# WebSocket server disabled - using HTTP polling for collaboration
-# echo "🔌 Starting WebSocket server..."
-# python3 backend/websocket_server.py &
-# WEBSOCKET_PID=$!
-# sleep 2
-
-# Start Python backend (optional, for AI features)
+# Start Python backend
 echo "🐍 Starting Python backend..."
 cd backend && ../$VENV_DIR/bin/python python_backend.py &
 BACKEND_PID=$!

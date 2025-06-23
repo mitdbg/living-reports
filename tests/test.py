@@ -385,7 +385,7 @@ def main():
     # Check if OpenAI API key is set
     if not OPENAI_API_KEY:
         print("ERROR: OPENAI_API_KEY environment variable is not set.")
-        print("Please set it with: export OPENAI_API_KEY='your-api-key'")
+        print("Please set it in your .env file: OPENAI_API_KEY='your-api-key'")
         return
     
     try:
