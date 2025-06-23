@@ -20,6 +20,7 @@ from execution_result import ExecutionResult
 from simple_view import SimpleView
 from file_processor import process_excel_file, process_html_file, process_pptx_file
 from pdf_processor import process_pdf_file
+from local_code_executor.code_executor import execute_code_locally
 from pathlib import Path
 import os
 
@@ -1788,7 +1789,7 @@ def generate_variable_code():
         selected_data_source = None
         
         for item in data_lake_data:
-            if item.get('referenceName') == data_source:
+            if item.get('filePath') == data_source:
                 selected_data_source = item
                 break
         
@@ -1819,7 +1820,8 @@ Requirements:
 4. Handle common data formats (CSV, Excel, JSON, etc.)
 5. Include error handling
 6. The data source will be available as a variable named 'data_source'
-7. Return the final result in a variable named 'result'
+7. Please write functions, and call the function at the end. You can assume you get the parameters from parameters dict like parameters['data_source'].
+7. Return the final result in a variable named 'output'
 
 Example structure:
 ```python
@@ -1828,11 +1830,15 @@ import numpy as np
 
 # Process the data source
 # data_source contains the loaded data
-try:
-    # Your processing code here
-    result = processed_value
-except Exception as e:
-    result = f"Error: {{e}}"
+function extract_metrics(data_source)
+    try:
+        # Your processing code here
+        result = processed_value
+    except Exception as e:
+        result = f"Error: {{e}}"
+    return result
+
+output = extract_metrics(parameters['data_source'])
 ```
 
 Generate ONLY the Python code, no explanations or markdown formatting.
@@ -1879,13 +1885,12 @@ Generate ONLY the Python code, no explanations or markdown formatting.
         }), 500
 
 @app.route('/api/execute-code', methods=['POST'])
-def execute_code():
+def execute_code_endpoint():
     """Execute generated code in a safe environment"""
     try:
         data = request.get_json()
-        
         code = data.get('code', '')
-        document_id = data.get('document_id', 'default')
+        parameters = data.get('parameters', {})
         
         if not code:
             return jsonify({
@@ -1893,112 +1898,20 @@ def execute_code():
                 'error': 'Code is required'
             }), 400
         
-        # Create a safe execution environment
-        import io
-        import sys
-        from contextlib import redirect_stdout, redirect_stderr
-        
-        # Capture stdout and stderr
-        stdout_capture = io.StringIO()
-        stderr_capture = io.StringIO()
-        
-        # Prepare safe globals with common libraries
-        safe_globals = {
-            '__builtins__': {
-                'len': len,
-                'str': str,
-                'int': int,
-                'float': float,
-                'list': list,
-                'dict': dict,
-                'set': set,
-                'tuple': tuple,
-                'range': range,
-                'enumerate': enumerate,
-                'zip': zip,
-                'min': min,
-                'max': max,
-                'sum': sum,
-                'abs': abs,
-                'round': round,
-                'sorted': sorted,
-                'reversed': reversed,
-                'print': print,
-            },
-            'pd': None,
-            'np': None,
-            'json': None,
-            'csv': None,
-            'datetime': None,
-            'data_source': None,  # Will be populated with actual data
-            'result': None
-        }
-        
-        # Try to import common libraries
-        try:
-            import pandas as pd
-            safe_globals['pd'] = pd
-        except ImportError:
-            pass
-        
-        try:
-            import numpy as np
-            safe_globals['np'] = np
-        except ImportError:
-            pass
-        
-        try:
-            import json
-            safe_globals['json'] = json
-        except ImportError:
-            pass
-        
-        try:
-            import csv
-            safe_globals['csv'] = csv
-        except ImportError:
-            pass
-        
-        try:
-            import datetime
-            safe_globals['datetime'] = datetime
-        except ImportError:
-            pass
-        
-        # TODO: Load actual data source here based on document_id
-        # For now, use sample data
-        safe_globals['data_source'] = "Sample data - implement data loading here"
-        
-        try:
-            with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
-                exec(code, safe_globals)
-            
-            result = safe_globals.get('result', 'No result returned')
-            stdout_output = stdout_capture.getvalue()
-            stderr_output = stderr_capture.getvalue()
-            
-            if stderr_output:
-                return jsonify({
-                    'success': False,
-                    'error': stderr_output,
-                    'output': stdout_output
-                })
-            
-            return jsonify({
-                'success': True,
-                'output': str(result),
-                'stdout': stdout_output
-            })
-            
-        except Exception as e:
+        result = execute_code_locally(code, parameters)
+        print("================================================")
+        print(result)
+        print("================================================")
+        if result.get('status') and result.get('status') == "success": 
+            return jsonify(result.get('result').get('output'))
+        else:
             return jsonify({
                 'success': False,
-                'error': str(e),
-                'output': stdout_capture.getvalue()
+                'error': result
             })
-        
+
     except Exception as e:
-        logger.error(f"❌ Error executing code: {e}")
+        logger.error(f"❌ Error generating variable code: {e}")
         return jsonify({
             'success': False,
             'error': str(e)

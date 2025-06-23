@@ -5,9 +5,6 @@ import { createDocumentDialog, createDocumentElementId, getDocumentElement, regi
 
 // Data Lake state
 let dataLake = [];
-let autocompleteWidget = null;
-let autocompletePosition = { x: 0, y: 0 };
-let selectedAutocompleteIndex = -1;
 
 // Get current document ID from DocumentManager
 function getCurrentDocumentId() {
@@ -104,7 +101,6 @@ export function initDataLake() {
   
   // Set up event listeners for Data Lake button in document context
   setupDataLakeEventListeners();
-  setupAutocompleteListeners();
   
   console.log(`[${windowId}] Data Lake initialized`);
 }
@@ -125,10 +121,7 @@ function setupDataLakeEventListeners() {
       hideDataLakeDialog();
     }
     
-    if (event.target.matches('.data-item-btn.insert-btn')) {
-      const referenceName = event.target.getAttribute('data-reference-name');
-      insertDataReference(referenceName);
-    }
+
     
     if (event.target.matches('.data-item-btn.remove-btn')) {
       const itemId = event.target.getAttribute('data-item-id');
@@ -175,6 +168,7 @@ export async function addToDataLake(file) {
     type: file.type || 'unknown',
     size: file.size || 0,
     content: file.content || '',
+    filePath: file.path || '', // Add file path
     addedAt: new Date().toISOString(),
     documentId: currentDocumentId
   };
@@ -209,53 +203,7 @@ async function removeDataItem(itemId) {
   }
 }
 
-// Check if element is editable (for autocomplete functionality)
-function isEditableElement(element) {
-  if (!element) return false;
-  
-  // Check for contenteditable elements
-  if (element.contentEditable === 'true') {
-    return true;
-  }
-  
-  // Check for input fields and textareas
-  const editableTypes = ['input', 'textarea'];
-  if (editableTypes.includes(element.tagName.toLowerCase())) {
-    return true;
-  }
-  
-  // Check for template editors (specific to our app)
-  if (element.classList.contains('template-editor') || 
-      element.classList.contains('source-editor')) {
-    return true;
-  }
-  
-  return false;
-}
 
-// Set up autocomplete listeners
-function setupAutocompleteListeners() {
-  // Listen for $ character in editable elements
-  document.addEventListener('keyup', (event) => {
-    if (isEditableElement(event.target) && event.key === '$') {
-      showAutocomplete(event.target, event);
-    }
-  });
-  
-  // Hide autocomplete on outside click
-  document.addEventListener('click', (event) => {
-    if (autocompleteWidget && !autocompleteWidget.contains(event.target)) {
-      hideAutocomplete();
-    }
-  });
-  
-  // Handle autocomplete navigation
-  document.addEventListener('keydown', (event) => {
-    if (autocompleteWidget && autocompleteWidget.style.display !== 'none') {
-      handleAutocompleteNavigation(event);
-    }
-  });
-}
 
 // Set up event listeners for the data lake dialog
 function setupDataLakeDialogEventListeners(dialog) {
@@ -270,14 +218,21 @@ function setupDataLakeDialogEventListeners(dialog) {
     if (e.target === closeBtn || e.target.id === closeBtn?.id ||
         e.target === closeBottomBtn || e.target.id === closeBottomBtn?.id) {
       hideDataLakeDialog();
-    } else if (e.target.matches('.data-item-btn.insert-btn')) {
-      const referenceName = e.target.getAttribute('data-reference-name');
-      insertDataReference(referenceName);
     } else if (e.target.matches('.data-item-btn.remove-btn')) {
       const itemId = e.target.getAttribute('data-item-id');
       removeDataItem(itemId);
     } else if (e.target.classList.contains('dialog-overlay')) {
       hideDataLakeDialog();
+    }
+  });
+  
+  // Add click handler for data lake items (to show content preview)
+  dialog.addEventListener('click', (e) => {
+    // Check if clicked on a data lake item but not on the buttons
+    const dataLakeItem = e.target.closest('.data-lake-item');
+    if (dataLakeItem && !e.target.matches('.data-item-btn') && !e.target.closest('.data-item-btn')) {
+      const itemId = dataLakeItem.getAttribute('data-item-id');
+      showDatasetContentPreview(itemId);
     }
   });
   
@@ -385,13 +340,11 @@ function createDataLakeItemElement(item) {
           <span>Type: ${item.type.toUpperCase()}</span>
           <span>Size: ${formattedSize}</span>
           <span>Added: ${formattedDate}</span>
+          ${item.filePath ? `<span>Path: ${item.filePath}</span>` : ''}
         </div>
       </div>
     </div>
     <div class="data-item-actions">
-      <button class="data-item-btn insert-btn" data-reference-name="${item.referenceName}">
-        Insert
-      </button>
       <button class="data-item-btn remove-btn" data-item-id="${item.id}">
         Remove
       </button>
@@ -477,13 +430,11 @@ function updateDataLakeDisplay() {
               <span>Type: ${item.fileType.toUpperCase()}</span>
               <span>Size: ${formattedSize}</span>
               <span>Added: ${formattedDate}</span>
+              ${item.filePath ? `<span>Path: ${item.filePath}</span>` : ''}
             </div>
           </div>
         </div>
         <div class="data-item-actions">
-          <button class="data-item-btn insert-btn" onclick="insertDataReference('${item.name}')">
-            Insert
-          </button>
           <button class="data-item-btn remove-btn" onclick="removeFromDataLake('${item.id}')">
             Remove
           </button>
@@ -536,9 +487,9 @@ function filterDataLakeItems(searchTerm) {
   const items = document.querySelectorAll('.data-lake-item');
   items.forEach(item => {
     const name = item.querySelector('.data-item-name').textContent.toLowerCase();
-    const type = item.querySelector('.data-item-meta').textContent.toLowerCase();
+    const meta = item.querySelector('.data-item-meta').textContent.toLowerCase();
     
-    if (name.includes(searchTerm) || type.includes(searchTerm)) {
+    if (name.includes(searchTerm.toLowerCase()) || meta.includes(searchTerm.toLowerCase())) {
       item.classList.remove('filtered-out');
     } else {
       item.classList.add('filtered-out');
@@ -558,297 +509,9 @@ window.removeFromDataLake = function(itemId) {
   }
 };
 
-// Initialize autocomplete functionality
-function initAutocomplete() {
-  // Try to get autocomplete widget using document-specific ID first, fall back to global
-  autocompleteWidget = getDocumentElement('autocomplete-widget') || document.getElementById('autocomplete-widget');
-  
-  // Add event listeners to all template editors (current and future)
-  document.addEventListener('input', handleTemplateInput);
-  document.addEventListener('keydown', handleAutocompleteNavigation);
-  document.addEventListener('click', hideAutocomplete);
-}
 
-// Handle input in template editors
-function handleTemplateInput(e) {
-  // Check if this is a template editor
-  if (!e.target.classList.contains('template-editor')) return;
-  
-  const editor = e.target;
-  const text = editor.textContent;
-  const selection = window.getSelection();
-  
-  if (selection.rangeCount === 0) return;
-  
-  const range = selection.getRangeAt(0);
-  const cursorPosition = range.startOffset;
-  
-  // Find the position of the last '$' character before cursor
-  const textBeforeCursor = text.substring(0, cursorPosition);
-  const lastDollarIndex = textBeforeCursor.lastIndexOf('$');
-  
-  if (lastDollarIndex !== -1) {
-    // Check if the '$' is at the beginning or preceded by whitespace/newline
-    const charBeforeDollar = lastDollarIndex > 0 ? textBeforeCursor[lastDollarIndex - 1] : ' ';
-    const isValidTrigger = /\s/.test(charBeforeDollar) || lastDollarIndex === 0;
-    
-    if (isValidTrigger) {
-      // Get the text after '$' up to cursor
-      const searchTerm = textBeforeCursor.substring(lastDollarIndex + 1);
-      
-      // Show autocomplete if there's no space after '$'
-      if (!searchTerm.includes(' ') && !searchTerm.includes('\n')) {
-        showAutocomplete(editor, lastDollarIndex, searchTerm);
-        return;
-      }
-    }
-  }
-  
-  // Hide autocomplete if not triggered
-  hideAutocomplete();
-}
 
-// Show autocomplete widget
-function showAutocomplete(editor, dollarPosition, searchTerm) {
-  if (!autocompleteWidget || dataLake.length === 0) {
-    hideAutocomplete();
-    return;
-  }
-  
-  // Filter data lake items based on search term (search by reference name)
-  const filteredItems = dataLake.filter(item => 
-    item.referenceName.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-  
-  if (filteredItems.length === 0) {
-    hideAutocomplete();
-    return;
-  }
-  
-  // Calculate position for autocomplete widget
-  const editorRect = editor.getBoundingClientRect();
-  const range = document.createRange();
-  const textNode = editor.firstChild || editor;
-  
-  if (textNode.nodeType === Node.TEXT_NODE && dollarPosition < textNode.textContent.length) {
-    range.setStart(textNode, dollarPosition);
-    range.setEnd(textNode, dollarPosition + 1);
-  } else {
-    range.selectNodeContents(editor);
-    range.collapse(false);
-  }
-  
-  const rangeRect = range.getBoundingClientRect();
-  
-  autocompletePosition.x = rangeRect.left;
-  autocompletePosition.y = rangeRect.bottom + 5;
-  
-  // Update autocomplete content
-  updateAutocompleteContent(filteredItems, searchTerm);
-  
-  // Position and show autocomplete widget
-  autocompleteWidget.style.left = autocompletePosition.x + 'px';
-  autocompleteWidget.style.top = autocompletePosition.y + 'px';
-  autocompleteWidget.style.display = 'block';
-  
-  selectedAutocompleteIndex = 0;
-  updateAutocompleteSelection();
-}
 
-// Update autocomplete content
-function updateAutocompleteContent(items, searchTerm) {
-  const itemsContainer = autocompleteWidget.querySelector('.autocomplete-items');
-  
-  if (items.length === 0) {
-    itemsContainer.innerHTML = '<div class="autocomplete-no-results">No matching data sources</div>';
-    return;
-  }
-  
-  const itemsHTML = items.map((item, index) => {
-    const icon = getFileIcon(item.type);
-    return `
-      <div class="autocomplete-item" data-index="${index}" data-reference-name="${item.referenceName}">
-        <div class="autocomplete-item-icon">${icon}</div>
-        <div class="autocomplete-item-info">
-          <div class="autocomplete-item-name">${item.referenceName}</div>
-          <div class="autocomplete-item-type">${item.name}</div>
-        </div>
-      </div>
-    `;
-  }).join('');
-  
-  itemsContainer.innerHTML = itemsHTML;
-  
-  // Add click handlers
-  const autocompleteItems = itemsContainer.querySelectorAll('.autocomplete-item');
-  autocompleteItems.forEach(item => {
-    item.addEventListener('click', () => {
-      const dataName = item.dataset.referenceName;
-      insertDataReference(dataName);
-      hideAutocomplete();
-    });
-  });
-}
-
-// Update autocomplete selection
-function updateAutocompleteSelection() {
-  const items = autocompleteWidget.querySelectorAll('.autocomplete-item');
-  items.forEach((item, index) => {
-    if (index === selectedAutocompleteIndex) {
-      item.classList.add('selected');
-    } else {
-      item.classList.remove('selected');
-    }
-  });
-}
-
-// Handle autocomplete navigation
-function handleAutocompleteNavigation(e) {
-  if (!autocompleteWidget || autocompleteWidget.style.display === 'none') return;
-  
-  const items = autocompleteWidget.querySelectorAll('.autocomplete-item');
-  
-  switch (e.key) {
-    case 'ArrowDown':
-      e.preventDefault();
-      selectedAutocompleteIndex = Math.min(selectedAutocompleteIndex + 1, items.length - 1);
-      updateAutocompleteSelection();
-      break;
-      
-    case 'ArrowUp':
-      e.preventDefault();
-      selectedAutocompleteIndex = Math.max(selectedAutocompleteIndex - 1, 0);
-      updateAutocompleteSelection();
-      break;
-      
-    case 'Enter':
-      e.preventDefault();
-      if (selectedAutocompleteIndex >= 0 && selectedAutocompleteIndex < items.length) {
-        const selectedItem = items[selectedAutocompleteIndex];
-        const dataName = selectedItem.dataset.referenceName;
-        insertDataReference(dataName);
-        hideAutocomplete();
-      }
-      break;
-      
-    case 'Escape':
-      e.preventDefault();
-      hideAutocomplete();
-      break;
-  }
-}
-
-// Hide autocomplete widget
-function hideAutocomplete() {
-  if (autocompleteWidget) {
-    autocompleteWidget.style.display = 'none';
-    selectedAutocompleteIndex = -1;
-  }
-}
-
-// Insert data reference at cursor position
-window.insertDataReference = function(referenceName) {
-  // Find the currently active template editor
-  let templateEditor = null;
-  
-  // Try to get the template editor from the active document
-  if (window.documentManager?.activeDocumentId) {
-    const container = document.getElementById(`document-${window.documentManager.activeDocumentId}`);
-    templateEditor = container?.querySelector('.template-editor');
-  }
-  
-  // Fallback to global template editor
-  if (!templateEditor) {
-    templateEditor = elements.templateEditor;
-  }
-  
-  if (!templateEditor) {
-    addMessageToUI('system', 'No template editor found');
-    return;
-  }
-  
-  // Check if the template editor currently has focus
-  const templateHasFocus = document.activeElement === templateEditor || 
-                          templateEditor.contains(document.activeElement);
-  
-  let insertAtCursor = false;
-  let range = null;
-  
-  if (templateHasFocus) {
-    // Template editor has focus, try to insert at cursor position
-    const selection = window.getSelection();
-    if (selection.rangeCount > 0) {
-      range = selection.getRangeAt(0);
-      // Check if the selection is actually within the template editor
-      if (templateEditor.contains(range.commonAncestorContainer) || 
-          templateEditor === range.commonAncestorContainer) {
-        insertAtCursor = true;
-      }
-    }
-  }
-  
-  if (!insertAtCursor) {
-    // Either template editor doesn't have focus or no valid cursor position
-    // Insert at the bottom of the template editor
-    templateEditor.focus();
-    range = document.createRange();
-    range.selectNodeContents(templateEditor);
-    range.collapse(false); // Collapse to end (bottom)
-    
-    const selection = window.getSelection();
-    selection.removeAllRanges();
-    selection.addRange(range);
-  }
-  
-  // Now insert the reference
-  const text = templateEditor.textContent;
-  const cursorPosition = range.startOffset;
-  
-  // Check if we're replacing a partial '$variable' or just inserting
-  if (insertAtCursor) {
-    const textBeforeCursor = text.substring(0, cursorPosition);
-    const lastDollarIndex = textBeforeCursor.lastIndexOf('$');
-    
-    if (lastDollarIndex !== -1 && lastDollarIndex >= cursorPosition - 20) {
-      // Replace from the '$' position
-      const rangeToReplace = document.createRange();
-      const textNode = templateEditor.firstChild || templateEditor;
-      
-      if (textNode.nodeType === Node.TEXT_NODE) {
-        rangeToReplace.setStart(textNode, lastDollarIndex);
-        rangeToReplace.setEnd(textNode, cursorPosition);
-        rangeToReplace.deleteContents();
-        rangeToReplace.insertNode(document.createTextNode(`$${referenceName}`));
-      }
-    } else {
-      // Insert new reference at cursor
-      range.deleteContents();
-      range.insertNode(document.createTextNode(`$${referenceName}`));
-    }
-  } else {
-    // Insert at bottom - add a newline if needed and then the reference
-    const needsNewline = text.length > 0 && !text.endsWith('\n');
-    const textToInsert = needsNewline ? `\n$${referenceName}` : `$${referenceName}`;
-    
-    range.deleteContents();
-    range.insertNode(document.createTextNode(textToInsert));
-  }
-  
-  // Move cursor after the inserted text
-  range.collapse(false);
-  const selection = window.getSelection();
-  selection.removeAllRanges();
-  selection.addRange(range);
-  
-  // Focus the template editor to ensure it's active
-  templateEditor.focus();
-  
-  const location = insertAtCursor ? 'at cursor position' : 'at bottom of template';
-  addMessageToUI('system', `Inserted data reference: $${referenceName} (${location})`);
-  
-  // Close data lake dialog if open
-  hideDataLakeDialog();
-};
 
 // Get data source by name
 export function getDataSource(name) {
@@ -860,12 +523,292 @@ export function getAllDataSources() {
   return [...dataLake];
 }
 
+// Show dataset content preview in floating window
+function showDatasetContentPreview(itemId) {
+  const item = dataLake.find(item => item.id === itemId);
+  if (!item) {
+    console.error('Data item not found:', itemId);
+    return;
+  }
+  
+  console.log(`[${windowId}] Showing content preview for:`, item.name);
+  
+  // Create floating preview window
+  const previewDialog = createDatasetPreviewDialog(item);
+  document.body.appendChild(previewDialog);
+  
+  // Show the dialog
+  previewDialog.style.display = 'flex';
+  
+  // Focus on close button
+  const closeBtn = previewDialog.querySelector('.close-btn');
+  if (closeBtn) {
+    setTimeout(() => closeBtn.focus(), 100);
+  }
+}
+
+// Create dataset preview dialog
+function createDatasetPreviewDialog(item) {
+  const dialogId = `dataset-preview-${item.id}`;
+  
+  // Remove existing preview dialog if any
+  const existingDialog = document.getElementById(dialogId);
+  if (existingDialog) {
+    existingDialog.remove();
+  }
+  
+  const dialog = document.createElement('div');
+  dialog.id = dialogId;
+  dialog.className = 'dataset-preview-dialog';
+  dialog.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 10000;
+  `;
+  
+  const content = document.createElement('div');
+  content.className = 'dataset-preview-content';
+  content.style.cssText = `
+    background: white;
+    border-radius: 8px;
+    max-width: 90vw;
+    max-height: 90vh;
+    overflow: hidden;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    display: flex;
+    flex-direction: column;
+  `;
+  
+  // Header
+  const header = document.createElement('div');
+  header.className = 'dataset-preview-header';
+  header.style.cssText = `
+    padding: 16px 20px;
+    border-bottom: 1px solid #e0e0e0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+  `;
+  
+  const title = document.createElement('h3');
+  title.style.cssText = `
+    margin: 0;
+    color: #333;
+    font-size: 18px;
+    font-weight: 600;
+  `;
+  title.textContent = `📊 ${item.name}`;
+  
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'close-btn';
+  closeBtn.style.cssText = `
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: #666;
+    padding: 4px;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+  `;
+  closeBtn.innerHTML = '✕';
+  closeBtn.addEventListener('click', () => dialog.remove());
+  closeBtn.addEventListener('mouseenter', () => closeBtn.style.backgroundColor = '#f0f0f0');
+  closeBtn.addEventListener('mouseleave', () => closeBtn.style.backgroundColor = 'transparent');
+  
+  header.appendChild(title);
+  header.appendChild(closeBtn);
+  
+  // Content area
+  const contentArea = document.createElement('div');
+  contentArea.className = 'dataset-preview-body';
+  contentArea.style.cssText = `
+    padding: 20px;
+    overflow: auto;
+    flex: 1;
+    min-height: 0;
+  `;
+  
+  // Render content based on file type
+  const renderedContent = renderDatasetContent(item);
+  contentArea.innerHTML = renderedContent;
+  
+  content.appendChild(header);
+  content.appendChild(contentArea);
+  dialog.appendChild(content);
+  
+  // Close on overlay click
+  dialog.addEventListener('click', (e) => {
+    if (e.target === dialog) {
+      dialog.remove();
+    }
+  });
+  
+  // Close on Escape key
+  const handleKeyDown = (e) => {
+    if (e.key === 'Escape') {
+      dialog.remove();
+      document.removeEventListener('keydown', handleKeyDown);
+    }
+  };
+  document.addEventListener('keydown', handleKeyDown);
+  
+  return dialog;
+}
+
+// Render dataset content based on file type
+function renderDatasetContent(item) {
+  const fileExt = getFileExtension(item.name);
+  let content = item.content || '';
+  
+  switch (fileExt) {
+    case 'csv':
+      return renderCSVContent(content);
+    case 'json':
+      return renderJSONContent(content);
+    case 'txt':
+    case 'md':
+    case 'markdown':
+      return renderTextContent(content);
+    case 'html':
+    case 'htm':
+      return renderHTMLContent(content);
+    default:
+      return renderPlainContent(content);
+  }
+}
+
+// Render CSV content as table
+function renderCSVContent(content) {
+  if (!content || content.trim() === '') {
+    return '<p style="color: #666; font-style: italic;">No content available</p>';
+  }
+  
+  try {
+    const lines = content.split('\n').filter(line => line.trim());
+    if (lines.length === 0) return '<p style="color: #666;">Empty CSV file</p>';
+    
+    const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+    const rows = lines.slice(1).map(line => line.split(',').map(cell => cell.trim().replace(/"/g, '')));
+    
+    let tableHTML = `
+      <div style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+          <thead>
+            <tr style="background-color: #f8f9fa;">
+    `;
+    
+    headers.forEach(header => {
+      tableHTML += `<th style="border: 1px solid #dee2e6; padding: 8px 12px; text-align: left; font-weight: 600;">${escapeHtml(header)}</th>`;
+    });
+    
+    tableHTML += '</tr></thead><tbody>';
+    
+    // Limit to first 100 rows for performance
+    const displayRows = rows.slice(0, 100);
+    displayRows.forEach((row, index) => {
+      const bgColor = index % 2 === 0 ? '#ffffff' : '#f8f9fa';
+      tableHTML += `<tr style="background-color: ${bgColor};">`;
+      row.forEach(cell => {
+        tableHTML += `<td style="border: 1px solid #dee2e6; padding: 8px 12px;">${escapeHtml(cell)}</td>`;
+      });
+      tableHTML += '</tr>';
+    });
+    
+    tableHTML += '</tbody></table>';
+    
+    if (rows.length > 100) {
+      tableHTML += `<p style="margin-top: 10px; color: #666; font-style: italic;">Showing first 100 rows of ${rows.length} total rows</p>`;
+    }
+    
+    tableHTML += '</div>';
+    return tableHTML;
+  } catch (error) {
+    console.error('Error parsing CSV:', error);
+    return `<div style="color: #dc3545; padding: 10px; background-color: #f8d7da; border-radius: 4px;">
+      <strong>Error parsing CSV:</strong> ${error.message}<br>
+      <details style="margin-top: 10px;">
+        <summary>Raw content:</summary>
+        <pre style="white-space: pre-wrap; font-size: 12px; margin-top: 5px;">${escapeHtml(content.substring(0, 1000))}${content.length > 1000 ? '...' : ''}</pre>
+      </details>
+    </div>`;
+  }
+}
+
+// Render JSON content
+function renderJSONContent(content) {
+  if (!content || content.trim() === '') {
+    return '<p style="color: #666; font-style: italic;">No content available</p>';
+  }
+  
+  try {
+    const parsed = JSON.parse(content);
+    const formatted = JSON.stringify(parsed, null, 2);
+    return `<pre style="background-color: #f8f9fa; padding: 15px; border-radius: 4px; overflow-x: auto; font-size: 13px; line-height: 1.4;">${escapeHtml(formatted)}</pre>`;
+  } catch (error) {
+    console.error('Error parsing JSON:', error);
+    return `<div style="color: #dc3545; padding: 10px; background-color: #f8d7da; border-radius: 4px;">
+      <strong>Error parsing JSON:</strong> ${error.message}<br>
+      <details style="margin-top: 10px;">
+        <summary>Raw content:</summary>
+        <pre style="white-space: pre-wrap; font-size: 12px; margin-top: 5px;">${escapeHtml(content.substring(0, 1000))}${content.length > 1000 ? '...' : ''}</pre>
+      </details>
+    </div>`;
+  }
+}
+
+// Render text content
+function renderTextContent(content) {
+  if (!content || content.trim() === '') {
+    return '<p style="color: #666; font-style: italic;">No content available</p>';
+  }
+  
+  return `<pre style="white-space: pre-wrap; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.5; font-size: 14px;">${escapeHtml(content)}</pre>`;
+}
+
+// Render HTML content
+function renderHTMLContent(content) {
+  if (!content || content.trim() === '') {
+    return '<p style="color: #666; font-style: italic;">No content available</p>';
+  }
+  
+  return `<div style="border: 1px solid #dee2e6; border-radius: 4px; overflow: hidden;">
+    <div style="background-color: #f8f9fa; padding: 8px 12px; font-size: 12px; font-weight: 600; border-bottom: 1px solid #dee2e6;">Rendered HTML:</div>
+    <div style="padding: 15px;">${content}</div>
+  </div>`;
+}
+
+// Render plain content
+function renderPlainContent(content) {
+  if (!content || content.trim() === '') {
+    return '<p style="color: #666; font-style: italic;">No content available</p>';
+  }
+  
+  // Limit content length for display
+  const displayContent = content.length > 5000 ? content.substring(0, 5000) + '...' : content;
+  return `<pre style="white-space: pre-wrap; font-family: 'Courier New', monospace; font-size: 13px; line-height: 1.4; background-color: #f8f9fa; padding: 15px; border-radius: 4px; overflow-x: auto;">${escapeHtml(displayContent)}</pre>`;
+}
+
+// Utility function to escape HTML
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
 // Export for global access
 window.dataLakeModule = {
   addToDataLake,
   getDataSource,
   getAllDataSources,
-  insertDataReference: window.insertDataReference,
   removeFromDataLake: window.removeFromDataLake
 };
 

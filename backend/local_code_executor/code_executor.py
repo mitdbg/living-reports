@@ -3,7 +3,7 @@ import json
 import types
 from io import StringIO
 
-def execute_code(code, parameters):
+def execute_code_locally(code, parameters):
     print(f"{code}")
     print("================================================")
     print(f"parameters: {parameters}")

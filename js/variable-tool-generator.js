@@ -1,6 +1,7 @@
 // Variable Tool Generator Module
 import { state, elements, updateState } from './state.js';
 import { createDocumentDialog, createDocumentElementId, getDocumentElement, registerElement } from './element-id-manager.js';
+import { executeCodeForAuthorLocal } from './execute_tool_util.js';
 
 /**
  * Variable Tool Generator System
@@ -11,6 +12,7 @@ class VariableToolGenerator {
     this.generatorDialog = null;
     this.currentVariable = null;
     this.generatedCode = '';
+    this.originalGeneratedCode = '';
     this.isVisible = false;
     this.parentDialog = null;
     this.initialized = false;
@@ -109,8 +111,8 @@ class VariableToolGenerator {
             </div>
             
             <div class="code-preview" id="code-preview" style="display: none;">
-              <h5>Generated Code:</h5>
-              <pre class="code-block" id="generated-code-block"></pre>
+              <h5>Generated Code: <span class="code-edit-hint">(editable)</span></h5>
+              <textarea class="code-editor" id="generated-code-editor" rows="15" spellcheck="false"></textarea>
               <div class="code-actions">
                 <button class="btn-secondary" id="run-code-btn" data-action="run-code">
                   <span class="btn-icon">▶️</span>
@@ -247,6 +249,41 @@ class VariableToolGenerator {
         background: #f8f9fa;
         border: 1px solid #dee2e6;
         border-radius: 6px;
+      }
+      
+      .code-edit-hint {
+        font-size: 12px;
+        color: #666;
+        font-weight: normal;
+        font-style: italic;
+      }
+      
+      .code-editor {
+        width: 100%;
+        min-height: 300px;
+        padding: 12px;
+        font-family: 'Monaco', 'Consolas', 'Courier New', monospace;
+        font-size: 13px;
+        line-height: 1.4;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        background: #fff;
+        color: #333;
+        resize: vertical;
+        white-space: pre;
+        overflow: auto;
+        tab-size: 2;
+      }
+      
+      .code-editor:focus {
+        outline: none;
+        border-color: #1976d2;
+        box-shadow: 0 0 4px rgba(25, 118, 210, 0.3);
+      }
+      
+      .code-editor::selection {
+        background: #007bff;
+        color: white;
         padding: 12px;
         margin-top: 12px;
       }
@@ -329,6 +366,9 @@ class VariableToolGenerator {
       });
     }
     
+    // Setup code editor functionality
+    this.setupCodeEditor();
+    
     // Close when parent dialog closes
     document.addEventListener('click', (e) => {
       if (this.isVisible && this.parentDialog && !this.parentDialog.contains(e.target) && !this.generatorDialog.contains(e.target)) {
@@ -339,6 +379,118 @@ class VariableToolGenerator {
         }
       }
     });
+  }
+
+  /**
+   * Setup code editor functionality
+   */
+  setupCodeEditor() {
+    // Setup tab indentation and other code editor features
+    const setupTextareaHandlers = () => {
+      const codeEditor = this.generatorDialog.querySelector('[id$="generated-code-editor"]');
+      if (!codeEditor) return;
+      
+      // Handle tab key for indentation
+      codeEditor.addEventListener('keydown', (e) => {
+        if (e.key === 'Tab') {
+          e.preventDefault();
+          
+          const start = codeEditor.selectionStart;
+          const end = codeEditor.selectionEnd;
+          const value = codeEditor.value;
+          
+          if (e.shiftKey) {
+            // Shift+Tab: Remove indentation
+            const lineStart = value.lastIndexOf('\n', start - 1) + 1;
+            const lineEnd = value.indexOf('\n', lineStart);
+            const actualLineEnd = lineEnd === -1 ? value.length : lineEnd;
+            const line = value.substring(lineStart, actualLineEnd);
+            
+            if (line.startsWith('  ')) {
+              // Remove 2 spaces
+              const newValue = value.substring(0, lineStart) + line.substring(2) + value.substring(actualLineEnd);
+              codeEditor.value = newValue;
+              codeEditor.setSelectionRange(Math.max(lineStart, start - 2), Math.max(lineStart, end - 2));
+            }
+          } else {
+            // Tab: Add indentation
+            codeEditor.value = value.substring(0, start) + '  ' + value.substring(end);
+            codeEditor.setSelectionRange(start + 2, start + 2);
+          }
+        }
+        
+        // Auto-indent on Enter
+        if (e.key === 'Enter') {
+          const start = codeEditor.selectionStart;
+          const value = codeEditor.value;
+          const lineStart = value.lastIndexOf('\n', start - 1) + 1;
+          const currentLine = value.substring(lineStart, start);
+          const indentMatch = currentLine.match(/^(\s*)/);
+          const currentIndent = indentMatch ? indentMatch[1] : '';
+          
+          // Add extra indent for lines ending with :, {, [, (
+          let extraIndent = '';
+          const trimmedLine = currentLine.trim();
+          if (trimmedLine.endsWith(':') || trimmedLine.endsWith('{') || 
+              trimmedLine.endsWith('[') || trimmedLine.endsWith('(')) {
+            extraIndent = '  ';
+          }
+          
+          setTimeout(() => {
+            const newStart = codeEditor.selectionStart;
+            const newValue = codeEditor.value;
+            const insertIndent = currentIndent + extraIndent;
+            
+            codeEditor.value = newValue.substring(0, newStart) + insertIndent + newValue.substring(newStart);
+            codeEditor.setSelectionRange(newStart + insertIndent.length, newStart + insertIndent.length);
+          }, 0);
+        }
+      });
+      
+      // Handle bracket/quote auto-completion
+      codeEditor.addEventListener('input', (e) => {
+        if (e.inputType === 'insertText') {
+          const start = codeEditor.selectionStart;
+          const value = codeEditor.value;
+          const char = e.data;
+          
+          // Auto-close brackets and quotes
+          const pairs = {
+            '(': ')',
+            '[': ']',
+            '{': '}',
+            '"': '"',
+            "'": "'"
+          };
+          
+          if (pairs[char] && start < value.length) {
+            const nextChar = value[start];
+            // Only auto-close if next character is whitespace or end of line
+            if (!nextChar || /\s/.test(nextChar)) {
+              codeEditor.value = value.substring(0, start) + pairs[char] + value.substring(start);
+              codeEditor.setSelectionRange(start, start);
+            }
+          }
+        }
+      });
+      
+      // Add syntax highlighting hints (basic)
+      codeEditor.addEventListener('input', () => {
+        // Update stored code when user edits
+        this.generatedCode = codeEditor.value;
+      });
+    };
+    
+    // Setup handlers immediately if editor exists, or wait for it to be created
+    setupTextareaHandlers();
+    
+    // Also setup when dialog becomes visible
+    const originalShow = this.show.bind(this);
+    this.show = function(...args) {
+      const result = originalShow(...args);
+      setTimeout(setupTextareaHandlers, 100); // Give time for DOM to update
+      return result;
+    };
   }
 
   /**
@@ -427,10 +579,12 @@ class VariableToolGenerator {
     // Add each data source as an option
     dataSources.forEach(source => {
       const option = document.createElement('option');
-      option.value = source.referenceName;
+      // Use filePath as the value for code execution, fallback to referenceName for backward compatibility
+      option.value = source.filePath || source.referenceName;
       option.textContent = `${this.getFileIcon(source.type)} ${source.name} ($${source.referenceName})`;
       option.setAttribute('data-source-id', source.id);
       option.setAttribute('data-source-name', source.referenceName);
+      option.setAttribute('data-file-path', source.filePath || '');
       option.setAttribute('data-type', source.type);
       dropdown.appendChild(option);
     });
@@ -559,8 +713,8 @@ class VariableToolGenerator {
     if (genBtn) {
       genBtn.disabled = show;
       genBtn.innerHTML = show ? 
-        '<span class="btn-icon">🔄</span>Generating...' : 
-        '<span class="btn-icon">🧠</span>Generate Code';
+        'Generating...' : 
+        'Generate Code';
     }
   }
 
@@ -569,10 +723,14 @@ class VariableToolGenerator {
    */
   showGeneratedCode(code) {
     const codePreview = getDocumentElement('code-preview');
-    const codeBlock = getDocumentElement('generated-code-block');
+    const codeEditor = getDocumentElement('generated-code-editor');
     
     if (codePreview) codePreview.style.display = 'block';
-    if (codeBlock) codeBlock.textContent = code;
+    if (codeEditor) {
+      codeEditor.value = code;
+      // Store the original generated code
+      this.originalGeneratedCode = code;
+    }
     
     console.log('Code generated successfully');
   }
@@ -581,75 +739,33 @@ class VariableToolGenerator {
    * Run the generated code
    */
   async runCode() {
-    if (!this.generatedCode) {
+    const codeEditor = getDocumentElement('generated-code-editor');
+    const currentCode = codeEditor ? codeEditor.value.trim() : '';
+    
+    if (!currentCode) {
       alert('No code to run. Generate code first.');
       return;
     }
     
-    console.log('Running generated code...');
+    console.log('Running current code from editor...');
     
-    try {
-      // Call backend to execute the code
-      const response = await fetch('http://127.0.0.1:5000/api/execute-code', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          code: this.generatedCode,
-          document_id: window.documentManager?.activeDocumentId || 'default'
-        })
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const result = await response.json();
-      
-      if (result.success) {
-        this.showExecutionResult(result.output, result.error);
-        
-        // If execution was successful and returned a value, offer to populate the variable
-        if (result.output && !result.error) {
-          const shouldPopulate = confirm('Code executed successfully! Would you like to populate the variable with this result?');
-          if (shouldPopulate && window.variablesManager) {
-            await window.variablesManager.setVariableValue(this.currentVariable.name, result.output);
-          }
-        }
-      } else {
-        throw new Error(result.error || 'Code execution failed');
-      }
-      
-    } catch (error) {
-      console.error('Error running code:', error);
-      this.showExecutionResult('', error.message);
-    }
-  }
-
-  /**
-   * Show execution result
-   */
-  showExecutionResult(output, error) {
-    const resultContainer = getDocumentElement('execution-result');
-    const resultContent = getDocumentElement('result-content');
+    // Update the stored generated code with current editor content
+    this.generatedCode = currentCode;
+    console.log("======", currentCode)
+    console.log("=======", this.selectedDataSource)
     
-    if (resultContainer) resultContainer.style.display = 'block';
-    
-    if (resultContent) {
-      if (error) {
-        resultContent.innerHTML = `<div style="color: red;"><strong>Error:</strong><br>${error}</div>`;
-      } else {
-        resultContent.innerHTML = `<div style="color: green;"><strong>Output:</strong><br>${output}</div>`;
-      }
-    }
+    const output = await executeCodeForAuthorLocal(currentCode, this.selectedDataSource, window.documentManager?.activeDocumentId);
+    console.log("=======", output)
   }
 
   /**
    * Accept code and save as tool
    */
   async acceptAndSaveTool() {
-    if (!this.generatedCode) {
+    const codeEditor = getDocumentElement('generated-code-editor');
+    const currentCode = codeEditor ? codeEditor.value.trim() : '';
+    
+    if (!currentCode) {
       alert('No code to save. Generate code first.');
       return;
     }
@@ -665,7 +781,7 @@ class VariableToolGenerator {
         id: this.generateId(),
         name: toolName,
         description: toolDescription,
-        code: this.generatedCode,
+        code: currentCode,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         generatedFor: this.currentVariable.name,
