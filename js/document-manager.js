@@ -427,6 +427,36 @@ export class DocumentManager {
     }).catch(error => {
       console.error('Error importing state module:', error);
     });
+
+    // Sidebar toggle and tab logic (per-document)
+    const sidebar = container.querySelector('#integrated-sidebar');
+    const sidebarToggleBtn = container.querySelector('#sidebar-toggle-btn');
+    const sidebarCloseBtn = container.querySelector('.sidebar-close-btn');
+    const sidebarTabs = container.querySelectorAll('.sidebar-tab');
+    const sidebarTabContents = container.querySelectorAll('.sidebar-tab-content');
+
+    if (sidebar && sidebarToggleBtn && sidebarCloseBtn) {
+      // Show sidebar
+      sidebarToggleBtn.onclick = () => {
+        sidebar.classList.remove('sidebar-collapsed');
+      };
+      // Hide sidebar
+      sidebarCloseBtn.onclick = () => {
+        sidebar.classList.add('sidebar-collapsed');
+      };
+      // Start with sidebar hidden
+      sidebar.classList.add('sidebar-collapsed');
+    }
+    // Tab switching
+    sidebarTabs.forEach(tab => {
+      tab.onclick = () => {
+        sidebarTabs.forEach(t => t.classList.remove('active'));
+        sidebarTabContents.forEach(c => c.classList.remove('active'));
+        tab.classList.add('active');
+        const tabName = tab.getAttribute('data-tab');
+        container.querySelector(`#sidebar-${tabName}`).classList.add('active');
+      };
+    });
   }
 
   // Switch to a document tab

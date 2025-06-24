@@ -457,20 +457,22 @@ body, html {
 
 .container {
   display: flex;
-  flex: 1; /* Take remaining space */
-  min-height: 0; /* Allow flex children to shrink */
-  overflow: hidden; /* Prevent overflow */
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
 }
 
 .content-panel {
-  flex: 0.7;
+  flex: 1;
+  min-width: 0;
   background-color: #f5f5f5;
   border-right: 1px solid #ccc;
   overflow: hidden;
   position: relative;
   display: flex;
   flex-direction: column;
-  min-height: 0; /* Allow flex child to shrink */
+  transition: flex-basis 0.3s;
 }
 
 .content-header {
@@ -7298,3 +7300,133 @@ p {
   color: white;
   transform: scale(1.05);
 }
+
+/* --- Integrated Sidebar Styles --- */
+#integrated-sidebar {
+  position: relative;
+  flex: 0 0 340px;
+  width: 340px;
+  min-width: 0;
+  height: 100%;
+  background: #fff;
+  box-shadow: 2px 0 8px rgba(0,0,0,0.08);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid #e0e0e0;
+  border-radius: 0 12px 12px 0;
+  overflow: hidden;
+  transition: flex-basis 0.3s, width 0.3s, min-width 0.3s;
+}
+
+.sidebar-collapsed {
+  width: 0 !important;
+  min-width: 0 !important;
+  flex-basis: 0 !important;
+  overflow: hidden !important;
+  border-right: none !important;
+}
+
+.content-panel {
+  flex: 1;
+  min-width: 0;
+  background-color: #f5f5f5;
+  border-right: 1px solid #ccc;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  transition: flex-basis 0.3s;
+}
+
+.sidebar-panel-header {
+  padding: 14px 18px;
+  background: #f0f0f0;
+  border-bottom: 1px solid #e0e0e0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 1.1em;
+  font-weight: 600;
+  color: #333;
+}
+
+.sidebar-title {
+  font-size: 1.1em;
+  font-weight: 600;
+  color: #333;
+}
+
+.sidebar-close-btn {
+  background: none;
+  border: none;
+  font-size: 1.2em;
+  cursor: pointer;
+  color: #888;
+  transition: color 0.2s;
+}
+.sidebar-close-btn:hover {
+  color: #d32f2f;
+}
+
+.sidebar-tab-bar {
+  display: flex;
+  background: #f7f7f7;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.sidebar-tab {
+  flex: 1;
+  padding: 12px 0;
+  background: none;
+  border: none;
+  font-size: 1em;
+  font-weight: 500;
+  color: #888;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+  border-bottom: 2px solid transparent;
+  outline: none;
+}
+.sidebar-tab.active {
+  color: #1976d2;
+  border-bottom: 2px solid #1976d2;
+  background: #fff;
+}
+
+.sidebar-panel-content {
+  flex: 1;
+  overflow-y: auto;
+  background: #fafbfc;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-tab-content {
+  display: none;
+  flex: 1;
+  padding: 18px 20px 0 20px;
+  overflow-y: auto;
+}
+.sidebar-tab-content.active {
+  display: block;
+}
+
+.sidebar-section-title {
+  font-size: 1.05em;
+  font-weight: 600;
+  margin-bottom: 10px;
+  color: #444;
+}
+
+.sidebar-list-placeholder {
+  padding: 16px 0;
+  color: #aaa;
+  text-align: center;
+}
+
+.sidebar-placeholder {
+  margin: 0;
+  font-size: 0.98em;
+}
+/* --- End Redesigned Sidebar Styles --- */
