@@ -3,3 +3,6 @@ backend/database
 __pycache__
 .vscode
 .DS_Store
+venv/
+.env
+*.env

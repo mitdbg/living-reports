@@ -7,7 +7,7 @@
     "start": "electron .",
     "python-backend": "cd backend && python3 python_backend.py",
     "dev": "concurrently \"npm run python-backend\" \"npm run start\"",
-    "install-python-deps": "pip3 install -r requirements.txt",
+    "install-python-deps": "pip3 install -r backend/requirements.txt",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [

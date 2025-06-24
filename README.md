@@ -26,25 +26,33 @@ git clone <repository-url>
 cd googledoc_demo
 ```
 
-### 2. Set Up Environment Variables (Optional but Recommended)
-For AI features, set up your API key:
+### 2. Install Dependencies and Set Up Environment
 ```bash
-# For OpenAI
-export OPENAI_API_KEY="your-openai-api-key"
-
-# OR for Together AI
-export TOGETHER_API_KEY="your-together-api-key"
+./install-deps.sh
 ```
 
-### 3. Launch the Application
-The easiest way to start the application is using the provided script:
+This script will:
+- Create a Python virtual environment
+- Install Python dependencies
+- Install Node.js dependencies
+- Create a `.env` file from template (if it doesn't exist)
+
+### 3. Configure API Keys (Optional but Recommended)
+Edit the `.env` file created by the install script:
+```bash
+# For OpenAI
+OPENAI_API_KEY=your_openai_api_key_here
+
+# OR for Together AI
+TOGETHER_API_KEY=your_together_api_key_here
+```
+
+### 4. Launch the Application
 ```bash
 ./start-demo.sh
 ```
 
 This script will:
-- Check and install Python dependencies
-- Check and install Node.js dependencies
 - Start the Python backend server
 - Launch the Electron application
 - Handle cleanup when you close the app
@@ -54,12 +62,13 @@ This script will:
 
 ```
 googledoc_demo/
-├── backend/                 # Python Flask backend
+├── backend/                # Python Flask backend
 │   ├── python_backend.py   # Main Flask application
 │   ├── chat_manager.py     # AI chat functionality
 │   ├── template.py         # Template processing
 │   ├── diff_view.py        # Document diff visualization
 │   └── database/           # Data persistence
+│   └── requirements.txt    # Python dependencies
 ├── css/                    # Stylesheets
 ├── js/                     # Frontend JavaScript
 ├── data/                   # Data files and uploads
@@ -68,13 +77,13 @@ googledoc_demo/
 ├── login.html              # User authentication
 ├── main.js                 # Electron main process
 ├── package.json            # Node.js dependencies
-├── requirements.txt        # Python dependencies
 └── start-demo.sh          # Quick start script
 ```
 
 ## 🔧 Configuration
 
 ### API Keys
+- The `.env` file is automatically created from `env.example` template during installation
 - Set `OPENAI_API_KEY` for OpenAI GPT models
 - Set `TOGETHER_API_KEY` for Together AI models
 - Without API keys, the app runs in basic mode without AI features
@@ -89,6 +98,3 @@ googledoc_demo/
 # NOTES
 - The system uses GPT-4.1-mini by default
 - The system uses `https://6bd2-89-213-179-161.ngrok-free.app/execute_code` endpoint to execute code, you also can set your own local server
-
-
-
