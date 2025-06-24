@@ -327,106 +327,108 @@ export class DocumentManager {
   }
 
   async initializeDocumentFunctionality(documentId) {
-    /*
-    Initialize the document functionality for a given document ID.
-    This function is called when a document is opened or created.
-    It initializes the document-specific modules and sets up the document-specific elements. 
-    */
-    const doc = this.documents.get(documentId);
-    if (!doc) return;
-
-    // Update state to use this document's session ID
-    updateState({ sessionId: doc.sessionId });
+    console.log(`[${windowId}] Initializing functionality for document: ${documentId}`);
     
-    // Get document-specific elements
     const container = document.getElementById(`document-${documentId}`);
     if (!container) {
-      console.error('Document container not found:', `document-${documentId}`);
+      console.error(`[${windowId}] Container not found for document: ${documentId}`);
       return;
     }
-    
-    // Determine if we need to initialize modules
-    // We should always initialize modules when switching to a document
-    // to ensure elements are properly connected to the current document's DOM
-    const wasPreviouslyActive = this.activeDocumentId !== null;
-    const isReopeningDocument = this.activeDocumentId === null && this.documentCounter > 0;
-    
-    // Track the active document - this enables getElements to automatically return correct elements
-    this.activeDocumentId = documentId;
-    
-    // Initialize DOCUMENT-SPECIFIC modules (tied to this document's DOM elements)
-    console.log(`🔄 Initializing document-specific modules for: ${doc.title} (switch: ${wasPreviouslyActive}, reopen: ${isReopeningDocument})`);
-    
+
+    // Initialize sidebar comments system
     try {
-      // Reset ALL module initialization flags first to allow clean reinitialization
-      resetModesInitialization();
-      resetTemplateExecutionInitialization();
-      resetTextSelectionInitialization();
-      resetCommentButtonsInitialization();
-      resetChatInitialization();
-      resetContentMappingInitialization();
-      resetFileOperationsInitialization();
-      resetSharingInitialization();
-      resetDataLakeInitialization();
-      resetOperatorsInitialization();
-      resetVariablesInitialization();
-      // Note: Other modules may not have reset functions yet, but should be added as needed
-      
-      // Initialize ALL DOM-RELATED modules (work with this document's prefixed elements)
-      initModes();            // ✅ docID-source-mode-btn, docID-template-mode-btn, etc.
-      initTemplateExecution(); // ✅ docID-execute-template-btn, docID-template-execution-status
-      initChat();             // ✅ docID-chat-messages, docID-message-input, docID-send-button
-      initTextSelection();    // ✅ Works within docID-template-editor, docID-preview-content
-      initCommentButtons();   // ✅ docID-add-comment, docID-floating-comment, docID-cancel-comment
-      initAskLLMButton();     // ✅ docID-ask-llm button
-      initContentMapping();   // ✅ Works with docID-prefixed content elements
-      initFileOperations();   // ✅ docID-open-file-btn, docID-clear-context-btn, docID-context-files-list
-      initSharing();          // ✅ docID-share-btn and sharing dialogs  
-      initDataLake();         // ✅ docID-data-lake panels, buttons, UI elements
-      initOperators();        // ✅ docID-operators-btn, docID-instances-items, operator panels
-      initCodingAssistant();  // ✅ docID-coding-assistant elements and dialogs
-      initVerification();     // ✅ docID-verification panels and controls
-      
-      // Initialize variables manager once if not already initialized
-      if (variablesManager && !variablesManager.initialized) {
-        variablesManager.init();
-      }
-      
-      // Expose variables manager to window for global access
-      if (variablesManager) {
-        window.variablesManager = variablesManager;
-      }
-      
-      // Initialize variables for this specific document
-      initVariablesForDocument();
-      
-      // Load data lake for this specific document
-      await loadDataLake(documentId);
-      
-      // Configure role-based UI after all modules are initialized
-      this.configureRoleBasedUI(container);
-      
+      const { sidebarComments } = await import('./sidebar-comments.js');
+      sidebarComments.init(container);
+      console.log(`[${windowId}] Sidebar comments initialized for document: ${documentId}`);
     } catch (error) {
-      console.error(`Error initializing document functionality:`, error);
+      console.warn(`[${windowId}] Could not initialize sidebar comments:`, error);
     }
-    
-    // Import state to access elements and set default mode
-    import('./state.js').then(({ getElements, state }) => {
-      // Ensure the document is visible and in template mode by default
-      const templatePanel = getElements.templatePanel;
-      const previewPanel = getElements.previewPanel;
-      const sourcePanel = getElements.sourcePanel;
-      
-      if (templatePanel && previewPanel && sourcePanel) {
-        sourcePanel.classList.remove('active');
-        templatePanel.classList.remove('active');
-        previewPanel.classList.remove('active');
-        templatePanel.classList.add('active');
+
+    // Initialize modes system
+    try {
+      const { initializeModes } = await import('./modes.js');
+      await initializeModes(container);
+      console.log(`[${windowId}] Modes initialized for document: ${documentId}`);
+    } catch (error) {
+      console.warn(`[${windowId}] Could not initialize modes:`, error);
+    }
+
+    // Initialize template execution
+    try {
+      const { initializeTemplateExecution } = await import('./template-execution.js');
+      await initializeTemplateExecution(container);
+      console.log(`[${windowId}] Template execution initialized for document: ${documentId}`);
+    } catch (error) {
+      console.warn(`[${windowId}] Could not initialize template execution:`, error);
+    }
+
+    // Initialize text selection and comments
+    try {
+      const { initTextSelection, initCommentButtons } = await import('./comments.js');
+      initTextSelection(container);
+      initCommentButtons(container);
+      console.log(`[${windowId}] Text selection and comments initialized for document: ${documentId}`);
+    } catch (error) {
+      console.warn(`[${windowId}] Could not initialize text selection and comments:`, error);
+    }
+
+    // Initialize chat system
+    try {
+      const { initializeChat } = await import('./chat.js');
+      await initializeChat(container);
+      console.log(`[${windowId}] Chat initialized for document: ${documentId}`);
+    } catch (error) {
+      console.warn(`[${windowId}] Could not initialize chat:`, error);
+    }
+
+    // Initialize file operations
+    try {
+      const { initializeFileOperations } = await import('./file-operations.js');
+      await initializeFileOperations(container);
+      console.log(`[${windowId}] File operations initialized for document: ${documentId}`);
+    } catch (error) {
+      console.warn(`[${windowId}] Could not initialize file operations:`, error);
+    }
+
+    // Initialize sharing functionality
+    try {
+      const { initializeSharing } = await import('./sharing.js');
+      await initializeSharing(container);
+      console.log(`[${windowId}] Sharing initialized for document: ${documentId}`);
+    } catch (error) {
+      console.warn(`[${windowId}] Could not initialize sharing:`, error);
+    }
+
+    // Initialize operators
+    try {
+      const { initializeOperators } = await import('./operators.js');
+      await initializeOperators(container);
+      console.log(`[${windowId}] Operators initialized for document: ${documentId}`);
+    } catch (error) {
+      console.warn(`[${windowId}] Could not initialize operators:`, error);
+    }
+
+    // Initialize variables
+    try {
+      const { initializeVariables } = await import('./variables.js');
+      await initializeVariables(container);
+      console.log(`[${windowId}] Variables initialized for document: ${documentId}`);
+    } catch (error) {
+      console.warn(`[${windowId}] Could not initialize variables:`, error);
+    }
+
+    // Configure role-based UI
+    this.configureRoleBasedUI(container);
+
+    // Set initial mode
+    try {
+      const { state } = await import('./state.js');
+      if (!state.currentMode) {
         state.currentMode = 'template';
       }
-    }).catch(error => {
+    } catch (error) {
       console.error('Error importing state module:', error);
-    });
+    }
 
     // Sidebar toggle and tab logic (per-document)
     const sidebar = container.querySelector('#integrated-sidebar');
@@ -444,8 +446,18 @@ export class DocumentManager {
       sidebarCloseBtn.onclick = () => {
         sidebar.classList.add('sidebar-collapsed');
       };
-      // Start with sidebar hidden
-      sidebar.classList.add('sidebar-collapsed');
+      
+      // Check if there are comments for this mode and show sidebar if so
+      const currentMode = state.currentMode;
+      const hasComments = Object.values(state.comments).some(comment => 
+        comment.mode === currentMode && !comment.isResolved
+      );
+      
+      if (hasComments) {
+        sidebar.classList.remove('sidebar-collapsed');
+      } else {
+        sidebar.classList.add('sidebar-collapsed');
+      }
     }
     // Tab switching
     sidebarTabs.forEach(tab => {
@@ -1922,6 +1934,7 @@ export class DocumentManager {
     try {
       const { createFloatingAnnotation, createAISuggestionAnnotation, updateAnnotationsVisibility } = await import('./annotations.js');
       const { refreshHighlightEventListeners } = await import('./comments.js');
+      const { sidebarComments } = await import('./sidebar-comments.js');
 
       // Track created annotations to prevent duplicates
       const createdAnnotations = new Set();
@@ -1968,7 +1981,7 @@ export class DocumentManager {
             }
           }
           
-        } else if (savedComment.isAISuggestion && savedComment.lineDiffs) {
+        } else if (savedComment.isAISuggestion) {
           console.log(`Restoring AI suggestion comment: ${commentId}`);
           
           // Recreate inline diff highlighting
@@ -1997,80 +2010,22 @@ export class DocumentManager {
           }
           
         } else {
-          console.log(`Processing regular comment: ${commentId}`);
-          // Handle regular comments
+          // Regular text comments - add to sidebar instead of creating floating annotations
+          console.log(`Restoring regular comment: ${commentId}`);
           
-          let highlightCreated = true; // Assume success by default
+          // Recreate text highlight
+          await this.recreateTextHighlight(savedComment, documentId);
           
-          // For preview mode, check if highlights already exist, otherwise recreate them
-          if (savedComment.mode === 'preview') {
-            const container = document.getElementById(`document-${documentId}`);
-            const targetElement = container?.querySelector('.preview-content');
-            const existingHighlight = targetElement?.querySelector(`.text-comment-highlight[data-comment-id="${savedComment.id}"]`);
-            
-            if (existingHighlight) {
-              // Just ensure event listeners are attached to existing highlights
-              if (!existingHighlight.hasAttribute('data-listener-attached')) {
-                const { showAnnotationForText } = await import('./annotations.js');
-                existingHighlight.addEventListener('click', (e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  showAnnotationForText(savedComment.selectedText);
-                });
-                existingHighlight.setAttribute('data-listener-attached', 'true');
-              }
-            } else {
-              // Highlight doesn't exist, recreate it
-              highlightCreated = await this.recreateTextHighlight(savedComment, documentId);
-            }
-          } else {
-            // For template/source mode, recreate text highlighting
-            highlightCreated = await this.recreateTextHighlight(savedComment, documentId);
-          }
-          
-          // Check if annotation already exists
-          const existingAnnotation = document.getElementById(commentId);
-          
-          if (existingAnnotation) {
-            // Update position if UI state indicates it should be different
-            if (savedComment.uiState?.position) {
-              const { top, left } = savedComment.uiState.position;
-              existingAnnotation.style.top = `${top}px`;
-              existingAnnotation.style.left = `${left}px`;
-            }
-            continue;
-          }
-
-          if (createdAnnotations.has(commentId)) {
-            continue;
-          }
-
-          // Only create annotation if highlight was successfully created and should be visible
-          if (highlightCreated && savedComment.uiState?.isVisible !== false) {
-            try {
-              createFloatingAnnotation(savedComment.selectedText, savedComment.commentMessage, currentComment);
-              createdAnnotations.add(commentId);
-              
-              // Verify annotation was created and apply position immediately
-              const annotation = document.getElementById(commentId);
-              if (annotation && savedComment.uiState?.position) {
-                const { top, left } = savedComment.uiState.position;
-                annotation.style.top = `${top}px`;
-                annotation.style.left = `${left}px`;
-              }
-              
-            } catch (error) {
-              console.error(`Error creating annotation for ${commentId}:`, error);
-            }
-          }
+          // Add to sidebar comments
+          sidebarComments.addComment(currentComment);
         }
       }
 
-      // Refresh highlight event listeners to ensure interactions work
-      refreshHighlightEventListeners(true); // Skip annotation refresh since we just created them
-
-      // CRITICAL: Ensure only current mode comments are visible after recreation
-      updateAnnotationsVisibility();
+      // Refresh highlight event listeners
+      refreshHighlightEventListeners(true);
+      
+      // Update sidebar comments visibility
+      sidebarComments.updateVisibility();
 
     } catch (error) {
       console.error('Error recreating comment UI elements:', error);
@@ -2458,6 +2413,16 @@ export class DocumentManager {
           
           // Recreate UI for this specific comment
           await this.recreateCommentUIElements({ [commentId]: savedComment }, state, documentId);
+          
+          // Add to sidebar comments if it's a regular comment
+          if (!savedComment.isAISuggestion && !savedComment.isTemplateSuggestion) {
+            try {
+              const { sidebarComments } = await import('./sidebar-comments.js');
+              sidebarComments.addComment(restoredComment);
+            } catch (error) {
+              console.warn('Could not add synced comment to sidebar:', error);
+            }
+          }
         } else {
           // Comment exists, but check if messages have been updated
           const savedComment = freshComments[commentId];

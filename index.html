@@ -16,6 +16,7 @@
   <script type="module" src="js/modes.js"></script>
   <script type="module" src="js/operators.js"></script>
   <script type="module" src="js/sharing.js"></script>
+  <script type="module" src="js/sidebar-comments.js"></script>
   <script type="module" src="js/state.js"></script>
   <script type="module" src="js/utils.js"></script>
   <script type="module" src="js/variables.js"></script>
@@ -415,6 +416,20 @@ def calculate():
             <button class="send-button">Send</button>
             <button class="clear-chat-btn">Clear</button>
           </div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="floating-comment">
+      <div class="floating-comment-header">
+        <h3 class="floating-comment-title">Add Comment</h3>
+      </div>
+      <div class="floating-comment-body">
+        <textarea class="comment-text" placeholder="Share your thoughts, ask questions, or add notes..."></textarea>
+        <div class="action-buttons">
+          <button class="ask-llm">Ask AI</button>
+          <button class="add-comment">Add Comment</button>
+          <button class="cancel-comment">Cancel</button>
         </div>
       </div>
     </div>
