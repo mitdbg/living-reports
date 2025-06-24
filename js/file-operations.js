@@ -722,10 +722,7 @@ function renderPowerPoint(file) {
           
                      // Update both preview and template content
            if (elements.previewContent) {
-             const contextContent = elements.previewContent.querySelector('.context-file-content');
-             if (contextContent) {
-               contextContent.innerHTML = processedContentForPreview;
-             }
+             elements.previewContent.innerHTML = processedContentForPreview;
            }
            
            // Also load into template panel (raw content only)
@@ -743,10 +740,7 @@ function renderPowerPoint(file) {
           `;
           
           if (elements.previewContent) {
-            const contextContent = elements.previewContent.querySelector('.context-file-content');
-            if (contextContent) {
-              contextContent.innerHTML = errorContent;
-            }
+            elements.previewContent.innerHTML = errorContent;
           }
         }
       });
