@@ -1094,10 +1094,6 @@ function hideOperatorsDialog() {
     templatePanel.style.display = 'block';
     templatePanel.classList.add('active');
   }
-  
-  if (contentTitle) {
-    contentTitle.textContent = 'Template Editor';
-  }
 }
 
 function showOperatorsListView() {

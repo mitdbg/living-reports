@@ -125,10 +125,6 @@ export function switchToSource() {
     diffView.classList.remove('active');
   }
   
-  if (contentTitle) {
-    contentTitle.textContent = 'Source Code Editor';
-  }
-  
   updateModeButtonStates('source');
   updateAnnotationsVisibility();
   
@@ -181,11 +177,6 @@ export function switchToTemplate() {
   if (diffView) {
     diffView.classList.remove('active');
   }
-  
-  if (contentTitle) {
-    contentTitle.textContent = 'Template Editor';
-  }
-  
   updateModeButtonStates('template');
   updateAnnotationsVisibility();
   
@@ -231,10 +222,6 @@ export function switchToPreview() {
   
   if (diffView) {
     diffView.classList.remove('active');
-  }
-  
-  if (contentTitle) {
-    contentTitle.textContent = 'Report Preview';
   }
   
   updateModeButtonStates('preview');
