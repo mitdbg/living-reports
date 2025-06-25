@@ -1,7 +1,7 @@
 // Comments and Text Selection Module
 import { state, getElements, elements, windowId, incrementCommentCounter } from './state.js';
 import { escapeHtml, escapeRegExp, calculateSafePosition, getTextContentWithLineBreaks } from './utils.js';
-import { createFloatingAnnotation, showAnnotationForText, refreshAnnotationElements, clearActiveAnnotationHighlight, removeHighlightWrapper } from './annotations.js';
+import { removeHighlightWrapper } from './annotations.js';
 import { addMessageToUI, addWaitingIndicator, removeWaitingIndicator } from './chat.js';
 import { getCurrentUser } from './auth.js';
 import { 
@@ -260,17 +260,14 @@ export function createTextComment(selectedText, commentContent) {
     commentId: commentId,
   });
   
-  // Instead of creating floating annotation, add to sidebar
+  // Add to sidebar only - no fallback to floating annotations
   try {
     import('./sidebar-comments.js').then(({ sidebarComments }) => {
       sidebarComments.addComment(commentData);
     });
   } catch (error) {
     console.warn('Could not add comment to sidebar:', error);
-    // Fallback to floating annotation if sidebar is not available
-    import('./annotations.js').then(({ createFloatingAnnotation }) => {
-      createFloatingAnnotation(selectedText, commentContent, commentData);
-    });
+    // No fallback to floating annotation - just log the error
   }
   
   addMessageToUI('system', `Comment added: "${commentContent}" for text "${selectedText.substring(0, 30)}${selectedText.length > 30 ? '...' : ''}"`);
@@ -292,12 +289,12 @@ function highlightInHtmlElement(targetElement, selectedText, commentId) {
     console.log('Using direct HTML replacement for:', selectedText.substring(0, 100));
     
     if (content.includes(selectedText)) {
-      const highlightElement = createDocumentElement('div', `text-comment-highlight-${commentId}`, 'comments', getCurrentDocumentId());
+      const highlightElement = createDocumentElement('span', `text-comment-highlight-${commentId}`, 'comments', getCurrentDocumentId());
       highlightElement.setAttribute('data-comment-id', commentId);
       highlightElement.setAttribute('title', 'Click to view comment');
       highlightElement.className = 'text-comment-highlight';
       
-      const replacement = `<div data-comment-id="${commentId}" title="Click to view comment" class="text-comment-highlight">${selectedText}</div>`;
+      const replacement = `<span data-comment-id="${commentId}" title="Click to view comment" class="text-comment-highlight">${selectedText}</span>`;
       content = content.replace(selectedText, replacement);
       console.log('Direct HTML replacement successful');
     } else {
@@ -310,7 +307,7 @@ function highlightInHtmlElement(targetElement, selectedText, commentId) {
     const escapedText = escapeHtml(selectedText);
     
     if (content.includes(escapedText)) {
-      const replacement = `<div data-comment-id="${commentId}" title="Click to view comment" class="text-comment-highlight">${escapedText}</div>`;
+      const replacement = `<span data-comment-id="${commentId}" title="Click to view comment" class="text-comment-highlight">${escapedText}</span>`;
       content = content.replace(escapedText, replacement);
       console.log('Escaped text replacement successful');
     } else {
@@ -327,7 +324,17 @@ function highlightInHtmlElement(targetElement, selectedText, commentId) {
     newHighlight.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      showAnnotationForText(selectedText);
+      // Show comment in sidebar instead of floating annotation
+      try {
+        import('./sidebar-comments.js').then(({ sidebarComments }) => {
+          const comment = Object.values(state.comments).find(c => c.selectedText === selectedText);
+          if (comment) {
+            sidebarComments.showComment(comment.id);
+          }
+        });
+      } catch (error) {
+        console.warn('Could not show comment in sidebar:', error);
+      }
     });
     newHighlight.setAttribute('data-listener-attached', 'true');
   }
@@ -345,12 +352,22 @@ function reattachHighlightEventListeners() {
       return; // Skip if listener already attached
     }
     
-    // Add click listener
+    // Add click listener - show in sidebar instead of floating annotation
     element.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
       const selectedText = element.textContent;
-      showAnnotationForText(selectedText);
+      // Show comment in sidebar instead of floating annotation
+      try {
+        import('./sidebar-comments.js').then(({ sidebarComments }) => {
+          const comment = Object.values(state.comments).find(c => c.selectedText === selectedText);
+          if (comment) {
+            sidebarComments.showComment(comment.id);
+          }
+        });
+      } catch (error) {
+        console.warn('Could not show comment in sidebar:', error);
+      }
     });
     
     // Mark as having listener attached
@@ -373,10 +390,7 @@ export function refreshHighlightEventListeners(skipAnnotationRefresh = false) {
   reattachHighlightEventListeners();
   reattachtemplateEditorHighlightEventListeners();
   
-  // Only refresh annotation elements if not skipping (to prevent flicker when showing annotations)
-  if (!skipAnnotationRefresh) {
-    refreshAnnotationElements();
-  }
+  // No longer need to refresh annotation elements since we're not using them for regular comments
 }
 
 // Function to re-attach event listeners to code editor highlighted text elements
@@ -406,8 +420,16 @@ function reattachtemplateEditorHighlightEventListeners() {
       element.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        // Show the full annotation window
-        showAnnotationForText(selectedText);
+        // Show comment in sidebar instead of floating annotation
+        try {
+          import('./sidebar-comments.js').then(({ sidebarComments }) => {
+            if (comment) {
+              sidebarComments.showComment(comment.id);
+            }
+          });
+        } catch (error) {
+          console.warn('Could not show comment in sidebar:', error);
+        }
       });
       element.setAttribute('data-listener-attached', 'true');
     }
@@ -558,18 +580,13 @@ export function initTextSelection() {
       floatingComment.style.display = 'none';
     }
     
-    // Clear active annotation highlighting when clicking elsewhere (but not on annotation windows or highlighted text)
-    if (!e.target.closest('.floating-annotation') && 
-        !e.target.closest('.text-comment-highlight')) {
-      clearActiveAnnotationHighlight();
-    }
+    // No longer need to clear active annotation highlighting since we're not using floating annotations for regular comments
   });
   
   // Hide on escape key
   document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
       floatingComment.style.display = 'none';
-      clearActiveAnnotationHighlight();
       window.getSelection().removeAllRanges();
     }
   });
