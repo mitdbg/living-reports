@@ -11,6 +11,7 @@ import { initDataLake, resetDataLakeInitialization, loadDataLake } from './data-
 import { initOperators, resetOperatorsInitialization } from './operators.js';
 import { initCodingAssistant } from './coding_assistant.js';
 import { initVerification } from './verification.js';
+import { refreshAnnotationElements, updateAnnotationsVisibility, hideAllAnnotations, clearAnnotationsForDocument } from './annotations.js';
 import { addMessageToUI } from './chat.js';
 import { getCurrentUser } from './auth.js';
 import { getTextContentWithLineBreaks } from './utils.js';
@@ -549,6 +550,12 @@ export class DocumentManager {
     }
     // Initialize document functionality
     await this.initializeDocumentFunctionality(documentId);
+    
+    // Refresh and show annotations for this document after a short delay
+    setTimeout(() => {
+      refreshAnnotationElements();
+      updateAnnotationsVisibility();
+    }, 100);
     
     // Load verification status for this document
     setTimeout(async () => {
@@ -1939,7 +1946,7 @@ export class DocumentManager {
    */
   async recreateCommentUIElements(savedComments, state, documentId) {
     try {
-      const { createAISuggestionAnnotation, updateAnnotationsVisibility } = await import('./annotations.js');
+      const { createFloatingAnnotation, createAISuggestionAnnotation, updateAnnotationsVisibility } = await import('./annotations.js');
       const { refreshHighlightEventListeners } = await import('./comments.js');
       const { sidebarComments } = await import('./sidebar-comments.js');
 
@@ -2017,13 +2024,13 @@ export class DocumentManager {
           }
           
         } else {
-          // Regular text comments - add to sidebar only
+          // Regular text comments - add to sidebar instead of creating floating annotations
           console.log(`Restoring regular comment: ${commentId}`);
           
           // Recreate text highlight
           await this.recreateTextHighlight(savedComment, documentId);
           
-          // Add to sidebar comments
+          // Add to sidebar comments (ADDITIONAL FEATURE)
           try {
             sidebarComments.addComment(currentComment);
           } catch (error) {
@@ -2035,7 +2042,7 @@ export class DocumentManager {
       // Refresh highlight event listeners
       refreshHighlightEventListeners(true);
       
-      // Update sidebar comments visibility
+      // Update sidebar comments visibility (ADDITIONAL FEATURE)
       try {
         sidebarComments.updateVisibility();
       } catch (error) {
@@ -2072,17 +2079,11 @@ export class DocumentManager {
           // Just ensure event listeners are attached
           const existingHighlight = targetElement.querySelector(`.text-comment-highlight[data-comment-id="${savedComment.id}"]`);
           if (existingHighlight && !existingHighlight.hasAttribute('data-listener-attached')) {
-            // Add click listener to show comment in sidebar
+            const { showAnnotationForText } = await import('./annotations.js');
             existingHighlight.addEventListener('click', (e) => {
               e.preventDefault();
               e.stopPropagation();
-              try {
-                import('./sidebar-comments.js').then(({ sidebarComments }) => {
-                  sidebarComments.showComment(savedComment.id);
-                });
-              } catch (error) {
-                console.warn('Could not show comment in sidebar:', error);
-              }
+              showAnnotationForText(savedComment.selectedText);
             });
             existingHighlight.setAttribute('data-listener-attached', 'true');
           }
@@ -2361,8 +2362,9 @@ export class DocumentManager {
   async syncDocumentComments(documentId, freshDoc) {
     try {
       // Import required modules
-      const [{ state }, { refreshHighlightEventListeners }] = await Promise.all([
+      const [{ state }, { removeFloatingAnnotation }, { refreshHighlightEventListeners }] = await Promise.all([
         import('./state.js'),
+        import('./annotations.js'),
         import('./comments.js')
       ]);
 
@@ -2381,12 +2383,8 @@ export class DocumentManager {
             highlight.replaceWith(document.createTextNode(highlight.textContent));
           });
           
-          // Remove annotation window only for AI suggestions
-          const comment = currentComments[commentId];
-          if (comment && (comment.isAISuggestion || comment.isTemplateSuggestion)) {
-            const { removeFloatingAnnotation } = await import('./annotations.js');
-            removeFloatingAnnotation(commentId);
-          }
+          // Remove annotation window
+          removeFloatingAnnotation(commentId);
           
           // Don't trigger auto-save here since this is sync from backend
         }
@@ -2451,16 +2449,14 @@ export class DocumentManager {
             // Update messages in local state
             currentComment.messages = freshMessages;
             
-            // Update the UI if the annotation window is visible (only for AI suggestions)
-            if (currentComment.isAISuggestion || currentComment.isTemplateSuggestion) {
-              const { updateAnnotationMessagesUI } = await import('./annotations.js');
-              const element = document.getElementById(commentId);
-              if (element && element.style.display !== 'none') {
-                updateAnnotationMessagesUI(commentId);
-              }
+            // Update the UI if the annotation window is visible
+            const { updateAnnotationMessagesUI } = await import('./annotations.js');
+            const element = document.getElementById(commentId);
+            if (element && element.style.display !== 'none') {
+              updateAnnotationMessagesUI(commentId);
             }
             
-            // Update sidebar comments
+            // Update sidebar comments (ADDITIONAL FEATURE)
             try {
               const { sidebarComments } = await import('./sidebar-comments.js');
               sidebarComments.renderComments();
