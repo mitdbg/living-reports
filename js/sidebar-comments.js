@@ -374,9 +374,39 @@ export class SidebarComments {
     }
   }
 
-  // Update comment visibility based on mode
+  // Show a specific comment in the sidebar (called when clicking on text highlights)
+  showComment(commentId) {
+    if (!this.commentsList) return;
+    
+    // Find the comment element in the sidebar
+    const commentElement = this.commentsList.querySelector(`[data-comment-id="${commentId}"]`);
+    if (commentElement) {
+      // Scroll the comment into view
+      commentElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      
+      // Add a temporary highlight effect
+      commentElement.style.backgroundColor = '#fff3cd';
+      commentElement.style.border = '2px solid #ffc107';
+      
+      // Remove the highlight after 2 seconds
+      setTimeout(() => {
+        commentElement.style.backgroundColor = '';
+        commentElement.style.border = '';
+      }, 2000);
+    }
+  }
+
+  // Update visibility based on current mode
   updateVisibility() {
-    this.renderComments();
+    // This method can be called to update the sidebar visibility
+    // based on whether there are comments for the current mode
+    const currentMode = state.currentMode;
+    const hasComments = Object.values(state.comments).some(comment => 
+      comment.mode === currentMode && !comment.isResolved
+    );
+    
+    // You can add logic here to show/hide the sidebar based on comments
+    console.log(`Sidebar visibility check: ${hasComments ? 'show' : 'hide'} for mode ${currentMode}`);
   }
 }
 

@@ -1,6 +1,5 @@
 // Mode Management Module
 import { state, getElements, updateState, windowId } from './state.js';
-import { updateAnnotationsVisibility } from './annotations.js';
 import { refreshHighlightEventListeners } from './comments.js';
 import { getCurrentUser } from './auth.js';
 
@@ -130,7 +129,6 @@ export function switchToSource() {
   }
   
   updateModeButtonStates('source');
-  updateAnnotationsVisibility();
   
   // Refresh all highlights when switching to source mode
   setTimeout(() => refreshHighlightEventListeners(), 100);
@@ -187,7 +185,6 @@ export function switchToTemplate() {
   }
   
   updateModeButtonStates('template');
-  updateAnnotationsVisibility();
   
   // Update code highlights when switching to template mode
   setTimeout(() => refreshHighlightEventListeners(), 100);
@@ -234,14 +231,13 @@ export function switchToPreview() {
   }
   
   if (contentTitle) {
-    contentTitle.textContent = 'Report Preview';
+    contentTitle.textContent = 'Preview';
   }
   
   updateModeButtonStates('preview');
-  updateAnnotationsVisibility();
   
-  // Re-attach event listeners to highlighted text when switching to preview
-  refreshHighlightEventListeners();
+  // Refresh highlights when switching to preview mode
+  setTimeout(() => refreshHighlightEventListeners(), 100);
 }
 
 export function switchToDiff() {
@@ -279,7 +275,6 @@ export function switchToDiff() {
     contentTitle.textContent = 'Template Comparison';
   }
   // Don't update button states for diff mode - keep the previous active button
-  updateAnnotationsVisibility();
 }
 
 export function exitDiffMode() {
