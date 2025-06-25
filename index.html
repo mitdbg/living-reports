@@ -16,6 +16,7 @@
   <script type="module" src="js/modes.js"></script>
   <script type="module" src="js/operators.js"></script>
   <script type="module" src="js/sharing.js"></script>
+  <script type="module" src="js/sidebar-comments.js"></script>
   <script type="module" src="js/state.js"></script>
   <script type="module" src="js/utils.js"></script>
   <script type="module" src="js/variables.js"></script>
@@ -155,6 +156,31 @@
   <!-- Document Template (hidden, will be cloned for each document) -->
   <div class="tab-content document-tab-template" id="document-tab-template" style="display: none;">
     <div class="container">
+      <!-- Integrated Sidebar (Collapsible, left side) -->
+      <div id="integrated-sidebar" class="sidebar-collapsed">
+        <div class="panel-header sidebar-panel-header">
+          <span class="sidebar-title">Collaboration</span>
+          <button id="sidebar-close-btn" class="sidebar-close-btn" title="Close Sidebar">✕</button>
+        </div>
+        <div class="sidebar-tab-bar">
+          <button class="sidebar-tab active" data-tab="comments">💬 Comments</button>
+          <button class="sidebar-tab" data-tab="tasks">✅ Tasks</button>
+        </div>
+        <div class="sidebar-panel-content">
+          <div class="sidebar-tab-content active" id="sidebar-comments">
+            <div class="sidebar-section-title">Comments</div>
+            <div id="sidebar-comments-list" class="sidebar-list-placeholder">
+              <p class="sidebar-placeholder">No comments yet.</p>
+            </div>
+          </div>
+          <div class="sidebar-tab-content" id="sidebar-tasks">
+            <div class="sidebar-section-title">Tasks</div>
+            <div id="sidebar-tasks-list" class="sidebar-list-placeholder">
+              <p class="sidebar-placeholder">No tasks yet.</p>
+            </div>
+          </div>
+        </div>
+      </div>
       <div class="content-panel" id="content-panel">
         <div class="content-header">
           <h3 id="content-title">Source Code Editor</h3>
@@ -162,7 +188,10 @@
             <button class="share-btn mode-toggle">📤 Share</button>
             <button class="data-lake-btn mode-toggle">🗄️ Data Lake</button>
             <button class="variables-btn mode-toggle">📊 Variables</button>
-
+            <button id="sidebar-toggle-btn" class="mode-toggle sidebar-toggle-btn" title="Show Collaboration Sidebar">
+              <span class="icon">🤝</span>
+              <span class="text">Collaboration</span>
+            </button>
             <button class="operators-btn mode-toggle">🔧 Operators</button>
             <div class="mode-buttons">
               <button class="mode-btn template-mode-btn active" data-mode="template" title="Template">Template</button>
