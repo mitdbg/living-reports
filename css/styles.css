@@ -7264,6 +7264,7 @@ p {
   background: linear-gradient(135deg, #218838 0%, #1ba085 100%);
   transform: translateY(-1px);
   box-shadow: 0 2px 8px rgba(40, 167, 69, 0.3);
+}
 
 /* --- Integrated Sidebar Styles --- */
 #integrated-sidebar {
