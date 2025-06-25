@@ -221,13 +221,6 @@ export function switchToPreview() {
     diffView.classList.remove('active');
   }
   
-<<<<<<< HEAD
-  if (contentTitle) {
-    contentTitle.textContent = 'Preview';
-  }
-  
-=======
->>>>>>> main
   updateModeButtonStates('preview');
   
   // Refresh highlights when switching to preview mode
