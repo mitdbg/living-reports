@@ -225,7 +225,8 @@ async function loadContextFile() {
             fileName: file.name,
             filePath: file.path,
             content: file.content, // This might be base64 for binary files
-            session_id: state.sessionId
+            session_id: state.sessionId,
+            document_id: state.documentId
           })
         });
 
