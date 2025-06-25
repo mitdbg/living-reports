@@ -4,6 +4,7 @@ import json
 import os
 import logging
 from datetime import datetime
+import shutil
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from openai import OpenAI
@@ -665,8 +666,8 @@ def process_file():
         file_name = data.get('fileName', '')
         file_content = data.get('content', '')  # Base64 encoded for binary files
         file_path = data.get('filePath', '')
-        session_id = data.get('session_id', 'default')
-        output_json_path_dir = "database/files/" + session_id
+        document_id = data.get('document_id', 'default')
+        output_json_path_dir = "database/files/" + document_id
         # Determine file type and process accordingly
         file_ext = Path(file_name).suffix.lower()
         output_json_path = ""
@@ -882,6 +883,12 @@ def delete_document(document_id):
                 save_tools(tools_storage)
                 cleanup_summary.append(f"{tools_count} tools")
                 logger.info(f"🔧 Cleaned up {tools_count} tools for document {document_id}")
+
+            # Clean up file from the file system
+            file_path = "database/files/" + document_id
+            if os.path.exists(file_path):
+                shutil.rmtree(file_path)
+                logger.info(f"🗂️ Cleaned up file from the file system for document {document_id}")
             
             cleanup_message = f'Document "{document_title}" has been deleted'
             if cleanup_summary:
