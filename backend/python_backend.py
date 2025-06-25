@@ -29,6 +29,7 @@ from simple_view import SimpleView
 from file_processor import process_excel_file, process_html_file, process_pptx_file
 from pdf_processor import process_pdf_file
 from local_code_executor.code_executor import execute_code_locally
+from task_manager import TaskManager
 from pathlib import Path
 import os
 
@@ -178,6 +179,9 @@ def save_data_lake(data_lake):
 
 # Initialize data lake storage
 data_lake_storage = load_data_lake()
+
+# Initialize task manager
+task_manager = TaskManager(DATABASE_DIR)
 
 # Persistent storage for Variables
 VARIABLES_FILE = os.path.join(DATABASE_DIR, 'vars.json')
@@ -2144,6 +2148,410 @@ def serve_file(file_path):
     except Exception as e:
         logger.error(f"❌ Error serving file {file_path}: {e}")
         return jsonify({'error': 'Internal server error'}), 500
+
+
+# ============================================================================
+# TASK MANAGEMENT API ENDPOINTS
+# ============================================================================
+
+@app.route('/api/tasks', methods=['GET'])
+def get_tasks():
+    """Get all tasks with optional filtering"""
+    try:
+        document_id = request.args.get('document_id')
+        assignee = request.args.get('assignee')
+        status = request.args.get('status')
+        search = request.args.get('search')
+        
+        if document_id:
+            tasks = task_manager.get_tasks_by_document(document_id)
+        elif assignee:
+            tasks = task_manager.get_tasks_by_assignee(assignee)
+        elif status:
+            tasks = task_manager.get_tasks_by_status(status)
+        elif search:
+            tasks = task_manager.search_tasks(search, document_id)
+        else:
+            tasks = list(task_manager.tasks.values())
+        
+        # Convert tasks to dictionaries for JSON serialization
+        tasks_data = [task.to_dict() for task in tasks]
+        
+        return jsonify({
+            'success': True,
+            'tasks': tasks_data,
+            'count': len(tasks_data)
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Error getting tasks: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/tasks', methods=['POST'])
+def create_task():
+    """Create a new task"""
+    try:
+        data = request.get_json()
+        
+        # Required fields
+        document_id = data.get('document_id')
+        title = data.get('title')
+        description = data.get('description')
+        created_by = data.get('created_by', 'default_user')
+        
+        if not all([document_id, title, description]):
+            return jsonify({
+                'success': False,
+                'error': 'document_id, title, and description are required'
+            }), 400
+        
+        # Optional fields
+        priority = data.get('priority', 'medium')
+        assignee = data.get('assignee')
+        tags = data.get('tags', [])
+        due_date = data.get('due_date')
+        
+        task = task_manager.create_task(
+            document_id=document_id,
+            title=title,
+            description=description,
+            created_by=created_by,
+            priority=priority,
+            assignee=assignee,
+            tags=tags,
+            due_date=due_date
+        )
+        
+        return jsonify({
+            'success': True,
+            'task': task.to_dict()
+        }), 201
+        
+    except ValueError as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 400
+    except Exception as e:
+        logger.error(f"❌ Error creating task: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/tasks/<task_id>', methods=['GET'])
+def get_task(task_id):
+    """Get a specific task by ID"""
+    try:
+        task = task_manager.get_task(task_id)
+        
+        if not task:
+            return jsonify({
+                'success': False,
+                'error': 'Task not found'
+            }), 404
+        
+        return jsonify({
+            'success': True,
+            'task': task.to_dict()
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Error getting task {task_id}: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/tasks/<task_id>', methods=['PUT'])
+def update_task(task_id):
+    """Update a task"""
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'No update data provided'
+            }), 400
+        
+        task = task_manager.update_task(task_id, data)
+        
+        if not task:
+            return jsonify({
+                'success': False,
+                'error': 'Task not found'
+            }), 404
+        
+        return jsonify({
+            'success': True,
+            'task': task.to_dict()
+        })
+        
+    except ValueError as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 400
+    except Exception as e:
+        logger.error(f"❌ Error updating task {task_id}: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/tasks/<task_id>', methods=['DELETE'])
+def delete_task(task_id):
+    """Delete a task"""
+    try:
+        success = task_manager.delete_task(task_id)
+        
+        if not success:
+            return jsonify({
+                'success': False,
+                'error': 'Task not found'
+            }), 404
+        
+        return jsonify({
+            'success': True,
+            'message': 'Task deleted successfully'
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Error deleting task {task_id}: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/tasks/<task_id>/subtasks', methods=['POST'])
+def add_subtask(task_id):
+    """Add a subtask to a task"""
+    try:
+        data = request.get_json()
+        title = data.get('title')
+        
+        if not title:
+            return jsonify({
+                'success': False,
+                'error': 'Subtask title is required'
+            }), 400
+        
+        subtask = task_manager.add_subtask(task_id, title)
+        
+        if not subtask:
+            return jsonify({
+                'success': False,
+                'error': 'Task not found'
+            }), 404
+        
+        return jsonify({
+            'success': True,
+            'subtask': {
+                'id': subtask.id,
+                'title': subtask.title,
+                'completed': subtask.completed,
+                'created_at': subtask.created_at
+            }
+        }), 201
+        
+    except Exception as e:
+        logger.error(f"❌ Error adding subtask to task {task_id}: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/tasks/<task_id>/subtasks/<subtask_id>', methods=['PUT'])
+def update_subtask(task_id, subtask_id):
+    """Update a subtask"""
+    try:
+        data = request.get_json()
+        completed = data.get('completed')
+        
+        if completed is None:
+            return jsonify({
+                'success': False,
+                'error': 'completed status is required'
+            }), 400
+        
+        subtask = task_manager.update_subtask(task_id, subtask_id, completed)
+        
+        if not subtask:
+            return jsonify({
+                'success': False,
+                'error': 'Task or subtask not found'
+            }), 404
+        
+        return jsonify({
+            'success': True,
+            'subtask': {
+                'id': subtask.id,
+                'title': subtask.title,
+                'completed': subtask.completed,
+                'created_at': subtask.created_at
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Error updating subtask {subtask_id} in task {task_id}: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/tasks/<task_id>/subtasks/<subtask_id>', methods=['DELETE'])
+def delete_subtask(task_id, subtask_id):
+    """Delete a subtask"""
+    try:
+        success = task_manager.delete_subtask(task_id, subtask_id)
+        
+        if not success:
+            return jsonify({
+                'success': False,
+                'error': 'Task or subtask not found'
+            }), 404
+        
+        return jsonify({
+            'success': True,
+            'message': 'Subtask deleted successfully'
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Error deleting subtask {subtask_id} from task {task_id}: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/tasks/<task_id>/comments', methods=['POST'])
+def add_task_comment(task_id):
+    """Add a comment to a task"""
+    try:
+        data = request.get_json()
+        content = data.get('content')
+        author = data.get('author', 'default_user')
+        
+        if not content:
+            return jsonify({
+                'success': False,
+                'error': 'Comment content is required'
+            }), 400
+        
+        comment = task_manager.add_comment(task_id, content, author)
+        
+        if not comment:
+            return jsonify({
+                'success': False,
+                'error': 'Task not found'
+            }), 404
+        
+        return jsonify({
+            'success': True,
+            'comment': {
+                'id': comment.id,
+                'content': comment.content,
+                'author': comment.author,
+                'created_at': comment.created_at,
+                'attachments': comment.attachments or []
+            }
+        }), 201
+        
+    except Exception as e:
+        logger.error(f"❌ Error adding comment to task {task_id}: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/tasks/<task_id>/comments/<comment_id>', methods=['DELETE'])
+def delete_task_comment(task_id, comment_id):
+    """Delete a comment from a task"""
+    try:
+        success = task_manager.delete_comment(task_id, comment_id)
+        
+        if not success:
+            return jsonify({
+                'success': False,
+                'error': 'Task or comment not found'
+            }), 404
+        
+        return jsonify({
+            'success': True,
+            'message': 'Comment deleted successfully'
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Error deleting comment {comment_id} from task {task_id}: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/tasks/search', methods=['POST'])
+def search_tasks():
+    """Search tasks by query"""
+    try:
+        data = request.get_json()
+        query = data.get('query', '')
+        document_id = data.get('document_id')
+        
+        if not query:
+            return jsonify({
+                'success': False,
+                'error': 'Search query is required'
+            }), 400
+        
+        tasks = task_manager.search_tasks(query, document_id)
+        tasks_data = [task.to_dict() for task in tasks]
+        
+        return jsonify({
+            'success': True,
+            'tasks': tasks_data,
+            'count': len(tasks_data),
+            'query': query
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Error searching tasks: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/tasks/statistics', methods=['GET'])
+def get_task_statistics():
+    """Get task statistics"""
+    try:
+        document_id = request.args.get('document_id')
+        
+        stats = task_manager.get_task_statistics(document_id)
+        
+        return jsonify({
+            'success': True,
+            'statistics': stats
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Error getting task statistics: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 
 if __name__ == '__main__':
