@@ -255,6 +255,21 @@ class TaskManager:
             return True
         return False
     
+    def delete_tasks_by_document(self, document_id: str) -> int:
+        """Delete all tasks for a specific document"""
+        tasks_to_delete = [task_id for task_id, task in self.tasks.items() if task.document_id == document_id]
+        deleted_count = 0
+        
+        for task_id in tasks_to_delete:
+            del self.tasks[task_id]
+            deleted_count += 1
+        
+        if deleted_count > 0:
+            self._save_tasks()
+            logger.info(f"✅ Deleted {deleted_count} tasks for document: {document_id}")
+        
+        return deleted_count
+    
     def add_subtask(self, task_id: str, title: str) -> Optional[SubTask]:
         """Add a subtask to a task"""
         task = self.tasks.get(task_id)
