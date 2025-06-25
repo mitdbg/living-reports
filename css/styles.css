@@ -237,20 +237,6 @@
   font-size: 1.3em;
 }
 
-/* Data Lake Button (now styled as mode-toggle) */
-.data-lake-btn.mode-toggle {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  font-weight: 600;
-  transition: all 0.2s ease;
-}
-
-.data-lake-btn.mode-toggle:hover {
-  background: linear-gradient(135deg, #5a67d8 0%, #6b46c1 100%);
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
-}
-
 /* Recent Documents */
 .recent-documents {
   max-width: 800px;
@@ -694,13 +680,17 @@ body, html {
   cursor: pointer;
 }
 
-.share-btn {
+.share-btn,
+.data-lake-btn,
+.variables-btn {
   background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
   font-weight: 600;
   transition: all 0.2s ease;
 }
 
-.share-btn:hover {
+.share-btn:hover,
+.data-lake-btn:hover,
+.variables-btn:hover {
   background: linear-gradient(135deg, #218838 0%, #1ba085 100%);
   transform: translateY(-1px);
   box-shadow: 0 2px 8px rgba(40, 167, 69, 0.3);
@@ -978,6 +968,13 @@ body, html {
 .action-buttons {
   display: flex;
   gap: 5px;
+  flex: 1;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.action-buttons .mode-buttons {
+  margin-left: auto;
 }
 
 h1, h2, h3, h4, h5, h6 {
@@ -3959,13 +3956,11 @@ p {
 .mode-btn {
   background: transparent;
   border: none;
-  padding: 8px 12px;
-  border-radius: 6px;
+  padding: 5px 10px;
+  border-radius: 3px;
   cursor: pointer;
-  font-size: 16px;
+  font-size: 14px;
   transition: all 0.2s ease;
-  min-width: 36px;
-  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3997,13 +3992,9 @@ p {
   color: white;
 }
 
-.mode-btn.template-mode-btn.active {
-  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
-  color: white;
-}
-
+.mode-btn.template-mode-btn.active,
 .mode-btn.preview-mode-btn.active {
-  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
   color: white;
 }
 
@@ -4869,28 +4860,6 @@ p {
 .metric-value {
   color: #4285f4;
   font-weight: bold;
-}
-
-/* Data Lake Styles */
-.data-lake-btn {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border: none;
-  border-radius: 8px;
-  color: white;
-  padding: 15px 25px;
-  cursor: pointer;
-  font-size: 16px;
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  transition: all 0.3s ease;
-  box-shadow: 0 2px 10px rgba(102, 126, 234, 0.3);
-}
-
-.data-lake-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 20px rgba(102, 126, 234, 0.4);
 }
 
 .data-lake-btn .icon {
@@ -6540,23 +6509,6 @@ p {
   margin: 5px 0;
 }
 
-/* Variables Button */
-.variables-btn {
-  margin-left: 10px;
-  padding: 8px 16px;
-  background: #28a745;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.variables-btn:hover {
-  background: #218838;
-}
-
 /* Responsive adjustments */
 @media (max-width: 768px) {
   .variable-dialog .dialog-content,
@@ -7297,4 +7249,17 @@ p {
   background: #28a745;
   color: white;
   transform: scale(1.05);
+}
+
+/* Load Context button styling to match Share button */
+.open-file-btn {
+  background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.open-file-btn:hover {
+  background: linear-gradient(135deg, #218838 0%, #1ba085 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(40, 167, 69, 0.3);
 }
