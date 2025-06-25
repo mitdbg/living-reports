@@ -260,7 +260,18 @@ export function createTextComment(selectedText, commentContent) {
     commentId: commentId,
   });
   
-  createFloatingAnnotation(selectedText, commentContent, commentData);
+  // Instead of creating floating annotation, add to sidebar
+  try {
+    import('./sidebar-comments.js').then(({ sidebarComments }) => {
+      sidebarComments.addComment(commentData);
+    });
+  } catch (error) {
+    console.warn('Could not add comment to sidebar:', error);
+    // Fallback to floating annotation if sidebar is not available
+    import('./annotations.js').then(({ createFloatingAnnotation }) => {
+      createFloatingAnnotation(selectedText, commentContent, commentData);
+    });
+  }
   
   addMessageToUI('system', `Comment added: "${commentContent}" for text "${selectedText.substring(0, 30)}${selectedText.length > 30 ? '...' : ''}"`);
 

@@ -17,6 +17,24 @@ export function truncateContent(content, inVariableMode = false) {
   return content.length > 100 ? content.substring(0, 97) + '...' : content;
 }
 
+// Format timestamp for display
+export function formatTimestamp(timestamp) {
+  const date = new Date(timestamp);
+  
+  const timeOptions = {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  };
+
+  // Show date and time for other days: "Dec 15, 2:34 PM"
+  return date.toLocaleDateString('en-US', { 
+    month: 'short', 
+    day: 'numeric',
+    ...timeOptions
+  });
+}
+
 // Positioning utilities for comment boxes
 export function calculateSafePosition(initialLeft, initialTop, boxWidth = 220, boxHeight = 120) {
   // Get the content panel bounds instead of viewport for more accurate positioning

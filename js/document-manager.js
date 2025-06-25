@@ -403,6 +403,15 @@ export class DocumentManager {
       // Load data lake for this specific document
       await loadDataLake(documentId);
       
+      // Initialize sidebar comments system (NEW FEATURE - ADDITIONAL)
+      try {
+        const { sidebarComments } = await import('./sidebar-comments.js');
+        sidebarComments.init(container);
+        console.log(`[${windowId}] Sidebar comments initialized for document: ${documentId}`);
+      } catch (error) {
+        console.warn(`[${windowId}] Could not initialize sidebar comments:`, error);
+      }
+      
       // Configure role-based UI after all modules are initialized
       this.configureRoleBasedUI(container);
       
@@ -426,6 +435,53 @@ export class DocumentManager {
       }
     }).catch(error => {
       console.error('Error importing state module:', error);
+    });
+
+    // Sidebar toggle and tab logic (per-document)
+    const sidebar = container.querySelector('#integrated-sidebar');
+    const sidebarToggleBtn = container.querySelector('#sidebar-toggle-btn');
+    const sidebarCloseBtn = container.querySelector('.sidebar-close-btn');
+    const sidebarTabs = container.querySelectorAll('.sidebar-tab');
+    const sidebarTabContents = container.querySelectorAll('.sidebar-tab-content');
+
+    if (sidebar && sidebarToggleBtn && sidebarCloseBtn) {
+      // Show sidebar
+      sidebarToggleBtn.onclick = () => {
+        sidebar.classList.remove('sidebar-collapsed');
+      };
+      // Hide sidebar
+      sidebarCloseBtn.onclick = () => {
+        sidebar.classList.add('sidebar-collapsed');
+      };
+      
+      // Check if there are comments for this mode and show sidebar if so (ADDITIONAL FEATURE)
+      try {
+        const { state } = await import('./state.js');
+        const currentMode = state.currentMode;
+        const hasComments = Object.values(state.comments).some(comment => 
+          comment.mode === currentMode && !comment.isResolved
+        );
+        
+        if (hasComments) {
+          sidebar.classList.remove('sidebar-collapsed');
+        } else {
+          sidebar.classList.add('sidebar-collapsed');
+        }
+      } catch (error) {
+        console.warn('Could not check for comments to show sidebar:', error);
+        // Fallback to hidden sidebar
+        sidebar.classList.add('sidebar-collapsed');
+      }
+    }
+    // Tab switching
+    sidebarTabs.forEach(tab => {
+      tab.onclick = () => {
+        sidebarTabs.forEach(t => t.classList.remove('active'));
+        sidebarTabContents.forEach(c => c.classList.remove('active'));
+        tab.classList.add('active');
+        const tabName = tab.getAttribute('data-tab');
+        container.querySelector(`#sidebar-${tabName}`).classList.add('active');
+      };
     });
   }
 
@@ -1892,6 +1948,7 @@ export class DocumentManager {
     try {
       const { createFloatingAnnotation, createAISuggestionAnnotation, updateAnnotationsVisibility } = await import('./annotations.js');
       const { refreshHighlightEventListeners } = await import('./comments.js');
+      const { sidebarComments } = await import('./sidebar-comments.js');
 
       // Track created annotations to prevent duplicates
       const createdAnnotations = new Set();
@@ -1967,80 +2024,30 @@ export class DocumentManager {
           }
           
         } else {
-          console.log(`Processing regular comment: ${commentId}`);
-          // Handle regular comments
+          // Regular text comments - add to sidebar instead of creating floating annotations
+          console.log(`Restoring regular comment: ${commentId}`);
           
-          let highlightCreated = true; // Assume success by default
+          // Recreate text highlight
+          await this.recreateTextHighlight(savedComment, documentId);
           
-          // For preview mode, check if highlights already exist, otherwise recreate them
-          if (savedComment.mode === 'preview') {
-            const container = document.getElementById(`document-${documentId}`);
-            const targetElement = container?.querySelector('.preview-content');
-            const existingHighlight = targetElement?.querySelector(`.text-comment-highlight[data-comment-id="${savedComment.id}"]`);
-            
-            if (existingHighlight) {
-              // Just ensure event listeners are attached to existing highlights
-              if (!existingHighlight.hasAttribute('data-listener-attached')) {
-                const { showAnnotationForText } = await import('./annotations.js');
-                existingHighlight.addEventListener('click', (e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  showAnnotationForText(savedComment.selectedText);
-                });
-                existingHighlight.setAttribute('data-listener-attached', 'true');
-              }
-            } else {
-              // Highlight doesn't exist, recreate it
-              highlightCreated = await this.recreateTextHighlight(savedComment, documentId);
-            }
-          } else {
-            // For template/source mode, recreate text highlighting
-            highlightCreated = await this.recreateTextHighlight(savedComment, documentId);
-          }
-          
-          // Check if annotation already exists
-          const existingAnnotation = document.getElementById(commentId);
-          
-          if (existingAnnotation) {
-            // Update position if UI state indicates it should be different
-            if (savedComment.uiState?.position) {
-              const { top, left } = savedComment.uiState.position;
-              existingAnnotation.style.top = `${top}px`;
-              existingAnnotation.style.left = `${left}px`;
-            }
-            continue;
-          }
-
-          if (createdAnnotations.has(commentId)) {
-            continue;
-          }
-
-          // Only create annotation if highlight was successfully created and should be visible
-          if (highlightCreated && savedComment.uiState?.isVisible !== false) {
-            try {
-              createFloatingAnnotation(savedComment.selectedText, savedComment.commentMessage, currentComment);
-              createdAnnotations.add(commentId);
-              
-              // Verify annotation was created and apply position immediately
-              const annotation = document.getElementById(commentId);
-              if (annotation && savedComment.uiState?.position) {
-                const { top, left } = savedComment.uiState.position;
-                annotation.style.top = `${top}px`;
-                annotation.style.left = `${left}px`;
-              }
-              
-            } catch (error) {
-              console.error(`Error creating annotation for ${commentId}:`, error);
-            }
+          // Add to sidebar comments (ADDITIONAL FEATURE)
+          try {
+            sidebarComments.addComment(currentComment);
+          } catch (error) {
+            console.warn(`Could not add comment to sidebar: ${commentId}`, error);
           }
         }
       }
 
-      // Refresh highlight event listeners to ensure interactions work
-      refreshHighlightEventListeners(true); // Skip annotation refresh since we just created them
-
-      // CRITICAL: Ensure only current mode comments are visible after recreation
-      updateAnnotationsVisibility();
+      // Refresh highlight event listeners
+      refreshHighlightEventListeners(true);
+      
+      // Update sidebar comments visibility (ADDITIONAL FEATURE)
+      try {
+        sidebarComments.updateVisibility();
+      } catch (error) {
+        console.warn('Could not update sidebar comments visibility:', error);
+      }
 
     } catch (error) {
       console.error('Error recreating comment UI elements:', error);
@@ -2447,6 +2454,14 @@ export class DocumentManager {
             const element = document.getElementById(commentId);
             if (element && element.style.display !== 'none') {
               updateAnnotationMessagesUI(commentId);
+            }
+            
+            // Update sidebar comments (ADDITIONAL FEATURE)
+            try {
+              const { sidebarComments } = await import('./sidebar-comments.js');
+              sidebarComments.renderComments();
+            } catch (error) {
+              console.warn('Could not update sidebar comments for new messages:', error);
             }
           }
         }
