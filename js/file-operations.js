@@ -218,6 +218,7 @@ async function loadContextFile() {
         addMessageToUI('system', `Processing ${file.name} file...`);
         
         // Send file to backend for processing
+        const documentId = window.documentManager?.activeDocumentId || null;
         const response = await fetch('http://127.0.0.1:5000/api/process-file', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -225,7 +226,8 @@ async function loadContextFile() {
             fileName: file.name,
             filePath: file.path,
             content: file.content, // This might be base64 for binary files
-            session_id: state.sessionId
+            session_id: state.sessionId,
+            document_id: documentId
           })
         });
 
