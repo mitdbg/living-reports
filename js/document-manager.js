@@ -327,108 +327,115 @@ export class DocumentManager {
   }
 
   async initializeDocumentFunctionality(documentId) {
-    console.log(`[${windowId}] Initializing functionality for document: ${documentId}`);
+    /*
+    Initialize the document functionality for a given document ID.
+    This function is called when a document is opened or created.
+    It initializes the document-specific modules and sets up the document-specific elements. 
+    */
+    const doc = this.documents.get(documentId);
+    if (!doc) return;
+
+    // Update state to use this document's session ID
+    updateState({ sessionId: doc.sessionId });
     
+    // Get document-specific elements
     const container = document.getElementById(`document-${documentId}`);
     if (!container) {
-      console.error(`[${windowId}] Container not found for document: ${documentId}`);
+      console.error('Document container not found:', `document-${documentId}`);
       return;
     }
-
-    // Initialize sidebar comments system
+    
+    // Determine if we need to initialize modules
+    // We should always initialize modules when switching to a document
+    // to ensure elements are properly connected to the current document's DOM
+    const wasPreviouslyActive = this.activeDocumentId !== null;
+    const isReopeningDocument = this.activeDocumentId === null && this.documentCounter > 0;
+    
+    // Track the active document - this enables getElements to automatically return correct elements
+    this.activeDocumentId = documentId;
+    
+    // Initialize DOCUMENT-SPECIFIC modules (tied to this document's DOM elements)
+    console.log(`🔄 Initializing document-specific modules for: ${doc.title} (switch: ${wasPreviouslyActive}, reopen: ${isReopeningDocument})`);
+    
     try {
-      const { sidebarComments } = await import('./sidebar-comments.js');
-      sidebarComments.init(container);
-      console.log(`[${windowId}] Sidebar comments initialized for document: ${documentId}`);
+      // Reset ALL module initialization flags first to allow clean reinitialization
+      resetModesInitialization();
+      resetTemplateExecutionInitialization();
+      resetTextSelectionInitialization();
+      resetCommentButtonsInitialization();
+      resetChatInitialization();
+      resetContentMappingInitialization();
+      resetFileOperationsInitialization();
+      resetSharingInitialization();
+      resetDataLakeInitialization();
+      resetOperatorsInitialization();
+      resetVariablesInitialization();
+      // Note: Other modules may not have reset functions yet, but should be added as needed
+      
+      // Initialize ALL DOM-RELATED modules (work with this document's prefixed elements)
+      initModes();            // ✅ docID-source-mode-btn, docID-template-mode-btn, etc.
+      initTemplateExecution(); // ✅ docID-execute-template-btn, docID-template-execution-status
+      initChat();             // ✅ docID-chat-messages, docID-message-input, docID-send-button
+      initTextSelection();    // ✅ Works within docID-template-editor, docID-preview-content
+      initCommentButtons();   // ✅ docID-add-comment, docID-floating-comment, docID-cancel-comment
+      initAskLLMButton();     // ✅ docID-ask-llm button
+      initContentMapping();   // ✅ Works with docID-prefixed content elements
+      initFileOperations();   // ✅ docID-open-file-btn, docID-clear-context-btn, docID-context-files-list
+      initSharing();          // ✅ docID-share-btn and sharing dialogs  
+      initDataLake();         // ✅ docID-data-lake panels, buttons, UI elements
+      initOperators();        // ✅ docID-operators-btn, docID-instances-items, operator panels
+      initCodingAssistant();  // ✅ docID-coding-assistant elements and dialogs
+      initVerification();     // ✅ docID-verification panels and controls
+      
+      // Initialize variables manager once if not already initialized
+      if (variablesManager && !variablesManager.initialized) {
+        variablesManager.init();
+      }
+      
+      // Expose variables manager to window for global access
+      if (variablesManager) {
+        window.variablesManager = variablesManager;
+      }
+      
+      // Initialize variables for this specific document
+      initVariablesForDocument();
+      
+      // Load data lake for this specific document
+      await loadDataLake(documentId);
+      
+      // Initialize sidebar comments system (NEW FEATURE - ADDITIONAL)
+      try {
+        const { sidebarComments } = await import('./sidebar-comments.js');
+        sidebarComments.init(container);
+        console.log(`[${windowId}] Sidebar comments initialized for document: ${documentId}`);
+      } catch (error) {
+        console.warn(`[${windowId}] Could not initialize sidebar comments:`, error);
+      }
+      
+      // Configure role-based UI after all modules are initialized
+      this.configureRoleBasedUI(container);
+      
     } catch (error) {
-      console.warn(`[${windowId}] Could not initialize sidebar comments:`, error);
+      console.error(`Error initializing document functionality:`, error);
     }
-
-    // Initialize modes system
-    try {
-      const { initializeModes } = await import('./modes.js');
-      await initializeModes(container);
-      console.log(`[${windowId}] Modes initialized for document: ${documentId}`);
-    } catch (error) {
-      console.warn(`[${windowId}] Could not initialize modes:`, error);
-    }
-
-    // Initialize template execution
-    try {
-      const { initializeTemplateExecution } = await import('./template-execution.js');
-      await initializeTemplateExecution(container);
-      console.log(`[${windowId}] Template execution initialized for document: ${documentId}`);
-    } catch (error) {
-      console.warn(`[${windowId}] Could not initialize template execution:`, error);
-    }
-
-    // Initialize text selection and comments
-    try {
-      const { initTextSelection, initCommentButtons } = await import('./comments.js');
-      initTextSelection(container);
-      initCommentButtons(container);
-      console.log(`[${windowId}] Text selection and comments initialized for document: ${documentId}`);
-    } catch (error) {
-      console.warn(`[${windowId}] Could not initialize text selection and comments:`, error);
-    }
-
-    // Initialize chat system
-    try {
-      const { initializeChat } = await import('./chat.js');
-      await initializeChat(container);
-      console.log(`[${windowId}] Chat initialized for document: ${documentId}`);
-    } catch (error) {
-      console.warn(`[${windowId}] Could not initialize chat:`, error);
-    }
-
-    // Initialize file operations
-    try {
-      const { initializeFileOperations } = await import('./file-operations.js');
-      await initializeFileOperations(container);
-      console.log(`[${windowId}] File operations initialized for document: ${documentId}`);
-    } catch (error) {
-      console.warn(`[${windowId}] Could not initialize file operations:`, error);
-    }
-
-    // Initialize sharing functionality
-    try {
-      const { initializeSharing } = await import('./sharing.js');
-      await initializeSharing(container);
-      console.log(`[${windowId}] Sharing initialized for document: ${documentId}`);
-    } catch (error) {
-      console.warn(`[${windowId}] Could not initialize sharing:`, error);
-    }
-
-    // Initialize operators
-    try {
-      const { initializeOperators } = await import('./operators.js');
-      await initializeOperators(container);
-      console.log(`[${windowId}] Operators initialized for document: ${documentId}`);
-    } catch (error) {
-      console.warn(`[${windowId}] Could not initialize operators:`, error);
-    }
-
-    // Initialize variables
-    try {
-      const { initializeVariables } = await import('./variables.js');
-      await initializeVariables(container);
-      console.log(`[${windowId}] Variables initialized for document: ${documentId}`);
-    } catch (error) {
-      console.warn(`[${windowId}] Could not initialize variables:`, error);
-    }
-
-    // Configure role-based UI
-    this.configureRoleBasedUI(container);
-
-    // Set initial mode
-    try {
-      const { state } = await import('./state.js');
-      if (!state.currentMode) {
+    
+    // Import state to access elements and set default mode
+    import('./state.js').then(({ getElements, state }) => {
+      // Ensure the document is visible and in template mode by default
+      const templatePanel = getElements.templatePanel;
+      const previewPanel = getElements.previewPanel;
+      const sourcePanel = getElements.sourcePanel;
+      
+      if (templatePanel && previewPanel && sourcePanel) {
+        sourcePanel.classList.remove('active');
+        templatePanel.classList.remove('active');
+        previewPanel.classList.remove('active');
+        templatePanel.classList.add('active');
         state.currentMode = 'template';
       }
-    } catch (error) {
+    }).catch(error => {
       console.error('Error importing state module:', error);
-    }
+    });
 
     // Sidebar toggle and tab logic (per-document)
     const sidebar = container.querySelector('#integrated-sidebar');
@@ -447,15 +454,22 @@ export class DocumentManager {
         sidebar.classList.add('sidebar-collapsed');
       };
       
-      // Check if there are comments for this mode and show sidebar if so
-      const currentMode = state.currentMode;
-      const hasComments = Object.values(state.comments).some(comment => 
-        comment.mode === currentMode && !comment.isResolved
-      );
-      
-      if (hasComments) {
-        sidebar.classList.remove('sidebar-collapsed');
-      } else {
+      // Check if there are comments for this mode and show sidebar if so (ADDITIONAL FEATURE)
+      try {
+        const { state } = await import('./state.js');
+        const currentMode = state.currentMode;
+        const hasComments = Object.values(state.comments).some(comment => 
+          comment.mode === currentMode && !comment.isResolved
+        );
+        
+        if (hasComments) {
+          sidebar.classList.remove('sidebar-collapsed');
+        } else {
+          sidebar.classList.add('sidebar-collapsed');
+        }
+      } catch (error) {
+        console.warn('Could not check for comments to show sidebar:', error);
+        // Fallback to hidden sidebar
         sidebar.classList.add('sidebar-collapsed');
       }
     }
@@ -1981,7 +1995,7 @@ export class DocumentManager {
             }
           }
           
-        } else if (savedComment.isAISuggestion) {
+        } else if (savedComment.isAISuggestion && savedComment.lineDiffs) {
           console.log(`Restoring AI suggestion comment: ${commentId}`);
           
           // Recreate inline diff highlighting
@@ -2016,16 +2030,24 @@ export class DocumentManager {
           // Recreate text highlight
           await this.recreateTextHighlight(savedComment, documentId);
           
-          // Add to sidebar comments
-          sidebarComments.addComment(currentComment);
+          // Add to sidebar comments (ADDITIONAL FEATURE)
+          try {
+            sidebarComments.addComment(currentComment);
+          } catch (error) {
+            console.warn(`Could not add comment to sidebar: ${commentId}`, error);
+          }
         }
       }
 
       // Refresh highlight event listeners
       refreshHighlightEventListeners(true);
       
-      // Update sidebar comments visibility
-      sidebarComments.updateVisibility();
+      // Update sidebar comments visibility (ADDITIONAL FEATURE)
+      try {
+        sidebarComments.updateVisibility();
+      } catch (error) {
+        console.warn('Could not update sidebar comments visibility:', error);
+      }
 
     } catch (error) {
       console.error('Error recreating comment UI elements:', error);
@@ -2413,16 +2435,6 @@ export class DocumentManager {
           
           // Recreate UI for this specific comment
           await this.recreateCommentUIElements({ [commentId]: savedComment }, state, documentId);
-          
-          // Add to sidebar comments if it's a regular comment
-          if (!savedComment.isAISuggestion && !savedComment.isTemplateSuggestion) {
-            try {
-              const { sidebarComments } = await import('./sidebar-comments.js');
-              sidebarComments.addComment(restoredComment);
-            } catch (error) {
-              console.warn('Could not add synced comment to sidebar:', error);
-            }
-          }
         } else {
           // Comment exists, but check if messages have been updated
           const savedComment = freshComments[commentId];
@@ -2442,6 +2454,14 @@ export class DocumentManager {
             const element = document.getElementById(commentId);
             if (element && element.style.display !== 'none') {
               updateAnnotationMessagesUI(commentId);
+            }
+            
+            // Update sidebar comments (ADDITIONAL FEATURE)
+            try {
+              const { sidebarComments } = await import('./sidebar-comments.js');
+              sidebarComments.renderComments();
+            } catch (error) {
+              console.warn('Could not update sidebar comments for new messages:', error);
             }
           }
         }
