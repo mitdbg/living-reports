@@ -124,10 +124,6 @@ export function switchToSource() {
     diffView.classList.remove('active');
   }
   
-  if (contentTitle) {
-    contentTitle.textContent = 'Source Code Editor';
-  }
-  
   updateModeButtonStates('source');
   
   // Refresh all highlights when switching to source mode
@@ -179,11 +175,6 @@ export function switchToTemplate() {
   if (diffView) {
     diffView.classList.remove('active');
   }
-  
-  if (contentTitle) {
-    contentTitle.textContent = 'Template Editor';
-  }
-  
   updateModeButtonStates('template');
   
   // Update code highlights when switching to template mode
@@ -230,10 +221,13 @@ export function switchToPreview() {
     diffView.classList.remove('active');
   }
   
+<<<<<<< HEAD
   if (contentTitle) {
     contentTitle.textContent = 'Preview';
   }
   
+=======
+>>>>>>> main
   updateModeButtonStates('preview');
   
   // Refresh highlights when switching to preview mode
