@@ -1,5 +1,5 @@
 from agents import Agent, Runner
-from tools import run_code, explain_code, generate_tests, format_code
+from tools import run_code, explain_code, format_code
 import asyncio  
 import re
 
@@ -50,7 +50,6 @@ test_writer = Agent(
         "Focus on achieving good test coverage while keeping tests maintainable and readable."
     ),
     model="gpt-4o-mini",
-    tools=[generate_tests]
 )
 
 code_writer = Agent(

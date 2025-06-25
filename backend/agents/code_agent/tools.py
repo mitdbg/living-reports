@@ -27,16 +27,6 @@ def explain_code(code: str) -> str:
         return f"Failed to parse code: {e}"
 
 @function_tool
-def generate_tests(code: str) -> str:
-    """Create simple test functions based on the provided Python function."""
-    return (
-        "# Basic test skeleton\n"
-        "def test_function():\n"
-        "    assert your_function() == expected_value\n"
-        "# Replace with real inputs and outputs"
-    )
-
-@function_tool
 def format_code(code: str) -> str:
     """Autoformat code using Black-style rules."""
     try:

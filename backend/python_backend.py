@@ -884,6 +884,12 @@ def delete_document(document_id):
                 cleanup_summary.append(f"{tools_count} tools")
                 logger.info(f"🔧 Cleaned up {tools_count} tools for document {document_id}")
 
+            # Clean up tasks for this document
+            tasks_count = task_manager.delete_tasks_by_document(document_id)
+            if tasks_count > 0:
+                cleanup_summary.append(f"{tasks_count} tasks")
+                logger.info(f"📋 Cleaned up {tasks_count} tasks for document {document_id}")
+
             # Clean up file from the file system
             file_path = "database/files/" + document_id
             if os.path.exists(file_path):
@@ -1505,7 +1511,7 @@ Guidelines:
    - If the function returns a list/array, consider "output" or "output.items" based on context
    - Create meaningful variable names that reflect what each output field represents
    - Example: if code returns {{"summary": df.describe(), "correlation": df.corr()}}, suggest:
-     * config: "output.summary", variable: "data_summary"
+     * config: "output.summary", variable: "data_summary" 
      * config: "output.correlation", variable: "correlation_matrix"
 4. Only include parameters and outputs that make sense based on the code analysis
 5. If you cannot determine good suggestions for any section, use empty arrays
