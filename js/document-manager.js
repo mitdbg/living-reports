@@ -411,6 +411,19 @@ export class DocumentManager {
         console.warn(`[${windowId}] Could not initialize sidebar comments:`, error);
       }
       
+      // Initialize sidebar task manager system (NEW FEATURE - ADDITIONAL)
+      try {
+        const { TaskManager } = await import('./task-manager.js');
+        if (!window.taskManager) {
+          window.taskManager = new TaskManager();
+        }
+        window.taskManager.init(container);
+        window.taskManager.setCurrentDocument(documentId);
+        console.log(`[${windowId}] Task manager initialized for document: ${documentId}`);
+      } catch (error) {
+        console.warn(`[${windowId}] Could not initialize task manager:`, error);
+      }
+      
       // Configure role-based UI after all modules are initialized
       this.configureRoleBasedUI(container);
       
