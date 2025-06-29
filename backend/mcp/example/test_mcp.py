@@ -129,10 +129,6 @@ class Server:
 
         tools_response = await self.session.list_tools()
         tools = []
-
-        # Debug: Print the tools_response structure
-        logging.info(f"Tools response type: {type(tools_response)}")
-        logging.info(f"Tools response: {tools_response}")
         
         # Handle the response based on its actual structure
         if hasattr(tools_response, 'tools'):
@@ -325,6 +321,37 @@ class ChatSession:
             except Exception as e:
                 logging.warning(f"Warning during final cleanup: {e}")
 
+    def _is_tool_call(self, response: str) -> bool:
+        """Check if the LLM response is a tool call JSON.
+        
+        Args:
+            response: The LLM response string.
+            
+        Returns:
+            True if the response is a tool call, False otherwise.
+        """
+        # First check if it's a proper JSON tool call
+        try:
+            tool_call = json.loads(response.strip())
+            return "tool" in tool_call and "arguments" in tool_call
+        except json.JSONDecodeError:
+            pass
+        
+        # Fallback: Check if LLM is indicating it wants to use a tool but didn't use JSON
+        # This helps catch cases where LLM says "I will search" instead of calling the tool
+        response_lower = response.lower()
+        tool_indication_phrases = [
+            "i will", "i'll", "let me", "i need to", "i should", 
+            "to summarize", "to check", "to search", "to get", "to retrieve",
+            "message ids", "email content", "email details"
+        ]
+        
+        if any(phrase in response_lower for phrase in tool_indication_phrases):
+            logging.warning(f"⚠️ LLM indicated tool usage but didn't use JSON format: {response[:100]}...")
+            return True
+            
+        return False
+
     async def process_llm_response(self, llm_response: str) -> str:
         """Process the LLM response and execute tools if needed.
 
@@ -354,9 +381,9 @@ class ChatSession:
                                 progress = result["progress"]
                                 total = result["total"]
                                 percentage = (progress / total) * 100
-                                logging.info(
-                                    f"Progress: {progress}/{total} ({percentage:.1f}%)"
-                                )
+                                print(f"Progress: {progress}/{total} ({percentage:.1f}%)")
+                            else:
+                                print("✅ Tool execution completed!")
 
                             return f"Tool execution result: {result}"
                         except Exception as e:
@@ -395,43 +422,30 @@ class ChatSession:
 
             system_message = (
                 "You are a helpful assistant with access to these tools:\n\n"
-                f"{tools_description}\n"
-                "Choose the appropriate tool based on the user's question. "
-                "If no tool is needed, reply directly.\n\n"
-                "CRITICAL TOOL USAGE RULES:\n"
-                "1. When you need to use a tool, you must ONLY respond with the exact JSON object format:\n"
+                f"{tools_description}\n\n"
+                "🚨 CRITICAL: TOOL USAGE IS MANDATORY 🚨\n"
+                "When you need to use a tool, you MUST respond with ONLY the JSON format below.\n"
+                "NO explanations, NO conversational text, NO 'I will...' or 'Let me...' phrases.\n\n"
+                "TOOL CALL FORMAT (EXACT JSON ONLY):\n"
                 "{\n"
                 '    "tool": "tool-name",\n'
                 '    "arguments": {\n'
                 '        "argument-name": "value"\n'
                 "    }\n"
-                "}\n"
-                "2. DO NOT explain what you're going to do - just execute the tool immediately\n"
-                "3. DO NOT say 'I will search' or 'Let me check' - actually call the tool\n\n"
-                "AUTHENTICATION GUIDELINES:\n"
-                "- The system runs in single-user mode with stored credentials\n"
-                "- DO NOT call start_google_auth unless you get an explicit authentication error\n"
-                "- Try the requested tool directly first - authentication is handled automatically\n\n"
-                "EMAIL SEARCH EXAMPLES:\n"
-                "User: 'check latest emails' or 'search emails' → Use search_gmail_messages\n"
-                "User: 'get email content' → Use get_gmail_message_content or get_gmail_messages_content_batch\n\n"
-                "EXAMPLE TOOL CALLS:\n"
-                "For checking latest emails:\n"
-                "{\n"
-                '    "tool": "search_gmail_messages",\n'
-                '    "arguments": {\n'
-                '        "query": "in:inbox",\n'
-                '        "user_google_email": "chjuncn@gmail.com",\n'
-                '        "page_size": 3\n'
-                "    }\n"
                 "}\n\n"
-                "After receiving a tool's response:\n"
-                "1. Transform the raw data into a natural, conversational response\n"
-                "2. Keep responses concise but informative\n"
-                "3. Focus on the most relevant information\n"
-                "4. Use appropriate context from the user's question\n"
-                "5. Avoid simply repeating the raw data\n\n"
-                "Please use only the tools that are explicitly defined above."
+                "❌ WRONG: 'I will search your emails for you' or 'Let me check that'\n"
+                "✅ CORRECT: {\"tool\": \"search_gmail_messages\", \"arguments\": {...}}\n\n"
+                "WHEN TO USE TOOLS:\n"
+                "- Email requests: search_gmail_messages, get_gmail_message_content, etc.\n"
+                "- Calendar requests: search_calendar_events, create_calendar_event, etc.\n"
+                "- Document requests: search_drive_files, create_doc, etc.\n\n"
+                "AUTHENTICATION:\n"
+                "- System handles auth automatically - just call the tool\n"
+                "- Only use start_google_auth if you get explicit auth errors\n\n"
+                "EXAMPLES:\n"
+                "User: 'check emails' → {\"tool\": \"search_gmail_messages\", \"arguments\": {\"query\": \"in:inbox\", \"user_google_email\": \"chjuncn@gmail.com\", \"page_size\": 10}}\n"
+                "User: 'summarize email content' → {\"tool\": \"get_gmail_messages_content_batch\", \"arguments\": {\"message_ids\": [...], \"user_google_email\": \"chjuncn@gmail.com\"}}\n\n"
+                "🔥 REMEMBER: If you need a tool, respond with JSON ONLY! 🔥"
             )
 
             messages = [{"role": "system", "content": system_message}]
@@ -446,20 +460,38 @@ class ChatSession:
                     messages.append({"role": "user", "content": user_input})
 
                     llm_response = self.llm_client.get_response(messages)
-                    logging.info("\nAssistant: %s", llm_response)
-
-                    result = await self.process_llm_response(llm_response)
-
-                    if result != llm_response:
-                        messages.append({"role": "assistant", "content": llm_response})
-                        messages.append({"role": "system", "content": result})
-
-                        final_response = self.llm_client.get_response(messages)
-                        logging.info("\nFinal response: %s", final_response)
-                        messages.append(
-                            {"role": "assistant", "content": final_response}
-                        )
+                    
+                    # Check if this is a tool call before showing anything to the user
+                    is_tool_call = self._is_tool_call(llm_response)
+                    
+                    if is_tool_call:
+                        # Check if it's a proper JSON tool call
+                        try:
+                            tool_call = json.loads(llm_response.strip())
+                            if "tool" in tool_call and "arguments" in tool_call:
+                                tool_name = tool_call.get("tool", "unknown")
+                                print(f"Assistant: Executing {tool_name}...")
+                                
+                                # Execute the tool and get the result
+                                result = await self.process_llm_response(llm_response)
+                                
+                                # Add the tool call and result to conversation history
+                                messages.append({"role": "assistant", "content": llm_response})
+                                messages.append({"role": "system", "content": result})
+                                
+                                # Get the final human-readable response
+                                final_response = self.llm_client.get_response(messages)
+                                logging.info("\nAssistant: %s", final_response)
+                                messages.append({"role": "assistant", "content": final_response})
+                            else:
+                                raise json.JSONDecodeError("Invalid tool call", "", 0)
+                        except json.JSONDecodeError:
+                            # Regular response, show it immediately
+                            logging.info("\nAssistant: %s", llm_response)
+                            messages.append({"role": "assistant", "content": llm_response})
                     else:
+                        # Regular response, show it immediately
+                        logging.info("\nAssistant: %s", llm_response)
                         messages.append({"role": "assistant", "content": llm_response})
 
                 except KeyboardInterrupt:
@@ -473,6 +505,7 @@ class ChatSession:
 async def main() -> None:
     """Initialize and run the chat session."""
     config = Configuration()
+    # Use the servers_config.json in the same directory as this script
     config_path = os.path.join(os.path.dirname(__file__), "servers_config.json")
     server_config = config.load_config(config_path)
     servers = [
