@@ -98,8 +98,59 @@ function parseParameterValue(value) {
     return trimmed;
   }
 
+function extractValueFromOutput(result, outputConfig) {
+    if (!outputConfig || !outputConfig.trim()) {
+      return result;
+    }
 
-export async function executeToolWithData(tool, datasets, parameters, windowId='default') {
+    try {
+      const config = outputConfig.trim();
+      
+      // Handle special case: "output" refers to the main result
+      if (config === 'output') {
+        return result;
+      }
+      
+      // Handle "output.field" pattern
+      if (config.startsWith('output.')) {
+        const fieldPath = config.substring(7); // Remove "output." prefix
+        const path = fieldPath.split('.');
+        let value = result;
+
+        // Navigate through the object path starting from the main result
+        for (const key of path) {
+          if (value && typeof value === 'object' && key in value) {
+            value = value[key];
+          } else {
+            throw new Error(`Property "${key}" not found in output`);
+          }
+        }
+
+        return value;
+      }
+      
+      // Handle direct field access (legacy support)
+      const path = config.split('.');
+      let value = result;
+
+      // Navigate through the object path
+      for (const key of path) {
+        if (value && typeof value === 'object' && key in value) {
+          value = value[key];
+        } else {
+          throw new Error(`Property "${key}" not found in output`);
+        }
+      }
+
+      return value;
+    } catch (error) {
+      console.error(`Error extracting value with config "${outputConfig}":`, error);
+      throw new Error(`Failed to extract value using "${outputConfig}": ${error.message}`);
+    }
+  }
+
+
+export async function executeToolWithData(tool, datasets, parameters, windowId='default', outputs=[]) {
     try {
       // Process parameters to separate datasets from literal values
       const processedParameters = {};
@@ -142,74 +193,90 @@ export async function executeToolWithData(tool, datasets, parameters, windowId='
         executionPayload.datasets[dataset.name] = dataset.data;
       });
 
-      console.log(`[${windowId}] Executing operator "${tool.name}" via external endpoint...`);
+      console.log(`[${windowId}] Executing operator "${tool.name}" via local endpoint...`);
       console.log(`[${windowId}] Datasets:`, Object.keys(executionPayload.datasets));
       console.log(`[${windowId}] Parameters:`, processedParameters);
       
-      // Use external API endpoint for execution
-      const BASE_URL = 'https://6bd2-89-213-179-161.ngrok-free.app';
+      console.log(`[${windowId}] About to make fetch request to local endpoint...`);
       
-      const response = await fetch(`${BASE_URL}/execute_code`, {
+      // Use local API endpoint for execution with timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+      
+      const response = await fetch('http://127.0.0.1:5000/api/execute-code', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'ngrok-skip-browser-warning': 'true' // Skip ngrok warning page
         },
+        signal: controller.signal,
         body: JSON.stringify({
           code: plainTextCode,
           parameters: executionPayload.parameters
         })
       });
+      
+      clearTimeout(timeoutId);
+      console.log(`[${windowId}] Fetch request completed successfully`);
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`External execution failed (${response.status}): ${errorText}`);
-      }
+      if (response.ok) {
+        const result = await response.json();
+        
+        if (result.success) {
+          showExecutionResult(result.output, null);
+          
+          // If execution was successful and returned a value, store in specified output variables
+          if (result.output && outputs && outputs.length > 0) {
+            for (const output of outputs) {
+              if (output.variable && output.variable.trim() && window.variablesManager) {
+                try {
+                  // Extract the value using the output configuration if specified
+                  let valueToStore = result.output;
+                  
+                                     if (output.config && output.config.trim()) {
+                     // Extract the value using the output configuration
+                     valueToStore = extractValueFromOutput(result.output, output.config);
+                     console.log(`[${windowId}] Extracted value using config "${output.config}":`, valueToStore);
+                   }
+                  
+                  await window.variablesManager.setVariableValue(output.variable, valueToStore);
+                  console.log(`[${windowId}] Stored output in variable: ${output.variable}`);
+                } catch (error) {
+                  console.warn(`[${windowId}] Failed to store output in variable ${output.variable}:`, error);
+                }
+              }
+            }
+          }
+          
+          return result.output;
+        } else {
+          // Handle backend error response
+          showExecutionResult(null, result.error || 'Code execution failed');
+          throw new Error(result.error || 'Code execution failed');
+        }
 
-      const result = await response.json();
-      
-      // Handle error responses from server
-      if (result.status === 'error' || result.error) {
-        const errorMsg = result.error || result.message || 'External execution failed';
-        throw new Error(`Server execution error: ${errorMsg}`);
-      }
-      
-      // Handle different response formats
-      if (result.success === false) {
-        throw new Error(result.error || 'External execution failed');
-      }
-      
-      // Parse the nested response structure from your server
-      // Success: {'result': {'parameters': {...}, 'output': {...}, ...}, 'status': 'success'}
-      // Error: {'error': 'invalid syntax...', 'type': 'SyntaxError', 'status': 'error'}
-      let executionResult;
-      
-      if (result.result && result.result.output) {
-        // Use the 'output' field from the nested result as the main result
-        executionResult = result.result.output;
-        console.log(`[${windowId}] Using result.result.output as execution result:`, executionResult);
-      } else if (result.result) {
-        // Fallback to the entire result.result object
-        executionResult = result.result;
-        console.log(`[${windowId}] Using result.result as execution result:`, executionResult);
       } else {
-        // Fallback to the entire result
-        executionResult = result;
-        console.log(`[${windowId}] Using entire result as execution result:`, executionResult);
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
       }
-      
-      console.log(`[${windowId}] External execution completed for "${tool.name}":`, executionResult);
-      
-      return executionResult;
 
     } catch (error) {
       console.error(`[${windowId}] External execution error:`, error);
       
-      // If external execution fails, provide helpful error message
-      if (error.message.includes('fetch')) {
-        throw new Error(`Cannot connect to external execution service: ${error.message}`);
+      // Clear timeout if it exists
+      if (typeof timeoutId !== 'undefined') {
+        clearTimeout(timeoutId);
+      }
+      
+      // Handle specific error types
+      if (error.name === 'AbortError') {
+        throw new Error(`Code execution timed out after 30 seconds. Check if backend is running at http://127.0.0.1:5000`);
+      } else if (error.message.includes('fetch') || error.message.includes('Failed to fetch')) {
+        throw new Error(`Cannot connect to backend at http://127.0.0.1:5000. Please ensure the backend server is running.`);
+      } else if (error.message.includes('NetworkError')) {
+        throw new Error(`Network error connecting to backend. Check if backend is running at http://127.0.0.1:5000`);
       } else {
-        throw new Error(`External execution failed: ${error.message}`);
+        throw new Error(`Code execution failed: ${error.message}`);
       }
     }
   }
