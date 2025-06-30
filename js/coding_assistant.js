@@ -24,7 +24,7 @@ class CodingAssistant {
 
   setupEventListeners() {
     // Set up auto-complete for agent commands
-    this.setupAutoComplete();
+    // this.setupAutoComplete();
   }
 
   // This method is no longer needed since we integrate with sendMessage() directly

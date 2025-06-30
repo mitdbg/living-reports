@@ -13,7 +13,7 @@ def run_code(code: str) -> str:
         with contextlib.redirect_stdout(buffer):
             exec(code, {})
         return buffer.getvalue()
-    except Exception as e:
+    except Exception:
         return f"Error:\n{traceback.format_exc()}"
 
 @function_tool

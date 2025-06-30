@@ -43,6 +43,41 @@ cleanup() {
         kill $BACKEND_PID 2>/dev/null
     fi
     
+    # Cleanup MCP servers
+    echo "🔧 Cleaning up MCP servers..."
+    
+    # Kill processes using port 8000 (OAuth callback server)
+    OAUTH_PROCESSES=$(lsof -t -i :8000 2>/dev/null)
+    if [ ! -z "$OAUTH_PROCESSES" ]; then
+        echo "🗑️ Killing OAuth callback server processes on port 8000: $OAUTH_PROCESSES"
+        kill $OAUTH_PROCESSES 2>/dev/null
+        sleep 1
+    fi
+    
+    # Kill Google Workspace MCP server processes
+    GOOGLE_MCP_PROCESSES=$(pgrep -f "google_workspace_mcp" 2>/dev/null)
+    if [ ! -z "$GOOGLE_MCP_PROCESSES" ]; then
+        echo "🗑️ Killing Google Workspace MCP processes: $GOOGLE_MCP_PROCESSES"
+        kill $GOOGLE_MCP_PROCESSES 2>/dev/null
+        sleep 1
+    fi
+    
+    # Kill other MCP server processes (npx MCP servers)
+    NPX_MCP_PROCESSES=$(pgrep -f "mcp-server" 2>/dev/null)
+    if [ ! -z "$NPX_MCP_PROCESSES" ]; then
+        echo "🗑️ Killing NPX MCP server processes: $NPX_MCP_PROCESSES"
+        kill $NPX_MCP_PROCESSES 2>/dev/null
+        sleep 1
+    fi
+    
+    # Kill puppeteer MCP server processes
+    PUPPETEER_PROCESSES=$(pgrep -f "server-puppeteer" 2>/dev/null)
+    if [ ! -z "$PUPPETEER_PROCESSES" ]; then
+        echo "🗑️ Killing Puppeteer MCP processes: $PUPPETEER_PROCESSES"
+        kill $PUPPETEER_PROCESSES 2>/dev/null
+        sleep 1
+    fi
+    
     # Aggressively find and kill any remaining python_backend.py processes
     echo "🔍 Checking for any remaining python_backend.py processes..."
     REMAINING_BACKENDS=$(pgrep -f "python_backend.py")
@@ -69,8 +104,10 @@ cleanup() {
 # Set up signal handlers
 trap cleanup SIGINT SIGTERM
 
-# Kill any existing backend processes before starting
-echo "🔍 Checking for existing backend processes..."
+# Kill any existing backend and MCP processes before starting
+echo "🔍 Checking for existing backend and MCP processes..."
+
+# Kill existing backend processes
 EXISTING_BACKENDS=$(pgrep -f "python_backend.py")
 if [ ! -z "$EXISTING_BACKENDS" ]; then
     echo "🗑️ Found existing python_backend.py processes: $EXISTING_BACKENDS"
@@ -79,7 +116,42 @@ if [ ! -z "$EXISTING_BACKENDS" ]; then
     sleep 1
 fi
 
-echo "✅ Ready to start fresh backend processes"
+# Kill existing MCP server processes
+echo "🔧 Cleaning up existing MCP servers..."
+
+# Kill processes using port 8000 (OAuth callback server)
+OAUTH_PROCESSES=$(lsof -t -i :8000 2>/dev/null)
+if [ ! -z "$OAUTH_PROCESSES" ]; then
+    echo "🗑️ Killing existing OAuth callback server processes on port 8000: $OAUTH_PROCESSES"
+    kill $OAUTH_PROCESSES 2>/dev/null
+    sleep 1
+fi
+
+# Kill Google Workspace MCP server processes
+GOOGLE_MCP_PROCESSES=$(pgrep -f "google_workspace_mcp" 2>/dev/null)
+if [ ! -z "$GOOGLE_MCP_PROCESSES" ]; then
+    echo "🗑️ Killing existing Google Workspace MCP processes: $GOOGLE_MCP_PROCESSES"
+    kill $GOOGLE_MCP_PROCESSES 2>/dev/null
+    sleep 1
+fi
+
+# Kill other MCP server processes (npx MCP servers)
+NPX_MCP_PROCESSES=$(pgrep -f "mcp-server" 2>/dev/null)
+if [ ! -z "$NPX_MCP_PROCESSES" ]; then
+    echo "🗑️ Killing existing NPX MCP server processes: $NPX_MCP_PROCESSES"
+    kill $NPX_MCP_PROCESSES 2>/dev/null
+    sleep 1
+fi
+
+# Kill puppeteer MCP server processes
+PUPPETEER_PROCESSES=$(pgrep -f "server-puppeteer" 2>/dev/null)
+if [ ! -z "$PUPPETEER_PROCESSES" ]; then
+    echo "🗑️ Killing existing Puppeteer MCP processes: $PUPPETEER_PROCESSES"
+    kill $PUPPETEER_PROCESSES 2>/dev/null
+    sleep 1
+fi
+
+echo "✅ Ready to start fresh backend and MCP processes"
 
 # Start Python backend
 echo "🐍 Starting Python backend..."
