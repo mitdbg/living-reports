@@ -164,6 +164,22 @@ class ChatManager:
             f"- Current document preview: {current_preview[:200]}{'...' if len(current_preview) > 200 else ''}\n"
             f"- Current mode: {current_mode}\n\n"
             "🔥 REMEMBER: If you need a tool, respond with JSON ONLY! 🔥"
+            "🔥 REMEMBER: If you don't need a tool, respond with a normal text! 🔥\n\n"
+            "📋 HOW TO PRESENT TOOL RESULTS:\n"
+            "When you see 'Tool execution result:' in the conversation history, this means a tool was already executed.\n"
+            "DO NOT call another tool unless the user explicitly requests additional information.\n"
+            "Instead, provide a clear, natural language summary of the results:\n\n"
+            "✅ GOOD: 'I found 5 emails in your inbox. The most recent ones are from...'\n"
+            "✅ GOOD: 'Based on your calendar, you have 3 meetings today: ...'\n"
+            "✅ GOOD: 'Your database contains the following tables: ...'\n"
+            "❌ BAD: Another JSON tool call\n"
+            "❌ BAD: 'Tool executed successfully' (too generic)\n\n"
+            "PRESENTATION GUIDELINES:\n"
+            "- Be conversational and user-friendly\n"
+            "- Highlight key information from the tool results\n"
+            "- Use bullet points or lists for multiple items\n"
+            "- If results are empty, explain what was searched and suggest alternatives\n"
+            "- If there are errors, explain them in simple terms"
         )
         # Build messages array with system message (like test_mcp.py)
         messages = [{"role": "system", "content": system_message}]
