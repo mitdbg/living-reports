@@ -116,7 +116,7 @@ class VariableOperatorGenerator {
             
             <div class="code-preview" id="code-preview" style="display: none;">
               <h5>Generated Code: <span class="code-edit-hint">(editable)</span></h5>
-              <textarea class="code-editor" id="generated-code-editor" rows="15" spellcheck="false"></textarea>
+              <div class="code-editor" id="generated-code-editor" contenteditable="true" spellcheck="false" data-placeholder="Generated code will appear here..."></div>
               <div class="code-actions">
                 <button class="btn-secondary" id="run-code-btn" data-action="run-code">
                   <span class="btn-icon">▶️</span>
@@ -268,32 +268,37 @@ class VariableOperatorGenerator {
       
       .code-editor {
         width: 100%;
-        min-height: 300px;
-        padding: 12px;
-        font-family: 'Monaco', 'Consolas', 'Courier New', monospace;
-        font-size: 13px;
-        line-height: 1.4;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        background: #fff;
-        color: #333;
-        resize: vertical;
-        white-space: pre;
-        overflow: auto;
-        tab-size: 2;
+        min-height: 200px;
+        max-height: 400px;
+        font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+        border: 1px solid #555;
+        border-radius: 6px;
+        padding: 10px 15px;
+        outline: none;
+        font-size: 14px;
+        background: #1e1e1e;
+        color: #e6e6e6;
+        overflow-y: auto;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        box-sizing: border-box;
       }
       
       .code-editor:focus {
-        outline: none;
-        border-color: #1976d2;
-        box-shadow: 0 0 4px rgba(25, 118, 210, 0.3);
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.3);
+      }
+      
+      .code-editor:empty:before {
+        content: attr(data-placeholder);
+        color: #888;
+        font-style: italic;
+        pointer-events: none;
       }
       
       .code-editor::selection {
         background: #007bff;
         color: white;
-        padding: 12px;
-        margin-top: 12px;
       }
       
       .code-block {
@@ -393,110 +398,33 @@ class VariableOperatorGenerator {
    * Setup code editor functionality
    */
   setupCodeEditor() {
-    // Setup tab indentation and other code editor features
-    const setupTextareaHandlers = () => {
+    // Setup contenteditable div handlers (similar to operators.js approach)
+    const setupContentEditableHandlers = () => {
       const codeEditor = this.generatorDialog.querySelector('[id$="generated-code-editor"]');
       if (!codeEditor) return;
       
-      // Handle tab key for indentation
-      codeEditor.addEventListener('keydown', (e) => {
-        if (e.key === 'Tab') {
-          e.preventDefault();
-          
-          const start = codeEditor.selectionStart;
-          const end = codeEditor.selectionEnd;
-          const value = codeEditor.value;
-          
-          if (e.shiftKey) {
-            // Shift+Tab: Remove indentation
-            const lineStart = value.lastIndexOf('\n', start - 1) + 1;
-            const lineEnd = value.indexOf('\n', lineStart);
-            const actualLineEnd = lineEnd === -1 ? value.length : lineEnd;
-            const line = value.substring(lineStart, actualLineEnd);
-            
-            if (line.startsWith('  ')) {
-              // Remove 2 spaces
-              const newValue = value.substring(0, lineStart) + line.substring(2) + value.substring(actualLineEnd);
-              codeEditor.value = newValue;
-              codeEditor.setSelectionRange(Math.max(lineStart, start - 2), Math.max(lineStart, end - 2));
-            }
-          } else {
-            // Tab: Add indentation
-            codeEditor.value = value.substring(0, start) + '  ' + value.substring(end);
-            codeEditor.setSelectionRange(start + 2, start + 2);
-          }
-        }
-        
-        // Auto-indent on Enter
-        if (e.key === 'Enter') {
-          const start = codeEditor.selectionStart;
-          const value = codeEditor.value;
-          const lineStart = value.lastIndexOf('\n', start - 1) + 1;
-          const currentLine = value.substring(lineStart, start);
-          const indentMatch = currentLine.match(/^(\s*)/);
-          const currentIndent = indentMatch ? indentMatch[1] : '';
-          
-          // Add extra indent for lines ending with :, {, [, (
-          let extraIndent = '';
-          const trimmedLine = currentLine.trim();
-          if (trimmedLine.endsWith(':') || trimmedLine.endsWith('{') || 
-              trimmedLine.endsWith('[') || trimmedLine.endsWith('(')) {
-            extraIndent = '  ';
-          }
-          
-          setTimeout(() => {
-            const newStart = codeEditor.selectionStart;
-            const newValue = codeEditor.value;
-            const insertIndent = currentIndent + extraIndent;
-            
-            codeEditor.value = newValue.substring(0, newStart) + insertIndent + newValue.substring(newStart);
-            codeEditor.setSelectionRange(newStart + insertIndent.length, newStart + insertIndent.length);
-          }, 0);
-        }
-      });
-      
-      // Handle bracket/quote auto-completion
-      codeEditor.addEventListener('input', (e) => {
-        if (e.inputType === 'insertText') {
-          const start = codeEditor.selectionStart;
-          const value = codeEditor.value;
-          const char = e.data;
-          
-          // Auto-close brackets and quotes
-          const pairs = {
-            '(': ')',
-            '[': ']',
-            '{': '}',
-            '"': '"',
-            "'": "'"
-          };
-          
-          if (pairs[char] && start < value.length) {
-            const nextChar = value[start];
-            // Only auto-close if next character is whitespace or end of line
-            if (!nextChar || /\s/.test(nextChar)) {
-              codeEditor.value = value.substring(0, start) + pairs[char] + value.substring(start);
-              codeEditor.setSelectionRange(start, start);
-            }
-          }
-        }
-      });
-      
-      // Add syntax highlighting hints (basic)
+      // Update stored code when user edits (using innerHTML like operators.js)
       codeEditor.addEventListener('input', () => {
-        // Update stored code when user edits
-        this.generatedCode = codeEditor.value;
+        this.generatedCode = codeEditor.innerHTML;
+      });
+      
+      // Handle paste to preserve formatting
+      codeEditor.addEventListener('paste', (e) => {
+        e.preventDefault();
+        const text = (e.clipboardData || window.clipboardData).getData('text');
+        const htmlText = text.replace(/\n/g, '<br>');
+        document.execCommand('insertHTML', false, htmlText);
       });
     };
     
     // Setup handlers immediately if editor exists, or wait for it to be created
-    setupTextareaHandlers();
+    setupContentEditableHandlers();
     
     // Also setup when dialog becomes visible
     const originalShow = this.show.bind(this);
     this.show = function(...args) {
       const result = originalShow(...args);
-      setTimeout(setupTextareaHandlers, 100); // Give time for DOM to update
+      setTimeout(setupContentEditableHandlers, 100); // Give time for DOM to update
       return result;
     };
   }
@@ -735,7 +663,12 @@ class VariableOperatorGenerator {
     
     if (codePreview) codePreview.style.display = 'block';
     if (codeEditor) {
-      codeEditor.value = code;
+      // Convert newlines to <br> tags for contenteditable div (like operators.js)
+      if (code && (code.includes('<br>') || code.includes('<div>') || code.includes('<p>'))) {
+        codeEditor.innerHTML = code;
+      } else {
+        codeEditor.innerHTML = code ? code.replace(/\n/g, '<br>') : '';
+      }
       // Store the original generated code
       this.originalGeneratedCode = code;
     }
@@ -748,7 +681,15 @@ class VariableOperatorGenerator {
    */
   async runCode() {
     const codeEditor = getDocumentElement('generated-code-editor');
-    const currentCode = codeEditor ? codeEditor.value.trim() : '';
+    
+    if (!codeEditor) {
+      alert('Code editor not found.');
+      return;
+    }
+    
+    // Convert HTML back to plain text for execution (like operators.js convertHtmlCodeToPlainText)
+    const htmlCode = codeEditor.innerHTML;
+    const currentCode = this.convertHtmlCodeToPlainText(htmlCode).trim();
     
     if (!currentCode) {
       alert('No code to run. Generate code first.');
@@ -763,7 +704,7 @@ class VariableOperatorGenerator {
     console.log('Running current code from editor...');
     
     // Update the stored generated code with current editor content
-    this.generatedCode = currentCode;
+    this.generatedCode = htmlCode;
     console.log("Running code:", currentCode);
     console.log("Data source:", this.selectedDataSource);
     
@@ -779,7 +720,15 @@ class VariableOperatorGenerator {
    */
   async saveToolAndOperator() {
     const codeEditor = getDocumentElement('generated-code-editor');
-    const currentCode = codeEditor ? codeEditor.value.trim() : '';
+    
+    if (!codeEditor) {
+      alert('Code editor not found.');
+      return;
+    }
+    
+    // Get HTML code for storage and convert to plain text for execution
+    const htmlCode = codeEditor.innerHTML;
+    const currentCode = this.convertHtmlCodeToPlainText(htmlCode).trim();
     
     if (!currentCode) {
       alert('No code to save. Generate code first.');
@@ -809,9 +758,9 @@ class VariableOperatorGenerator {
       
       console.log('Current document ID:', currentDocumentId);
       
-      // Step 1: Save the tool
+      // Step 1: Save the tool (save HTML format like operators.js)
       console.log('Step 1: Saving tool...');
-      await this.saveTool(currentCode, toolName, toolDescription, currentDocumentId);
+      await this.saveTool(htmlCode, toolName, toolDescription, currentDocumentId);
       console.log('✓ Tool saved successfully');
       
       // Step 2: Get the tool ID for the operator
@@ -848,6 +797,23 @@ class VariableOperatorGenerator {
    */
   generateId() {
     return 'gen_tool_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+  }
+
+  /**
+   * Convert HTML code back to plain text (similar to operators.js convertHtmlCodeToPlainText)
+   */
+  convertHtmlCodeToPlainText(htmlCode) {
+    if (!htmlCode) return '';
+    
+    // Create a temporary div to parse HTML
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = htmlCode;
+    
+    // Convert <br> tags to newlines and get text content
+    const htmlWithNewlines = htmlCode.replace(/<br\s*\/?>/gi, '\n');
+    tempDiv.innerHTML = htmlWithNewlines;
+    
+    return tempDiv.textContent || tempDiv.innerText || '';
   }
 
   /**
@@ -1027,7 +993,14 @@ class VariableOperatorGenerator {
     console.log('Executing code directly and saving result for:', this.currentVariable.name);
     
     const codeEditor = getDocumentElement('generated-code-editor');
-    const currentCode = codeEditor ? codeEditor.value.trim() : '';
+    
+    if (!codeEditor) {
+      throw new Error('Code editor not found');
+    }
+    
+    // Convert HTML to plain text for execution
+    const htmlCode = codeEditor.innerHTML;
+    const currentCode = this.convertHtmlCodeToPlainText(htmlCode).trim();
     
     if (!currentCode) {
       throw new Error('No code available for execution');
@@ -1228,15 +1201,18 @@ class VariableOperatorGenerator {
    */
   extractDataSourceFromCode(code) {
     try {
+      // Convert HTML code to plain text first (in case it's stored in HTML format)
+      const plainTextCode = this.convertHtmlCodeToPlainText(code);
+      
       // Look for common patterns in the generated code
       // Pattern 1: pd.read_csv('filename')
-      const csvMatch = code.match(/pd\.read_csv\(['"]([^'"]+)['"]\)/);
+      const csvMatch = plainTextCode.match(/pd\.read_csv\(['"]([^'"]+)['"]\)/);
       if (csvMatch) {
         return csvMatch[1];
       }
 
       // Pattern 2: pd.read_csv(data_source) where data_source is parameters['data_source']
-      const paramMatch = code.match(/parameters\['data_source'\]/);
+      const paramMatch = plainTextCode.match(/parameters\['data_source'\]/);
       if (paramMatch) {
         // We know it uses parameters, but we need to check which data source was used
         // This is harder to extract automatically, so we'll just return null for now

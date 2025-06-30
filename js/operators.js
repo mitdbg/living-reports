@@ -172,7 +172,7 @@ class OperatorManager {
       const datasets = await this.getInputDatasets(instance.inputDatasets);
 
       // Execute the tool with datasets and parameters
-      const result = await executeToolWithData(tool, datasets, instance.parameters, windowId);
+      const result = await executeToolWithData(tool, datasets, instance.parameters, windowId, instance.outputs);
 
       console.log(`[${windowId}] Result:`, result);
       
