@@ -13,7 +13,7 @@ def run_code(code: str) -> str:
         with contextlib.redirect_stdout(buffer):
             exec(code, {})
         return buffer.getvalue()
-    except Exception as e:
+    except Exception:
         return f"Error:\n{traceback.format_exc()}"
 
 @function_tool
@@ -25,16 +25,6 @@ def explain_code(code: str) -> str:
         return f"Functions found: {functions}. AST structure parsed successfully."
     except Exception as e:
         return f"Failed to parse code: {e}"
-
-@function_tool
-def generate_tests(code: str) -> str:
-    """Create simple test functions based on the provided Python function."""
-    return (
-        "# Basic test skeleton\n"
-        "def test_function():\n"
-        "    assert your_function() == expected_value\n"
-        "# Replace with real inputs and outputs"
-    )
 
 @function_tool
 def format_code(code: str) -> str:

@@ -31,7 +31,6 @@ from pdf_processor import process_pdf_file
 from local_code_executor.code_executor import execute_code_locally
 from task_manager import TaskManager
 from pathlib import Path
-import os
 
 # Add parent directory to path for imports
 import sys
@@ -72,9 +71,43 @@ except Exception as e:
     logger.error(f"Failed to initialize OpenAI client: {e}")
     client = None
 
+# Initialize MCP service at application startup
+from simple_mcp_service import initialize_mcp
+
 # Global state
 view_registry = {}  # session_id -> View
 chat_manager = ChatManager(client, view_registry) if client else None
+task_manager = TaskManager()
+
+def initialize_mcp_at_startup():
+    """Initialize MCP service at startup with persistent event loop."""
+    import threading
+    import asyncio
+    
+    def init_mcp():
+        try:
+            logger.info("🚀 Starting MCP initialization at startup...")
+            # Use the service's own background loop initialization
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                success = loop.run_until_complete(initialize_mcp())
+                if success:
+                    logger.info("✅ MCP service initialized successfully at startup")
+                else:
+                    logger.warning("⚠️ MCP service initialization failed at startup")
+            finally:
+                loop.close()
+        except Exception as e:
+            logger.error(f"❌ Error during MCP startup initialization: {e}")
+    
+    # Start initialization in background thread to not block Flask startup
+    thread = threading.Thread(target=init_mcp, daemon=True)
+    thread.start()
+    logger.info("🔄 MCP initialization started in background thread")
+
+# Initialize MCP at startup
+initialize_mcp_at_startup()
 
 # Persistent storage for all documents
 DATABASE_DIR = 'database'
@@ -262,9 +295,7 @@ tools_storage = load_tools()
 @app.before_request
 def log_request():
     """Log all incoming requests for debugging."""
-    # print(f"📥 Incoming request: {request.method} {request.url}", flush=True)
-    if request.method == 'POST' and request.is_json:
-        print(f"📄 Request data: {request.get_json()}", flush=True)
+    print(f"📥 Incoming request: {request.method} {request.url}", flush=True)
 
 @app.route('/api/chat', methods=['POST'])
 def handle_chat():
@@ -348,14 +379,14 @@ def execute_template():
         # Get the rendered output with error handling
         try:
             output_data = view.render_output()
-            print(f"✅ render_output() completed")
+            print("✅ render_output() completed")
         except Exception as e:
             print(f"❌ Error in render_output(): {e}")
             raise e
             
         try:
             template_data = view.render_template()
-            print(f"✅ render_template() completed")
+            print("✅ render_template() completed")
         except Exception as e:
             print(f"❌ Error in render_template(): {e}")
             raise e
@@ -1269,7 +1300,7 @@ def suggest_variable():
         # Create structured prompt for LLM
         existing_vars_text = ""
         if existing_variables:
-            existing_vars_text = f"\nExisting variables in template:\n"
+            existing_vars_text = "\nExisting variables in template:\n"
             for var_name, var_info in existing_variables.items():
                 existing_vars_text += f"- {var_name}: {var_info.get('description', 'No description')} ({var_info.get('type', 'unknown')})\n"
         
@@ -1387,7 +1418,7 @@ JSON:"""
                         reconstructed_normalized = normalize_whitespace(reconstructed)
                         
                         if reconstructed_normalized != original_normalized:
-                            print(f"Warning: Reconstructed text doesn't match original after normalization.")
+                            print("Warning: Reconstructed text doesn't match original after normalization.")
                             print(f"  Original: '{selected_text}' (normalized: '{original_normalized}')")
                             print(f"  Reconstructed: '{reconstructed}' (normalized: '{reconstructed_normalized}')")
                             # Fallback: treat entire text as variable
@@ -2559,7 +2590,209 @@ def get_task_statistics():
             'error': str(e)
         }), 500
 
+# =============================================================================
+# MCP Service Integration - REST API Endpoints
+# =============================================================================
 
+@app.route('/api/mcp/status', methods=['GET'])
+def get_mcp_status():
+    """Get MCP service status and available servers"""
+    try:
+        from simple_mcp_service import get_mcp_status, is_mcp_available
+        
+        return jsonify({
+            'success': True,
+            'available': is_mcp_available(),
+            'servers': get_mcp_status()
+        })
+    except Exception as e:
+        logger.error(f"❌ Error getting MCP status: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/mcp/tools', methods=['GET'])
+def get_mcp_tools():
+    """Get all available MCP tools"""
+    try:
+        from simple_mcp_service import is_mcp_ready, initialize_mcp
+        
+        # Use the simple service - initialize if needed
+        if not is_mcp_ready():
+            logger.info("🔄 MCP not ready, initializing...")
+            # Initialize synchronously in a new event loop
+            import asyncio
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(initialize_mcp())
+            finally:
+                loop.close()
+        
+        # Get tools from service (no async needed in sync context)
+        from simple_mcp_service import get_mcp_service
+        tools = get_mcp_service().all_tools
+        
+        # Convert tools to dict format for JSON response
+        tools_data = [tool.to_dict() for tool in tools]
+        
+        return jsonify({
+            'success': True,
+            'tools': tools_data,
+            'count': len(tools_data)
+        })
+    
+    except Exception as e:
+        logger.error(f"❌ Error getting MCP tools: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/mcp/execute', methods=['POST'])
+def execute_mcp_tool_endpoint():
+    """Execute an MCP tool (simple approach like test_mcp.py)"""
+    try:
+        from simple_mcp_service import execute_mcp_tool
+        import asyncio
+        
+        data = request.get_json()
+        tool_name = data.get('tool_name')
+        arguments = data.get('arguments', {})
+        server_name = data.get('server_name')  # Optional
+        
+        if not tool_name:
+            return jsonify({
+                'success': False,
+                'error': 'tool_name is required'
+            }), 400
+        
+        async def run_tool():
+            return await execute_mcp_tool(tool_name, arguments, server_name)
+        
+        # Execute the tool (simple approach like test_mcp.py)
+        logger.info(f"🔧 Executing MCP tool: {tool_name}")
+        
+        # Simple asyncio.run approach like test_mcp.py
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            result = loop.run_until_complete(run_tool())
+            logger.info(f"✅ MCP tool '{tool_name}' executed successfully")
+            
+            return jsonify({
+                'success': True,
+                'result': result,
+                'tool_name': tool_name
+            })
+        finally:
+            loop.close()
+    
+    except Exception as e:
+        logger.error(f"❌ Error executing MCP tool '{tool_name}': {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/mcp/servers/<server_name>/restart', methods=['POST'])
+def restart_mcp_server(server_name):
+    """Restart a specific MCP server"""
+    try:
+        import asyncio
+        
+        async def restart():
+            # Simple service doesn't support restart - we'll need to reinitialize
+            logger.warning("Server restart not supported in simple service, reinitializing instead")
+            return await initialize_mcp()
+        
+        if hasattr(asyncio, 'run'):
+            success = asyncio.run(restart())
+        else:
+            loop = asyncio.get_event_loop()
+            success = loop.run_until_complete(restart())
+        
+        if success:
+            logger.info(f"✅ MCP server '{server_name}' restarted successfully")
+            return jsonify({
+                'success': True,
+                'message': f"Server '{server_name}' restarted successfully"
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': f"Failed to restart server '{server_name}'"
+            }), 500
+    
+    except Exception as e:
+        logger.error(f"❌ Error restarting MCP server '{server_name}': {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/mcp/initialize', methods=['POST'])
+def initialize_mcp_endpoint():
+    """Initialize MCP service"""
+    try:
+        from simple_mcp_service import initialize_mcp
+        
+        # Use async initialization in a new event loop
+        import asyncio
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            success = loop.run_until_complete(initialize_mcp())
+        except Exception as e:
+            logger.error(f"Error during MCP initialization: {e}")
+            success = False
+        finally:
+            loop.close()
+        
+        if success:
+            logger.info("✅ MCP service initialized via API")
+            return jsonify({
+                'success': True,
+                'message': 'MCP service initialized successfully'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Failed to initialize MCP service'
+            }), 500
+    
+    except Exception as e:
+        logger.error(f"❌ Error initializing MCP service: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/mcp/chat-status', methods=['GET'])
+def get_chat_mcp_status():
+    """Get MCP status from chat manager"""
+    try:
+        if chat_manager:
+            status = chat_manager.get_mcp_status()
+            return jsonify({
+                'success': True,
+                'chat_mcp_status': status
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Chat manager not available'
+            }), 500
+    
+    except Exception as e:
+        logger.error(f"❌ Error getting chat MCP status: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+      
+      
 if __name__ == '__main__':
     print("Starting Python backend server...")
     app.run(host='127.0.0.1', port=5000, debug=True) 

@@ -145,7 +145,7 @@ class Template:
                 html_parts.append('</table>')
                 return ''.join(html_parts)
                 
-            except Exception as e:
+            except Exception:
                 # If CSV parsing fails, return as plain text
                 return content
                 

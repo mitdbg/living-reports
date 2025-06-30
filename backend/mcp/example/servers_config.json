@@ -1,0 +1,28 @@
+{
+    "mcpServers": {
+        "google_workspace": {
+            "command": "uv",
+            "args": ["run", "main.py", "--single-user"],
+            "cwd": "/Users/chjun/Documents/GitHub/code/google_workspace_mcp",
+            "env": {
+                "MCP_SINGLE_USER_MODE": "1",
+                "OAUTHLIB_INSECURE_TRANSPORT": "1"
+            }
+        },
+        "sqlite": {
+            "command": "uvx",
+            "args": ["mcp-server-sqlite", "--db-path", "./test.db"]
+        },
+        "puppeteer": {
+            "command": "npx",
+            "args": ["-y", "@modelcontextprotocol/server-puppeteer"]
+        },
+        "sequential-thinking": {
+            "command": "npx",
+            "args": [
+              "-y",
+              "@modelcontextprotocol/server-sequential-thinking"
+            ]
+        }
+    }
+}
