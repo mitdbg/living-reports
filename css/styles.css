@@ -480,7 +480,7 @@ body, html {
 }
 
 .chat-panel {
-  flex: 0.3;
+  flex: 0.4;
   display: flex;
   flex-direction: column;
   background-color: white;
