@@ -150,7 +150,7 @@ function extractValueFromOutput(result, outputConfig) {
   }
 
 
-export async function executeToolWithData(tool, datasets, parameters, windowId='default', outputs=[]) {
+export async function executeOperatorWithData(tool, datasets, parameters, windowId='default', outputs=[]) {
     try {
       // Process parameters to separate datasets from literal values
       const processedParameters = {};

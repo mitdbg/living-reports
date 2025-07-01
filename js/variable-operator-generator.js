@@ -16,7 +16,8 @@ class VariableOperatorGenerator {
     this.isVisible = false;
     this.parentDialog = null;
     this.initialized = false;
-    this.lastExecutionResult = null;
+    this.variableExecutionResults = new Map(); // Store results per variable
+    this.instanceId = 'var_gen_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
   }
 
   /**
@@ -36,7 +37,7 @@ class VariableOperatorGenerator {
    * Show the tool generator floating window
    */
   async show(variableData, parentDialog) {
-    console.log('Showing Variable Tool Generator for variable:', variableData?.name);
+    console.log(`[${this.instanceId}] Showing Variable Tool Generator for variable:`, variableData?.name);
     
     this.currentVariable = variableData;
     this.parentDialog = parentDialog;
@@ -61,6 +62,9 @@ class VariableOperatorGenerator {
     
     // Update variable info display
     this.updateVariableInfo();
+    
+    // Restore previous execution result if available
+    this.restorePreviousExecutionResult();
   }
 
   /**
@@ -125,9 +129,9 @@ class VariableOperatorGenerator {
               </div>
             </div>
             
-            <div class="execution-result" id="execution-result" style="display: none;">
+            <div class="execution-result" id="execution-result-placeholder" style="display: none;">
               <h5>Execution Result:</h5>
-              <div class="result-content" id="result-content"></div>
+              <div class="result-content" id="result-content-placeholder"></div>
             </div>
           </div>
           
@@ -145,6 +149,10 @@ class VariableOperatorGenerator {
     this.generatorDialog = createDocumentDialog('variable-operator-generator-dialog', dialogHtml, 'variable-operator-generator');
     this.generatorDialog.className = 'variable-operator-generator-dialog';
     this.generatorDialog.style.display = 'none';
+    
+    // Store references to execution result elements for this dialog
+    this.executionResultElement = this.generatorDialog.querySelector('[id$="execution-result-placeholder"]');
+    this.resultContentElement = this.generatorDialog.querySelector('[id$="result-content-placeholder"]');
     
     // Add custom styling
     this.addCustomStyling();
@@ -478,9 +486,9 @@ class VariableOperatorGenerator {
   updateVariableInfo() {
     if (!this.currentVariable) return;
     
-    const nameEl = getDocumentElement('generator-variable-name');
-    const typeEl = getDocumentElement('generator-variable-type');
-    const descEl = getDocumentElement('generator-variable-description');
+    const nameEl = this.generatorDialog?.querySelector('[id$="generator-variable-name"]');
+    const typeEl = this.generatorDialog?.querySelector('[id$="generator-variable-type"]');
+    const descEl = this.generatorDialog?.querySelector('[id$="generator-variable-description"]');
     
     if (nameEl) nameEl.textContent = this.currentVariable.name || 'Unknown';
     if (typeEl) typeEl.textContent = this.currentVariable.type || 'text';
@@ -491,7 +499,7 @@ class VariableOperatorGenerator {
    * Populate data sources from data lake
    */
   async populateDataSources() {
-    const dropdown = getDocumentElement('generator-datasource-dropdown');
+    const dropdown = this.generatorDialog?.querySelector('[id$="generator-datasource-dropdown"]');
     if (!dropdown) return;
     
     // Get data sources from data lake
@@ -548,37 +556,17 @@ class VariableOperatorGenerator {
    * Select a data source
    */
   selectDataSource(selectedValue) {
-    console.log('selectDataSource called with:', selectedValue);
-    
     // Store the selected data source
     this.selectedDataSource = selectedValue;
     
     // Enable generate code button if a source is selected
-    // Try multiple ways to find the button
-    let genBtn = this.generatorDialog.querySelector('[data-action="generate-code"]');
-    console.log('Method 1 - [data-action="generate-code"]:', genBtn);
-    
-    if (!genBtn) {
-      genBtn = this.generatorDialog.querySelector('[id$="gen-code-btn"]');
-      console.log('Method 2 - [id$="gen-code-btn"]:', genBtn);
-    }
-    
-    if (!genBtn) {
-      genBtn = this.generatorDialog.querySelector('button.btn-primary');
-      console.log('Method 3 - button.btn-primary:', genBtn);
-    }
+    const genBtn = this.generatorDialog.querySelector('[data-action="generate-code"]') ||
+                   this.generatorDialog.querySelector('[id$="gen-code-btn"]') ||
+                   this.generatorDialog.querySelector('button.btn-primary');
     
     if (genBtn) {
-      const wasDisabled = genBtn.disabled;
       genBtn.disabled = !selectedValue;
-      console.log('Button found! Changed disabled from', wasDisabled, 'to', !selectedValue);
-      console.log('Button element:', genBtn);
-    } else {
-      console.error('Could not find generate code button!');
-      console.log('All buttons in dialog:', this.generatorDialog.querySelectorAll('button'));
     }
-    
-    console.log('Selected data source:', selectedValue);
   }
 
   /**
@@ -620,7 +608,7 @@ class VariableOperatorGenerator {
       
       if (result.success && result.code) {
         this.generatedCode = result.code;
-        this.showGeneratedCode(result.code);
+        this.showGeneratedCode(result.code, true); // Clear previous results for newly generated code
       } else {
         throw new Error(result.error || 'Failed to generate code');
       }
@@ -640,26 +628,22 @@ class VariableOperatorGenerator {
     const status = this.generatorDialog.querySelector('[id$="generation-status"]');
     const genBtn = this.generatorDialog.querySelector('[data-action="generate-code"]');
     
-    console.log('showGenerationLoading - status:', status, 'genBtn:', genBtn);
-    
     if (status) {
       status.style.display = show ? 'flex' : 'none';
     }
     
     if (genBtn) {
       genBtn.disabled = show;
-      genBtn.innerHTML = show ? 
-        'Generating...' : 
-        'Generate Code';
+      genBtn.innerHTML = show ? 'Generating...' : 'Generate Code';
     }
   }
 
   /**
    * Show generated code
    */
-  showGeneratedCode(code) {
-    const codePreview = getDocumentElement('code-preview');
-    const codeEditor = getDocumentElement('generated-code-editor');
+  showGeneratedCode(code, clearPreviousResults = false) {
+    const codePreview = this.generatorDialog?.querySelector('[id$="code-preview"]');
+    const codeEditor = this.generatorDialog?.querySelector('[id$="generated-code-editor"]');
     
     if (codePreview) codePreview.style.display = 'block';
     if (codeEditor) {
@@ -673,7 +657,16 @@ class VariableOperatorGenerator {
       this.originalGeneratedCode = code;
     }
     
-    console.log('Code generated successfully');
+    // Only clear execution results if explicitly requested (when new code is generated)
+    if (clearPreviousResults) {
+      if (this.executionResultElement) {
+        this.executionResultElement.style.display = 'none';
+      }
+      // Clear stored execution result for this variable
+      if (this.currentVariable?.name) {
+        this.variableExecutionResults.delete(this.currentVariable.name);
+      }
+    }
   }
 
   /**
@@ -701,22 +694,30 @@ class VariableOperatorGenerator {
       return;
     }
     
-    console.log('Running current code from editor...');
-    
     // Update the stored generated code with current editor content
     this.generatedCode = htmlCode;
-    console.log("Running code:", currentCode);
-    console.log("Data source:", this.selectedDataSource);
     
-    const output = await executeCodeForAuthorLocal(currentCode, this.selectedDataSource, this.currentVariable.name, window.documentManager?.activeDocumentId);
-    console.log("Execution result:", output);
+    // Show execution status
+    this.showExecutionStatus('Running code...');
     
-    // Store the execution result for later use
-    this.lastExecutionResult = output;
+    try {
+      // Execute code with isolated result handling
+      const output = await this.executeCodeIsolated(currentCode, this.selectedDataSource, this.currentVariable.name);
+      
+      // Store the execution result for this specific variable
+      this.variableExecutionResults.set(this.currentVariable.name, output);
+      
+      // Display the result in this specific dialog instance
+      this.showExecutionResult(output);
+      
+    } catch (error) {
+      console.error(`[${this.instanceId}] Error executing code:`, error);
+      this.showExecutionResult(`Error: ${error.message}`, true);
+    }
   }
 
   /**
-   * Save tool, create operator, and save variable value
+   * Save tool, create/update operator, and save variable value
    */
   async saveToolAndOperator() {
     const codeEditor = getDocumentElement('generated-code-editor');
@@ -740,11 +741,14 @@ class VariableOperatorGenerator {
       return;
     }
     
-    const toolName = `gen_${this.currentVariable.name}`;
-    const toolDescription = `Auto-generated tool for variable: ${this.currentVariable.name}`;
-    const operatorName = `op_${this.currentVariable.name}`;
+    // Check if we're updating existing operator/tool or creating new ones
+    const isUpdate = this.existingOperator && this.existingTool;
     
-    console.log('Starting saveToolAndOperator process for variable:', this.currentVariable.name);
+    const toolName = isUpdate ? this.existingTool.name : `gen_${this.currentVariable.name}`;
+    const toolDescription = isUpdate ? this.existingTool.description : `Auto-generated tool for variable: ${this.currentVariable.name}`;
+    const operatorName = isUpdate ? this.existingOperator.name : `op_${this.currentVariable.name}`;
+    
+    console.log(`${isUpdate ? 'Updating' : 'Creating'} tool and operator for variable:`, this.currentVariable.name);
     console.log('Data source:', this.selectedDataSource);
     console.log('Code length:', currentCode.length);
     
@@ -758,30 +762,43 @@ class VariableOperatorGenerator {
       
       console.log('Current document ID:', currentDocumentId);
       
-      // Step 1: Save the tool (save HTML format like operators.js)
-      console.log('Step 1: Saving tool...');
-      await this.saveTool(htmlCode, toolName, toolDescription, currentDocumentId);
-      console.log('✓ Tool saved successfully');
+      // Step 1: Save/update the tool
+      console.log(`Step 1: ${isUpdate ? 'Updating' : 'Saving'} tool...`);
+      if (isUpdate) {
+        await this.updateExistingTool(this.existingTool.id, htmlCode, toolName, toolDescription, currentDocumentId);
+      } else {
+        await this.saveTool(htmlCode, toolName, toolDescription, currentDocumentId);
+      }
+      console.log('✓ Tool saved/updated successfully');
       
       // Step 2: Get the tool ID for the operator
-      console.log('Step 2: Retrieving saved tool...');
+      console.log('Step 2: Retrieving tool...');
       const savedTool = await this.getToolByName(toolName, currentDocumentId);
       if (!savedTool) {
-        throw new Error('Failed to retrieve saved tool');
+        throw new Error('Failed to retrieve tool');
       }
       console.log('✓ Tool retrieved:', savedTool.id);
       
-      // Step 3: Create and save the operator
-      console.log('Step 3: Creating operator...');
-      await this.createAndSaveOperator(savedTool, operatorName, currentDocumentId);
-      console.log('✓ Operator created successfully');
+      // Step 3: Create/update the operator
+      console.log(`Step 3: ${isUpdate ? 'Updating' : 'Creating'} operator...`);
+      if (isUpdate) {
+        await this.updateExistingOperator(this.existingOperator.id, savedTool, operatorName, currentDocumentId);
+      } else {
+        await this.createAndSaveOperator(savedTool, operatorName, currentDocumentId);
+      }
+      console.log('✓ Operator created/updated successfully');
       
       // Step 4: Execute the code directly and save the variable value
       console.log('Step 4: Executing code directly...');
       const executionResult = await this.executeOperatorAndSaveResult(operatorName, currentDocumentId);
       console.log('✓ Code executed, result:', executionResult);
       
-      console.log('Successfully completed all steps');      
+      console.log(`Successfully completed all steps (${isUpdate ? 'update' : 'create'})`);      
+      
+      // Clear existing references
+      this.existingOperator = null;
+      this.existingTool = null;
+      
       // Close the generator
       this.hide();
       
@@ -814,6 +831,24 @@ class VariableOperatorGenerator {
     tempDiv.innerHTML = htmlWithNewlines;
     
     return tempDiv.textContent || tempDiv.innerText || '';
+  }
+
+  /**
+   * Execute code in isolation without affecting global UI elements
+   */
+  async executeCodeIsolated(code, dataSource, variableName) {
+    console.log(`[${this.instanceId}] Executing code in isolation for variable: ${variableName}`);
+    
+    // Use the same execution method but ensure no global UI updates
+    const result = await executeCodeForAuthorLocal(
+      code, 
+      dataSource, 
+      variableName, 
+      window.documentManager?.activeDocumentId || 'default'
+    );
+    
+    console.log(`[${this.instanceId}] Isolated execution completed for ${variableName}: ${result}`);
+    return result;
   }
 
   /**
@@ -891,6 +926,70 @@ class VariableOperatorGenerator {
     }
     
     console.log('Tool saved successfully');
+  }
+
+  /**
+   * Update an existing tool
+   */
+  async updateExistingTool(toolId, code, toolName, toolDescription, documentId) {
+    console.log('Updating existing tool:', toolId);
+    
+    // Get current tools first
+    let currentTools = [];
+    if (window.toolsManager && window.toolsManager.tools) {
+      currentTools = window.toolsManager.tools;
+    } else {
+      // Fallback to API
+      const response = await fetch(`http://127.0.0.1:5000/api/tools?documentId=${documentId}`);
+      const result = await response.json();
+      if (result.success) {
+        currentTools = result.tools || [];
+      }
+    }
+    
+    // Find and update the tool
+    const toolIndex = currentTools.findIndex(tool => tool.id === toolId);
+    if (toolIndex !== -1) {
+      currentTools[toolIndex] = {
+        ...currentTools[toolIndex],
+        name: toolName,
+        description: toolDescription,
+        code: code,
+        updatedAt: new Date().toISOString()
+      };
+      
+      console.log('Tool updated in memory');
+    } else {
+      throw new Error(`Tool with ID ${toolId} not found`);
+    }
+    
+    // Save all tools
+    const response = await fetch('http://127.0.0.1:5000/api/tools', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ 
+        documentId: documentId,
+        tools: currentTools 
+      })
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const result = await response.json();
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to update tool');
+    }
+    
+    // Update local tools manager if available
+    if (window.toolsManager) {
+      window.toolsManager.tools = currentTools;
+    }
+    
+    console.log('Tool updated successfully');
   }
 
   /**
@@ -987,6 +1086,60 @@ class VariableOperatorGenerator {
   }
 
   /**
+   * Update an existing operator instance
+   */
+  async updateExistingOperator(operatorId, tool, operatorName, documentId) {
+    console.log('Updating existing operator:', operatorId, 'with tool:', tool.name);
+    
+    // Ensure operators are initialized
+    if (!window.operatorManager) {
+      console.log('Operator manager not found, initializing operators...');
+      
+      // Import and initialize operators module
+      try {
+        const operatorsModule = await import('./operators.js');
+        if (operatorsModule.initOperators) {
+          operatorsModule.initOperators();
+          
+          // Give it a moment to initialize
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      } catch (error) {
+        console.error('Failed to import operators module:', error);
+        throw new Error('Failed to initialize operators module');
+      }
+    }
+    
+    // Check if operator manager is now available
+    if (!window.operatorManager) {
+      throw new Error('Operator manager not available after initialization. Please ensure operators module is loaded.');
+    }
+    
+    const operatorData = {
+      name: operatorName,
+      toolId: tool.id,
+      toolName: tool.name,
+      parameters: {
+        data_source: {
+          type: 'dataset',
+          value: this.selectedDataSource
+        }
+      },
+      outputs: [{
+        config: 'output',
+        variable: this.currentVariable.name
+      }],
+      documentId: documentId
+    };
+    
+    // Update the existing operator
+    console.log('Updating operator with data:', operatorData);
+    window.operatorManager.updateInstance(operatorId, operatorData);
+    
+    console.log('Operator updated successfully');
+  }
+
+  /**
    * Execute the code directly and save the result as variable value
    */
   async executeOperatorAndSaveResult(operatorName, documentId) {
@@ -1010,10 +1163,16 @@ class VariableOperatorGenerator {
       throw new Error('No data source selected');
     }
     
-    // Execute the code directly (same as runCode but without UI updates)
-    console.log('Executing code with data source:', this.selectedDataSource);
-    const executionResult = await executeCodeForAuthorLocal(currentCode, this.selectedDataSource, this.currentVariable.name, documentId);
+    // Execute the code directly using isolated execution
+    console.log(`[${this.instanceId}] Executing code with data source:`, this.selectedDataSource);
+    const executionResult = await this.executeCodeIsolated(currentCode, this.selectedDataSource, this.currentVariable.name);
     console.log('Direct execution result:', executionResult);
+    
+    // Store the execution result for this specific variable
+    if (executionResult !== null && executionResult !== undefined) {
+      this.variableExecutionResults.set(this.currentVariable.name, executionResult);
+    }
+    
     if (executionResult !== null && executionResult !== undefined && window.variablesManager) {
       console.log('✓ Conditions met, proceeding to save variables...');
       
@@ -1041,7 +1200,7 @@ class VariableOperatorGenerator {
   }
 
   /**
-   * Check for existing tools for this variable
+   * Check for existing tools and operators for this variable
    */
   async checkAndLoadExistingTools() {
     if (!this.currentVariable?.name) {
@@ -1049,10 +1208,10 @@ class VariableOperatorGenerator {
       return;
     }
 
-    console.log('Checking for existing tools for variable:', this.currentVariable.name);
+    console.log('Checking for existing tools and operators for variable:', this.currentVariable.name);
 
     // Show loading indicator
-    this.showLoadingIndicator('Checking for existing tools...');
+    this.showLoadingIndicator('Checking for existing tools and operators...');
 
     try {
       // Get current document ID
@@ -1064,7 +1223,23 @@ class VariableOperatorGenerator {
         return;
       }
 
-      // Get existing tools for this document
+      // First check for existing operators that output to this variable
+      let existingOperator = null;
+      if (window.operatorManager) {
+        const currentOperators = window.operatorManager.getCurrentDocumentInstances();
+        existingOperator = currentOperators.find(op => 
+          op.outputs && op.outputs.some(output => output.variable === this.currentVariable.name)
+        );
+      }
+
+      if (existingOperator) {
+        console.log('Found existing operator for variable:', existingOperator.name);
+        this.showLoadingIndicator('Loading existing operator configuration...');
+        await this.loadExistingOperator(existingOperator);
+        return;
+      }
+
+      // If no operator found, check for auto-generated tools
       let existingTools = [];
       if (window.toolsManager && window.toolsManager.tools) {
         existingTools = window.toolsManager.tools;
@@ -1082,7 +1257,7 @@ class VariableOperatorGenerator {
         tool.generatedFor === this.currentVariable.name && tool.autoGenerated
       );
 
-      console.log(`Found ${variableTools.length} existing tools for variable ${this.currentVariable.name}`);
+      console.log(`Found ${variableTools.length} existing auto-generated tools for variable ${this.currentVariable.name}`);
 
       if (variableTools.length > 0) {
         // Load the most recent tool (latest updatedAt)
@@ -1094,12 +1269,12 @@ class VariableOperatorGenerator {
         this.showLoadingIndicator('Loading existing tool...');
         await this.loadExistingTool(latestTool);
       } else {
-        console.log('No existing tools found, showing empty form');
+        console.log('No existing tools or operators found, showing empty form');
         this.resetToEmptyForm();
       }
 
     } catch (error) {
-      console.error('Error checking for existing tools:', error);
+      console.error('Error checking for existing tools and operators:', error);
       // Continue with empty form if there's an error
       this.resetToEmptyForm();
     } finally {
@@ -1151,19 +1326,154 @@ class VariableOperatorGenerator {
   }
 
   /**
+   * Show execution status in this dialog instance
+   */
+  showExecutionStatus(message) {
+    if (this.executionResultElement && this.resultContentElement) {
+      this.executionResultElement.style.display = 'block';
+      this.resultContentElement.innerHTML = `🔄 ${message}`;
+      this.resultContentElement.style.color = '#1976d2';
+    }
+  }
+
+  /**
+   * Restore previous execution result when reopening dialog
+   */
+  restorePreviousExecutionResult() {
+    if (!this.currentVariable?.name) {
+      return;
+    }
+    
+    // Get the execution result for this specific variable
+    const variableResult = this.variableExecutionResults.get(this.currentVariable.name);
+    
+    if (variableResult !== null && variableResult !== undefined) {
+      this.showExecutionResult(variableResult, false);
+    }
+  }
+
+  /**
+   * Show execution result in this dialog instance
+   */
+  showExecutionResult(result, isError = false) {
+    if (this.executionResultElement && this.resultContentElement) {
+      this.executionResultElement.style.display = 'block';
+      
+      // Simple, clean display
+      if (isError) {
+        this.resultContentElement.innerHTML = `❌ ${result}`;
+        this.resultContentElement.style.color = '#d32f2f';
+      } else {
+        this.resultContentElement.innerHTML = `✅ ${String(result)}`;
+        this.resultContentElement.style.color = '#2e7d32';
+      }
+    }
+  }
+
+  /**
+   * Load an existing operator into the generator
+   */
+  async loadExistingOperator(operator) {
+    console.log('Loading existing operator data:', operator);
+
+    try {
+      // Get the tool associated with this operator
+      let tool = null;
+      if (window.toolsManager && window.toolsManager.tools) {
+        tool = window.toolsManager.tools.find(t => t.id === operator.toolId);
+      }
+      
+      if (!tool) {
+        // Fallback to API
+        const currentDocumentId = window.documentManager?.activeDocumentId;
+        const response = await fetch(`http://127.0.0.1:5000/api/tools?documentId=${currentDocumentId}`);
+        const result = await response.json();
+        if (result.success) {
+          const tools = result.tools || [];
+          tool = tools.find(t => t.id === operator.toolId);
+        }
+      }
+
+      if (tool) {
+        // Show the code preview section with existing code
+        this.showGeneratedCode(tool.code, false); // Don't clear previous results for existing code
+
+        // Extract data source from operator parameters
+        let dataSource = null;
+        if (operator.parameters && operator.parameters.data_source) {
+          if (typeof operator.parameters.data_source === 'object') {
+            dataSource = operator.parameters.data_source.value;
+          } else {
+            dataSource = operator.parameters.data_source;
+          }
+        }
+
+        if (dataSource) {
+          // Set the data source dropdown
+          const dropdown = this.generatorDialog?.querySelector('[id$="generator-datasource-dropdown"]');
+          if (dropdown) {
+            // Find matching option and select it
+            for (let option of dropdown.options) {
+              if (option.value === dataSource) {
+                dropdown.value = dataSource;
+                this.selectDataSource(dataSource);
+                break;
+              }
+            }
+          }
+        }
+
+        // Update the dialog title to indicate editing
+        const header = this.generatorDialog.querySelector('.dialog-header h3');
+        if (header) {
+          header.innerHTML = `🔧 Edit Existing Operator: ${operator.name}`;
+        }
+
+        // Change button text to indicate regeneration
+        const generateBtn = this.generatorDialog.querySelector('[data-action="generate-code"]');
+        if (generateBtn && dataSource) {
+          generateBtn.textContent = 'Regenerate Code';
+          generateBtn.disabled = false;
+        }
+
+        // Change save button text to indicate update mode
+        const saveBtn = this.generatorDialog.querySelector('[data-action="save-tool-operator"]');
+        if (saveBtn) {
+          saveBtn.innerHTML = 'Update Tool & Operator';
+        }
+
+        // Store reference to existing operator for update
+        this.existingOperator = operator;
+        this.existingTool = tool;
+
+        // Try to load the current variable value as the execution result
+        await this.loadCurrentVariableValue();
+
+      } else {
+        console.error('Could not find tool for operator:', operator.toolId);
+        this.resetToEmptyForm();
+      }
+
+    } catch (error) {
+      console.error('Error loading existing operator:', error);
+      this.resetToEmptyForm();
+    }
+  }
+
+  /**
    * Load an existing tool into the generator
    */
   async loadExistingTool(tool) {
     console.log('Loading existing tool data:', tool);
 
     // Show the code preview section with existing code
-    this.showGeneratedCode(tool.code);
+    this.showGeneratedCode(tool.code, false); // Don't clear previous results for existing code
 
     // Try to extract data source information from the code
     const extractedDataSource = this.extractDataSourceFromCode(tool.code);
     if (extractedDataSource) {
       // Set the data source dropdown
-      const dropdown = getDocumentElement('generator-datasource-dropdown');
+      const dropdown = this.generatorDialog?.querySelector('[id$="generator-datasource-dropdown"]');
       if (dropdown) {
         // Find matching option and select it
         for (let option of dropdown.options) {
@@ -1194,6 +1504,9 @@ class VariableOperatorGenerator {
     if (saveBtn) {
       saveBtn.innerHTML = 'Save';
     }
+
+    // Store reference to existing tool for update
+    this.existingTool = tool;
   }
 
   /**
@@ -1228,52 +1541,80 @@ class VariableOperatorGenerator {
   }
 
   /**
+   * Load the current variable value as execution result
+   */
+  async loadCurrentVariableValue() {
+    if (!this.currentVariable?.name) {
+      return;
+    }
+
+    try {
+      // Get the current variable value from variables manager
+      if (window.variablesManager) {
+        await window.variablesManager.loadVariables();
+        const variable = window.variablesManager.variables.get(this.currentVariable.name);
+        
+        if (variable && variable.value !== null && variable.value !== undefined) {
+          // Store as execution result for this variable
+          this.variableExecutionResults.set(this.currentVariable.name, variable.value);
+        }
+      }
+    } catch (error) {
+      console.error(`Error loading current variable value:`, error);
+    }
+  }
+
+  /**
    * Reset the form to empty state for new tool generation
    */
   resetToEmptyForm() {
     console.log('Resetting to empty form for new tool generation');
 
     // Hide code preview
-    const codePreview = getDocumentElement('code-preview');
+    const codePreview = this.generatorDialog?.querySelector('[id$="code-preview"]');
     if (codePreview) {
       codePreview.style.display = 'none';
     }
 
-    // Hide execution result
-    const executionResult = getDocumentElement('execution-result');
+    // Hide execution result in this specific dialog instance
+    const executionResult = document.getElementById(this.executionResultId);
     if (executionResult) {
       executionResult.style.display = 'none';
     }
 
     // Reset dropdown to default
-    const dropdown = getDocumentElement('generator-datasource-dropdown');
+    const dropdown = this.generatorDialog?.querySelector('[id$="generator-datasource-dropdown"]');
     if (dropdown) {
       dropdown.value = '';
     }
 
     // Reset generate button
-    const generateBtn = this.generatorDialog.querySelector('[data-action="generate-code"]');
+    const generateBtn = this.generatorDialog?.querySelector('[data-action="generate-code"]');
     if (generateBtn) {
       generateBtn.textContent = 'Generate Code';
       generateBtn.disabled = true;
     }
 
-    // Reset save button (no longer exists in code actions, it's in dialog actions now)
-    const saveBtn = this.generatorDialog.querySelector('[data-action="save-tool-operator"]');
+    // Reset save button
+    const saveBtn = this.generatorDialog?.querySelector('[data-action="save-tool-operator"]');
     if (saveBtn) {
       saveBtn.innerHTML = 'Save';
     }
 
     // Reset dialog title
-    const header = this.generatorDialog.querySelector('.dialog-header h3');
+    const header = this.generatorDialog?.querySelector('.dialog-header h3');
     if (header) {
       header.innerHTML = '🔧 Generate Variable Tool & Operator';
     }
 
-    // Clear stored code
+    // Clear stored code and references
     this.generatedCode = '';
     this.originalGeneratedCode = '';
     this.selectedDataSource = null;
+    this.existingOperator = null;
+    this.existingTool = null;
+    // Clear all variable execution results on complete reset
+    this.variableExecutionResults.clear();
   }
 }
 

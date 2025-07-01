@@ -3,7 +3,7 @@ import { elements, state, updateState, windowId } from './state.js';
 import { addMessageToUI } from './chat.js';
 import { getCurrentUser } from './auth.js';
 import { createDocumentElementId } from './element-id-manager.js';
-import { executeToolWithData, convertHtmlCodeToPlainText } from './execute_tool_util.js';
+import { executeCodeForAuthorLocal, convertHtmlCodeToPlainText } from './execute_tool_util.js';
 
 // Create window-specific storage
 const CODE_INSTANCES_KEY = `operators_${windowId}`;
@@ -155,6 +155,8 @@ class OperatorManager {
 
     console.log(`[${windowId}] Executing operator: ${instance.name}`);
     
+    let dataSource = null; // Declare dataSource in the broader scope
+    
     try {
       // Update status
       instance.status = 'running';
@@ -168,42 +170,77 @@ class OperatorManager {
         throw new Error(`Tool not found: ${instance.toolId}`);
       }
 
-      // Get input datasets
-      const datasets = await this.getInputDatasets(instance.inputDatasets);
+      // Get the tool code and convert to plain text for execution
+      const plainTextCode = convertHtmlCodeToPlainText(tool.code);
+      
+      // Get the primary data source from parameters (same as variable-operator-generator approach)
+      if (instance.parameters && instance.parameters.data_source) {
+        if (typeof instance.parameters.data_source === 'object') {
+          dataSource = instance.parameters.data_source.value;
+        } else {
+          dataSource = instance.parameters.data_source;
+        }
+      }
+      
+      console.log(`[${windowId}] Executing with data source:`, dataSource);
+      console.log(`[${windowId}] Code to execute:`, plainTextCode);
 
-      // Execute the tool with datasets and parameters
-      const result = await executeToolWithData(tool, datasets, instance.parameters, windowId, instance.outputs);
+      // Execute using the same method as variable-operator-generator
+      const result = await executeCodeForAuthorLocal(
+        plainTextCode, 
+        dataSource, 
+        instance.name, 
+        window.documentManager?.activeDocumentId || 'default'
+      );
 
       console.log(`[${windowId}] Result:`, result);
       
       // Update instance with results
       instance.output = result;
-      instance.status = 'completed';
       instance.lastExecuted = new Date().toISOString();
       instance.error = null;
 
-      // Store outputs in variables if specified
+      // Store outputs in variables if specified (same as variable-operator-generator approach)
       const outputsToProcess = instance.outputs || [];
       
-      // Only process outputs if execution was successful (result has data, not error)
-      if (result && typeof result === 'object' && !result.error && result.status !== 'error') {
+      // Check if execution was successful (result is not null/undefined)
+      if (result !== null && result !== undefined) {
+        instance.status = 'completed';
+        
         for (const output of outputsToProcess) {
           if (output.variable && output.variable.trim()) {
             try {
               // Extract the value using the output configuration
               let valueToStore = result;
               
-              if (output.config && output.config.trim()) {
+              // For executeCodeForAuthorLocal, the result is the direct value
+              // but we still support output config for nested value extraction
+              if (output.config && output.config.trim() && output.config !== 'output') {
                 valueToStore = this.extractValueFromOutput(result, output.config);
                 console.log(`[${windowId}] Extracted value using config "${output.config}":`, valueToStore);
               }
               
-              // Import variables manager and store the result
+              // Import variables manager and store the result (same as variable-operator-generator)
               const { variablesManager } = await import('./variables.js');
               if (variablesManager) {
-                await variablesManager.setVariableValue(output.variable, valueToStore);
-                console.log(`[${windowId}] Stored output in variable: ${output.variable}`);
-                addMessageToUI('system', `📊 Output stored in variable: \${${output.variable}} = ${JSON.stringify(valueToStore)}`);
+                // Get current variables first
+                await variablesManager.loadVariables();
+                
+                const variable = variablesManager.variables.get(output.variable);
+                if (variable) {
+                  variable.value = valueToStore;
+                  variable.lastUpdated = new Date().toISOString();
+                  variable.extractedBy = instance.name;
+                  variable.dataSource = dataSource;
+                  
+                  // Save the updated variables
+                  await variablesManager.saveVariables();
+                  console.log(`[${windowId}] Stored output in variable: ${output.variable} = ${valueToStore}`);
+                  addMessageToUI('system', `📊 Output stored in variable: \${${output.variable}} = ${JSON.stringify(valueToStore)}`);
+                } else {
+                  console.warn(`[${windowId}] Variable not found: ${output.variable}`);
+                  addMessageToUI('system', `⚠️ Warning: Variable ${output.variable} not found`);
+                }
               }
             } catch (error) {
               console.warn(`[${windowId}] Failed to store output in variable ${output.variable}:`, error);
@@ -219,18 +256,14 @@ class OperatorManager {
         addMessageToUI('system', `✅ operator executed: ${instance.name}`);
   
         return result;
-
-
-      } 
-
-      if (result.status === 'error') {
+      } else {
+        // Execution failed
         instance.status = 'error';
-        instance.error = result.error.substring(0, 200);
-        instance.lastExecuted = new Date().toISOString();
+        instance.error = 'Execution returned null or undefined result';
         this.saveInstances();
         this.notifyInstanceUpdate(instance);
-        addMessageToUI('system', `❌ Error executing ${instance.name}: ${result.error}`);
-        return result;
+        addMessageToUI('system', `❌ Error executing ${instance.name}: No result returned`);
+        throw new Error('Execution returned null or undefined result');
       }
 
     } catch (error) {
@@ -323,22 +356,38 @@ class OperatorManager {
     
     for (const ref of datasetReferences) {
       if (typeof ref === 'string') {
-        // Simple string reference to dataset name
-        const dataset = window.dataLakeModule?.getDataSource(ref);
+        // Simple string reference to dataset name or file path
+        let dataset = window.dataLakeModule?.getDataSource(ref);
+        if (!dataset) {
+          // Try to find by file path if not found by reference name
+          const allDataSources = window.dataLakeModule?.getAllDataSources() || [];
+          dataset = allDataSources.find(ds => ds.filePath === ref || ds.referenceName === ref);
+        }
+        
         if (dataset) {
           datasets.push({
-            name: ref,
+            name: dataset.referenceName || ref,
             data: dataset
           });
+        } else {
+          console.warn(`[${windowId}] Dataset not found: ${ref}`);
         }
       } else if (typeof ref === 'object' && ref.name) {
         // Object with name and optional alias
-        const dataset = window.dataLakeModule?.getDataSource(ref.name);
+        let dataset = window.dataLakeModule?.getDataSource(ref.name);
+        if (!dataset) {
+          // Try to find by file path if not found by reference name
+          const allDataSources = window.dataLakeModule?.getAllDataSources() || [];
+          dataset = allDataSources.find(ds => ds.filePath === ref.name || ds.referenceName === ref.name);
+        }
+        
         if (dataset) {
           datasets.push({
-            name: ref.alias || ref.name,
+            name: ref.alias || dataset.referenceName || ref.name,
             data: dataset
           });
+        } else {
+          console.warn(`[${windowId}] Dataset not found: ${ref.name}`);
         }
       }
     }
@@ -668,6 +717,35 @@ export function initOperators() {
   
   // Set up document switching listener to refresh operators
   setupDocumentSwitchingListener();
+  
+  // Ensure window.operatorsModule is available immediately after initialization
+  // This fixes the race condition where template execution happens before the global assignment
+  if (!window.operatorsModule) {
+    window.operatorsModule = {
+      showOperatorsDialog,
+      hideOperatorsDialog,
+      showOperatorsListView,
+      showToolEditor,
+      showInstanceEditor,
+      saveTool,
+      saveInstance,
+      executeInstanceById,
+      deleteInstance,
+      addParameterField,
+      addOutputField,
+      openInstanceFromReference,
+      styleInstanceReferences,
+      executeRequiredOperatorsForTemplate,
+      refreshOperatorsToolsList,
+      setupToolsSidebarEventListeners,
+      autoPopulateOperatorFields,
+      callLLMForToolAnalysis,
+      populateSuggestedFields,
+      showOperatorLoadingIndicator,
+      hideOperatorLoadingIndicator
+    };
+    console.log(`[${windowId}] window.operatorsModule set up in initOperators`);
+  }
   
   console.log(`[${windowId}] operators initialized`);
 }
@@ -1442,11 +1520,15 @@ function addParameterField(key = '', value = '', valueType = 'literal') {
   const container = documentContainer.querySelector(`#${createDocumentElementId('embedded-instance-parameters')}`);
   if (!container) return;
 
-  // Get available datasets for the dropdown
+  // Get available datasets for the dropdown (use same approach as variable-operator-generator)
   const datasets = window.dataLakeModule?.getAllDataSources() || [];
-  const datasetOptions = datasets.map(dataset => 
-    `<option value="${dataset.name}" ${valueType === 'dataset' && value === dataset.name ? 'selected' : ''}>${dataset.name} (${dataset.type || 'dataset'})</option>`
-  ).join('');
+  const datasetOptions = datasets.map(dataset => {
+    // Use filePath as the value for code execution, fallback to referenceName for backward compatibility
+    const datasetValue = dataset.filePath || dataset.referenceName;
+    const isSelected = valueType === 'dataset' && (value === datasetValue || value === dataset.referenceName);
+    const displayName = `${getFileIcon(dataset.type)} ${dataset.name} ($${dataset.referenceName})`;
+    return `<option value="${datasetValue}" ${isSelected ? 'selected' : ''}>${displayName}</option>`;
+  }).join('');
 
   const field = document.createElement('div');
   field.className = 'parameter-field';
@@ -2290,6 +2372,24 @@ function escapeHtml(text) {
   const div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;
+}
+
+/**
+ * Get file icon based on type (same as variable-operator-generator)
+ */
+function getFileIcon(type) {
+  const iconMap = {
+    'text/csv': '📊',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '📈',
+    'application/vnd.ms-excel': '📈',
+    'application/pdf': '📄',
+    'text/plain': '📝',
+    'application/json': '🔧',
+    'text/javascript': '⚡',
+    'text/html': '🌐'
+  };
+  
+  return iconMap[type] || '📁';
 }
 
 // Export functions

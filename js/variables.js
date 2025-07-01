@@ -89,14 +89,13 @@ class VariablesManager {
    */
   setupTextSelection() {
     document.addEventListener('mouseup', (e) => {
-      // Ignore clicks on UI elements that shouldn't trigger variable suggestions
-      if (e.target.closest('.variables-btn') || 
-          e.target.closest('.floating-variable-button') ||
-          e.target.closest('.variable-dialog') ||
-          e.target.closest('.variables-panel-dialog') ||
-          e.target.closest('button') ||
-          e.target.closest('.btn-primary') ||
-          e.target.closest('.btn-secondary')) {
+
+      const selection = window.getSelection();
+      const selectedText = selection.toString().trim();
+
+      // if the is not in the template editor, return
+      if (!this.isInTemplateContent(selection) || selectedText.length === 0) {
+        this.hideFloatingButton();
         return;
       }
       
@@ -125,12 +124,6 @@ class VariablesManager {
     const selection = window.getSelection();
     const selectedText = selection.toString().trim();
     
-    console.log('Text selection detected:', {
-      selectedText,
-      selectionLength: selectedText.length,
-      rangeCount: selection.rangeCount
-    });
-    
     if (selectedText.length > 0 && selection.rangeCount > 0) {
       const isInTemplate = this.isInTemplateContent(selection);
       console.log('Is in template content:', isInTemplate);
@@ -139,7 +132,6 @@ class VariablesManager {
         this.selectedText = selectedText;
         this.selectedRange = selection.getRangeAt(0).cloneRange();
         
-        console.log('Showing floating button for selection:', selectedText);
         this.showFloatingButton(e);
       } else {
         this.hideFloatingButton();
@@ -218,13 +210,9 @@ class VariablesManager {
     const x = mouseEvent.clientX;
     const y = mouseEvent.clientY;
     
-    console.log('Positioning floating button at:', { x: x + 10, y: y - 40 });
-    
     this.floatingButton.style.left = `${x + 10}px`;
     this.floatingButton.style.top = `${y - 40}px`;
     this.floatingButton.style.display = 'block';
-    
-    console.log('Floating button should now be visible');
   }
 
   /**
@@ -737,10 +725,8 @@ class VariablesManager {
       return;
     }
     
-    console.log('Updating variables list and showing panel');
     this.updateVariablesList();
     this.variablesPanel.style.display = 'flex';
-    console.log('Variables panel should now be visible');
   }
 
   hideVariablesPanel() {
@@ -934,16 +920,12 @@ class VariablesManager {
     if (!variablesList) {
       console.error('Variables list element not found in panel');
       return;
-    }
-    console.log('Using variables list element:', variablesList);
-    
+    }    
     // Clear existing content
     variablesList.innerHTML = '';
     
     console.log('Displaying', this.variables.size, 'variables');
-    
     this.variables.forEach((variable, name) => {
-      console.log('Adding variable to list:', name, variable);
       const variableItem = document.createElement('div');
       variableItem.className = 'variable-item';
       variableItem.innerHTML = `
@@ -962,13 +944,8 @@ class VariablesManager {
           <span class="variable-original">Original: "${variable.originalText}"</span>
         </div>
       `;
-      
-      console.log('Created variable item:', variableItem);
-      console.log('Variable item HTML:', variableItem.outerHTML);
-      
+            
       variablesList.appendChild(variableItem);
-      console.log('Variable item appended, variables list now has', variablesList.children.length, 'children');
-      console.log('Variables list content:', variablesList.innerHTML);
     });
 
     this.variablesPanel.style.display = 'flex';

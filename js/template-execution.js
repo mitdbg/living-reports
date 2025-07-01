@@ -35,6 +35,11 @@ function createDocumentAnnotationId(baseId) {
 // Operators Integration - Execute required operators before template processing
 async function executeRequiredOperatorsBeforeTemplate(templateText, isLiveUpdate = false) {
   try {
+    // Debug logging for operators module availability
+    console.log(`[${windowId}] Checking operators module availability:`);
+    console.log(`[${windowId}] - window.operatorsModule exists:`, !!window.operatorsModule);
+    console.log(`[${windowId}] - executeRequiredOperatorsForTemplate exists:`, !!(window.operatorsModule && window.operatorsModule.executeRequiredOperatorsForTemplate));
+    
     // Only execute operators if operators module is available
     if (!window.operatorsModule || !window.operatorsModule.executeRequiredOperatorsForTemplate) {
       console.log(`[${windowId}] Operators module not available, skipping operator execution`);
