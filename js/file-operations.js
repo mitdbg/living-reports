@@ -434,6 +434,17 @@ function displayContextInPreview(file) {
     case 'ppt':
       renderedContent = renderPowerPoint(file);
       break;
+    case 'png':
+    case 'jpg':
+    case 'jpeg':
+    case 'gif':
+    case 'bmp':
+    case 'tiff':
+    case 'webp':
+    case 'svg':
+    case 'ico':
+      renderedContent = renderImage(file);
+      break;
     default:
       renderedContent = renderPlainText(file.content);
   }
@@ -453,8 +464,6 @@ function displayContextInPreview(file) {
   // Switch to preview mode
   switchToPreview();
 }
-
-
 
 // Format renderers
 function renderMarkdown(content) {
@@ -620,6 +629,37 @@ function renderJSON(content) {
   } catch (error) {
     return `<div class="json-content"><p>Error parsing JSON: ${error.message}</p><pre>${escapeHtml(content)}</pre></div>`;
   }
+}
+
+function renderImage(file) {
+  // Get MIME type based on file extension
+  const ext = file.name.split('.').pop().toLowerCase();
+  const mimeTypes = {
+    'png': 'image/png',
+    'jpg': 'image/jpeg', 
+    'jpeg': 'image/jpeg',
+    'gif': 'image/gif',
+    'bmp': 'image/bmp',
+    'webp': 'image/webp',
+    'svg': 'image/svg+xml',
+    'ico': 'image/x-icon',
+    'tiff': 'image/tiff',
+    'tif': 'image/tiff'
+  };
+  
+  const mimeType = mimeTypes[ext] || 'image/png';
+  
+  // Create data URL from base64 content
+  const dataUrl = `data:${mimeType};base64,${file.content}`;
+  
+  return `<img src="${dataUrl}" alt="${file.name}" style="max-width: 100%; height: auto;" />`;
+}
+
+// Helper function to format file size
+function formatFileSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' KB';
+  return Math.round(bytes / (1024 * 1024)) + ' MB';
 }
 
 // Client-side PPTX processing using PPTX2HTML
