@@ -772,6 +772,23 @@ body, html {
   overflow-y: auto;
   overflow-x: auto;
   word-wrap: break-word;
+  /* Prevent text selection but allow scrolling */
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+}
+
+/* Ensure all nested elements in preview content are also un-editable */
+.preview-content *,
+.preview-content *::before,
+.preview-content *::after {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  -ms-user-select: none !important;
+  pointer-events: none !important;
+  contenteditable: false !important;
 }
 
 .floating-comment {
