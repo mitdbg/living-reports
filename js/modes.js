@@ -223,6 +223,17 @@ export function switchToPreview() {
   
   updateModeButtonStates('preview');
   
+  // Auto-execute template if switching from template mode and user can switch modes
+  if (canUserSwitchModes()) {
+    console.log(`[${windowId}] Auto-executing template when switching to preview`);
+    // Import and execute template - use dynamic import to avoid circular dependency
+    import('./template-execution.js').then(module => {
+      module.executeTemplate(false, true); // isLiveUpdate = true to avoid showing status messages
+    }).catch(error => {
+      console.error(`[${windowId}] Error auto-executing template:`, error);
+    });
+  }
+  
   // Refresh highlights when switching to preview mode
   setTimeout(() => refreshHighlightEventListeners(), 100);
 }
@@ -299,13 +310,9 @@ function enforceConsumerMode() {
       getElements.templatePanel.style.display = 'none';
     }
     
-    // Hide execute buttons for consumers (they can't execute code or templates)
+    // Hide execute buttons for consumers (they can't execute code)
     if (getElements.executeSourceBtn) {
       getElements.executeSourceBtn.style.display = 'none';
-    }
-    
-    if (getElements.executeTemplateBtn) {
-      getElements.executeTemplateBtn.style.display = 'none';
     }
     
     // Hide the source and template controls sections

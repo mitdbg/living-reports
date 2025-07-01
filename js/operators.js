@@ -669,6 +669,35 @@ export function initOperators() {
   // Set up document switching listener to refresh operators
   setupDocumentSwitchingListener();
   
+  // Ensure window.operatorsModule is available immediately after initialization
+  // This fixes the race condition where template execution happens before the global assignment
+  if (!window.operatorsModule) {
+    window.operatorsModule = {
+      showOperatorsDialog,
+      hideOperatorsDialog,
+      showOperatorsListView,
+      showToolEditor,
+      showInstanceEditor,
+      saveTool,
+      saveInstance,
+      executeInstanceById,
+      deleteInstance,
+      addParameterField,
+      addOutputField,
+      openInstanceFromReference,
+      styleInstanceReferences,
+      executeRequiredOperatorsForTemplate,
+      refreshOperatorsToolsList,
+      setupToolsSidebarEventListeners,
+      autoPopulateOperatorFields,
+      callLLMForToolAnalysis,
+      populateSuggestedFields,
+      showOperatorLoadingIndicator,
+      hideOperatorLoadingIndicator
+    };
+    console.log(`[${windowId}] window.operatorsModule set up in initOperators`);
+  }
+  
   console.log(`[${windowId}] operators initialized`);
 }
 
