@@ -283,6 +283,31 @@ class VariablesManager {
             </div>
           </div>
           
+          <div class="variable-value-section">
+            <h4>Variable Value</h4>
+            <div class="value-display-container">
+              <div class="value-display no-value" id="variable-value-display">
+                Click to set value
+              </div>
+              <div class="value-input-container" style="display: none;">
+                <input type="text" class="value-input" id="variable-value-input" placeholder="Enter value...">
+                <div class="value-input-actions">
+                  <button class="save-value-btn" id="save-variable-value">Save</button>
+                  <button class="cancel-value-btn" id="cancel-variable-value">Cancel</button>
+                </div>
+              </div>
+            </div>
+            <div class="value-actions">
+              <div class="data-source-selector">
+                <label for="data-source-select">📊 Select Data Source:</label>
+                <select id="data-source-select" class="data-source-select">
+                  <option value="">-- Select a data source --</option>
+                  <option value="manual">📝 Manual Input</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          
           <div class="dialog-actions">
             <button class="btn-secondary" data-action="cancel">Cancel</button>
             <button class="btn-primary" data-action="add-variable">Add Variable</button>
@@ -315,20 +340,47 @@ class VariablesManager {
       } else if (action === 'open-tool-generator') {
         await this.openToolGenerator();
       }
-    });
-  }
+      
+             // Handle value setting in dialog (using document-specific element IDs)
+       const elementId = e.target.id;
+       const activeDocId = window.documentManager?.activeDocumentId;
+       
+       if (elementId && activeDocId) {
+         if (elementId.includes('variable-value-display')) {
+           console.log('Variable value display clicked');
+           this.startValueEditingInDialog();
+         } else if (elementId.includes('save-variable-value')) {
+           console.log('Save variable value clicked');
+           await this.saveVariableValueInDialog();
+         } else if (elementId.includes('cancel-variable-value')) {
+           console.log('Cancel variable value clicked');
+           this.cancelValueEditingInDialog();
+
+                  }
+       }
+     });
+
+     // Add change event listener for data source select
+     this.variableDialog.addEventListener('change', async (e) => {
+       const elementId = e.target.id;
+       if (elementId && elementId.includes('data-source-select')) {
+         console.log('Data source select changed:', e.target.value);
+         await this.handleDataSourceChange(e.target.value);
+       }
+     });
+   }
 
   /**
    * Set up Variables event listeners using event delegation
    */
   setupVariablesEventListeners() {
     // Listen for Variables buttons (using event delegation like Data Lake)
-    document.addEventListener('click', (event) => {
+    document.addEventListener('click', async (event) => {
       if (event.target.matches('.variables-btn') || event.target.closest('.variables-btn')) {
         console.log('Variables button clicked');
         event.preventDefault();
         event.stopPropagation();
-        this.showVariablesPanel();
+        await this.showVariablesPanel();
       }
     });
   }
@@ -383,7 +435,7 @@ class VariablesManager {
       // Handle edit variable button
       if (e.target.classList.contains('edit-variable-btn')) {
         const variableName = e.target.getAttribute('data-variable-name');
-        this.editVariable(variableName);
+        await this.editVariable(variableName);
       }
       
       // Handle generate tool button
@@ -397,6 +449,8 @@ class VariablesManager {
         const variableName = e.target.getAttribute('data-variable-name');
         this.removeVariable(variableName);
       }
+      
+
     });
   }
 
@@ -677,6 +731,9 @@ class VariablesManager {
     this.hideFloatingButton();
     console.log('Variable dialog should now be visible');
 
+    // Populate data source select
+    this.populateDataSourceSelect();
+
     // Only call LLM suggestions when creating a new variable, not when editing
     if (!isEditing) {
       console.log('Calling AI suggestions for new variable');
@@ -694,7 +751,7 @@ class VariablesManager {
     }
   }
 
-  showVariablesPanel() {
+  async showVariablesPanel() {
     console.log('showVariablesPanel called');
     
     // Check if the current panel reference is valid (still in DOM)
@@ -724,6 +781,10 @@ class VariablesManager {
       console.error('Variables panel could not be created!');
       return;
     }
+    
+    // Load latest variables from backend before showing
+    console.log('Loading latest variables from backend before showing panel...');
+    await this.refreshVariablesFromBackend();
     
     this.updateVariablesList();
     this.variablesPanel.style.display = 'flex';
@@ -761,6 +822,11 @@ class VariablesManager {
       static_prefix: formData.static_prefix || '',
       static_suffix: formData.static_suffix || ''
     };
+    
+    // Add value if set in dialog
+    if (this._temporaryValue) {
+      variable.value = this._temporaryValue;
+    }
     
     this.variables.set(variable.name, variable);
     this.replaceSelectedTextWithPlaceholder(variable);
@@ -924,10 +990,16 @@ class VariablesManager {
     // Clear existing content
     variablesList.innerHTML = '';
     
+    if (this.variables.size === 0) {
+      variablesList.innerHTML = '<div class="no-variables-message">No variables defined yet. Select text in your template and click "Suggest Variables" to get started.</div>';
+      return;
+    }
+    
     console.log('Displaying', this.variables.size, 'variables');
     this.variables.forEach((variable, name) => {
       const variableItem = document.createElement('div');
       variableItem.className = 'variable-item';
+      
       variableItem.innerHTML = `
         <div class="variable-header">
           <span class="variable-name">${variable.name}</span>
@@ -939,6 +1011,7 @@ class VariablesManager {
           </div>
         </div>
         <div class="variable-description">${variable.description}</div>
+
         <div class="variable-details">
           <span class="variable-placeholder">${variable.placeholder}</span>
           <span class="variable-original">Original: "${variable.originalText}"</span>
@@ -1044,7 +1117,7 @@ class VariablesManager {
         
         // Also update local state for compatibility
         if (typeof updateState === 'function') {
-          updateState({ variables: variablesData });
+          updateState({ variables: Object.fromEntries(this.variables) });
         }
       } else {
         throw new Error(result.error || 'Failed to load variables');
@@ -1073,14 +1146,20 @@ class VariablesManager {
   /**
    * Edit an existing variable
    */
-  editVariable(variableName) {
+  async editVariable(variableName) {
     console.log('Editing variable:', variableName);
+    
+    // Load latest variable data from backend first
+    await this.refreshVariablesFromBackend();
+    
     const variable = this.variables.get(variableName);
     
     if (!variable) {
       console.error('Variable not found for editing:', variableName);
       return;
     }
+    
+    console.log('Loading latest variable data from backend for editing:', variable);
     
     // Set up the dialog for editing
     this.selectedText = variable.originalText;
@@ -1149,6 +1228,15 @@ class VariablesManager {
        placeholder: `{{${formData.name}}}`
      };
      
+     // Update value if set in dialog
+     if (this._temporaryValue !== undefined) {
+       if (this._temporaryValue === '') {
+         delete updatedVariable.value;
+       } else {
+         updatedVariable.value = this._temporaryValue;
+       }
+     }
+     
      // If name changed, remove old entry and add new one
      if (formData.name !== variableName) {
        this.variables.delete(variableName);
@@ -1206,6 +1294,21 @@ class VariablesManager {
         textDisplay.textContent = `"${variable.originalText}"`;
       }
       
+      // Update the value display
+      const valueDisplay = getDocumentElement('variable-value-display');
+      const valueInput = getDocumentElement('variable-value-input');
+      
+      const currentValue = variable.value || '';
+      this._temporaryValue = currentValue;
+      
+      if (valueDisplay) {
+        valueDisplay.textContent = currentValue || 'Click to set value';
+        valueDisplay.className = currentValue ? 'value-display has-value' : 'value-display no-value';
+      }
+      if (valueInput) {
+        valueInput.value = currentValue;
+      }
+      
       // Change dialog title and button text for editing
       const dialogTitle = this.variableDialog.querySelector('h3');
       const addButton = this.variableDialog.querySelector('[data-action="add-variable"]');
@@ -1251,11 +1354,27 @@ class VariablesManager {
       if (typeSelect) typeSelect.value = 'text';
       if (formatInput) formatInput.value = '';
       if (requiredCheckbox) requiredCheckbox.checked = true;
+      
+      // Reset value display
+      const valueDisplay = getDocumentElement('variable-value-display');
+      const valueInput = getDocumentElement('variable-value-input');
+      const valueInputContainer = this.variableDialog.querySelector('.value-input-container');
+      const dataSourceSelect = getDocumentElement('data-source-select');
+      
+      if (valueDisplay) {
+        valueDisplay.textContent = 'Click to set value';
+        valueDisplay.className = 'value-display no-value';
+        valueDisplay.style.display = 'block';
+      }
+      if (valueInput) valueInput.value = '';
+      if (valueInputContainer) valueInputContainer.style.display = 'none';
+      if (dataSourceSelect) dataSourceSelect.value = '';
     }
     
     // Clear editing state
     this._editingVariable = null;
     this._editingVariableName = null;
+    this._temporaryValue = undefined;
   }
 
   /**
@@ -1448,7 +1567,7 @@ class VariablesManager {
   }
 
   /**
-   * Load variables for active document (simplified - only from vars.json)
+   * Load variables for active document when switching documents (clears UI state first)
    */
   async loadVariablesFromBackend() {
     try {
@@ -1489,6 +1608,54 @@ class VariablesManager {
 
     } catch (error) {
       console.error('Error loading variables for document:', error);
+    }
+  }
+
+  /**
+   * Refresh variables from backend without clearing UI state (for updates)
+   */
+  async refreshVariablesFromBackend() {
+    try {
+      const documentId = window.documentManager?.activeDocumentId;
+      if (!documentId) {
+        console.log('No active document to refresh variables for');
+        return;
+      }
+      
+      console.log('Refreshing variables from backend for document:', documentId);
+      
+      const response = await fetch(`http://127.0.0.1:5000/api/variables?documentId=${encodeURIComponent(documentId)}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.variables) {
+          // Update existing variables with fresh data from backend
+          this.variables.clear();
+          
+          Object.entries(data.variables).forEach(([name, variable]) => {
+            this.variables.set(name, variable);
+          });
+          
+          console.log(`🔄 Refreshed ${this.variables.size} variables from backend for document ${documentId}`);
+          
+          // Update variables list display if panel is visible
+          if (this.variablesPanel && this.variablesPanel.style.display === 'flex') {
+            this.updateVariablesList();
+          }
+          
+          this.updateVariablesUI();
+        }
+      } else {
+        console.log('No variables found in backend for document:', documentId);
+      }
+
+    } catch (error) {
+      console.error('Error refreshing variables from backend:', error);
     }
   }
 
@@ -1618,6 +1785,213 @@ class VariablesManager {
         return '';
     }
   }
+
+ 
+
+  /**
+   * Value setting methods for the dialog
+   */
+  startValueEditingInDialog() {
+    console.log('Starting value editing in dialog');
+    
+    const valueDisplay = getDocumentElement('variable-value-display');
+    const valueInputContainer = this.variableDialog.querySelector('.value-input-container');
+    const valueInput = getDocumentElement('variable-value-input');
+    
+    if (valueDisplay && valueInputContainer && valueInput) {
+      valueDisplay.style.display = 'none';
+      valueInputContainer.style.display = 'block';
+      valueInput.focus();
+      valueInput.select();
+    }
+  }
+
+  async saveVariableValueInDialog() {
+    console.log('Saving value in dialog');
+    
+    const valueInput = getDocumentElement('variable-value-input');
+    const valueDisplay = getDocumentElement('variable-value-display');
+    const valueInputContainer = this.variableDialog.querySelector('.value-input-container');
+    
+    if (valueInput && valueDisplay && valueInputContainer) {
+      const newValue = valueInput.value.trim();
+      
+      // Update display
+      valueDisplay.textContent = newValue || 'Click to set value';
+      valueDisplay.className = newValue ? 'value-display has-value' : 'value-display no-value';
+      
+      // Hide input, show display
+      valueDisplay.style.display = 'block';
+      valueInputContainer.style.display = 'none';
+      
+      // Store the value temporarily (for UI consistency)
+      this._temporaryValue = newValue;
+      
+      // If we're editing an existing variable, save the value to backend immediately
+      if (this._editingVariableName) {
+        const variable = this.variables.get(this._editingVariableName);
+        if (variable) {
+          // Update the variable value
+          if (newValue) {
+            variable.value = newValue;
+          } else {
+            delete variable.value;
+          }
+          this.variables.set(this._editingVariableName, variable);
+          
+          // Save to backend immediately
+          await this.saveVariables();
+          console.log(`Variable "${this._editingVariableName}" value saved to backend:`, newValue);
+          
+          // Show success notification
+          this.showVariableUpdateNotification();
+        }
+      }
+      
+      console.log('Value set in dialog:', newValue);
+    }
+  }
+
+  cancelValueEditingInDialog() {
+    console.log('Canceling value editing in dialog');
+    
+    const valueDisplay = getDocumentElement('variable-value-display');
+    const valueInputContainer = this.variableDialog.querySelector('.value-input-container');
+    const valueInput = getDocumentElement('variable-value-input');
+    
+    if (valueDisplay && valueInputContainer && valueInput) {
+      // Reset input to current value
+      valueInput.value = this._temporaryValue || '';
+      
+      // Show display, hide input
+      valueDisplay.style.display = 'block';
+      valueInputContainer.style.display = 'none';
+    }
+  }
+
+  populateDataSourceSelect() {
+    console.log('Populating data source select');
+    
+    const select = getDocumentElement('data-source-select');
+    if (!select) return;
+    
+    // Clear existing options except the default ones
+    const existingOptions = select.querySelectorAll('option[data-source]');
+    existingOptions.forEach(option => option.remove());
+    
+    // Get data sources from data lake module (same as variable-operator-generator.js)
+    let dataSources = [];
+    if (window.dataLakeModule && window.dataLakeModule.getAllDataSources) {
+      dataSources = window.dataLakeModule.getAllDataSources();
+    }
+    
+    if (dataSources.length === 0) {
+      const noDataOption = document.createElement('option');
+      noDataOption.value = '';
+      noDataOption.textContent = 'No data sources available. Use "Load Context" to add files.';
+      noDataOption.disabled = true;
+      select.appendChild(noDataOption);
+      return;
+    }
+    
+    // Add each data source as an option (same format as variable-operator-generator.js)
+    dataSources.forEach(source => {
+      const option = document.createElement('option');
+      // Use filePath as the value for code execution, fallback to referenceName for backward compatibility
+      option.value = source.filePath || source.referenceName;
+      option.textContent = `${this.getFileIcon(source.type)} ${source.name} ($${source.referenceName})`;
+      option.setAttribute('data-source', 'true');
+      option.setAttribute('data-source-id', source.id);
+      option.setAttribute('data-source-name', source.referenceName);
+      option.setAttribute('data-file-path', source.filePath || '');
+      option.setAttribute('data-type', source.type);
+      select.appendChild(option);
+    });
+  }
+
+  /**
+   * Get file icon based on type (same as variable-operator-generator.js)
+   */
+  getFileIcon(type) {
+    const iconMap = {
+      'text/csv': '📊',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '📈',
+      'application/vnd.ms-excel': '📈',
+      'application/pdf': '📄',
+      'text/plain': '📝',
+      'application/json': '🔧',
+      'text/javascript': '⚡',
+      'text/html': '🌐'
+    };
+    
+    return iconMap[type] || '📁';
+  }
+
+  async handleDataSourceChange(selectedValue) {
+    console.log('Handling data source change:', selectedValue);
+    
+    if (selectedValue === 'manual') {
+      // Switch to manual input mode
+      this.startValueEditingInDialog();
+      // Reset the select back to default
+      const select = getDocumentElement('data-source-select');
+      if (select) {
+        select.value = '';
+      }
+    } else if (selectedValue && selectedValue !== '') {
+      // Set value from data source
+      const valueDisplay = getDocumentElement('variable-value-display');
+      const valueInput = getDocumentElement('variable-value-input');
+      const select = getDocumentElement('data-source-select');
+      
+      // Get the selected option to extract additional data
+      let selectedOption = null;
+      if (select) {
+        selectedOption = select.querySelector(`option[value="${selectedValue}"]`);
+      }
+      
+      // Format the value to show the data source reference name
+      let displayValue;
+      if (selectedOption) {
+        const referenceName = selectedOption.getAttribute('data-source-name');
+        displayValue = `$${referenceName}`;
+      } else {
+        displayValue = `[${selectedValue}]`;
+      }
+      
+      if (valueDisplay) {
+        valueDisplay.textContent = displayValue;
+        valueDisplay.className = 'value-display has-value';
+      }
+      if (valueInput) {
+        valueInput.value = displayValue;
+      }
+      
+      // Store the value temporarily
+      this._temporaryValue = displayValue;
+      
+      // If we're editing an existing variable, save the value to backend immediately
+      if (this._editingVariableName) {
+        const variable = this.variables.get(this._editingVariableName);
+        if (variable) {
+          variable.value = displayValue;
+          this.variables.set(this._editingVariableName, variable);
+          
+          // Save to backend immediately
+          this.saveVariables().then(() => {
+            console.log(`Variable "${this._editingVariableName}" value saved to backend from data source:`, displayValue);
+            this.showVariableUpdateNotification();
+          }).catch(error => {
+            console.error('Error saving variable value to backend:', error);
+          });
+        }
+      }
+      
+      console.log('Value set from data source:', displayValue);
+    }
+  }
+
+
 }
 
 // Create and export singleton instance
