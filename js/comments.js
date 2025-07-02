@@ -10,6 +10,7 @@ import {
   getDocumentElement, 
   registerElement 
 } from './element-id-manager.js';
+import { variablesManager } from './variables.js';
 
 /**
  * Parse structured LLM response for AI suggestions
@@ -443,6 +444,17 @@ export function closeTextCommentPopup() {
   }
 }
 
+/**
+ * Hide the floating comment window (for cross-module coordination)
+ */
+export function hideFloatingComment() {
+  const floatingComment = getElements.floatingComment;
+  if (floatingComment) {
+    floatingComment.style.display = 'none';
+    floatingComment.storedSelectionRange = null;
+  }
+}
+
 export function getTextCommentsMap() {
   return Object.fromEntries(
     Object.entries(state.comments).map(([id, comment]) => [
@@ -461,54 +473,33 @@ export function getTextCommentsMap() {
   );
 }
 
-function calculateCommentPosition(selectionRect, preferredSide = 'right') {
+function calculateCommentPosition(mouseEvent) {
+  // Simple positioning similar to SuggestVariable button but with different offset to avoid overlap
+  // SuggestVariable button is at (x+10, y-40), so we position comments button at (x+10, y+10)
+  // This keeps them vertically separated - variables above mouse, comments below mouse
+  const x = mouseEvent.clientX;
+  const y = mouseEvent.clientY;
+  
   const commentWidth = 320;
   const commentHeight = 150;
-  const gap = 30;
   const margin = 20; // Margin from viewport edges
   
-  const viewportWidth = window.innerWidth;
-  const viewportHeight = window.innerHeight;
+  let finalLeft = x + 10; // Same horizontal offset as SuggestVariable button
+  let finalTop = y + 10;  // Below mouse instead of above to avoid overlap
   
-  let finalLeft, finalTop;
-  
-  // Try preferred side first (right or left)
-  if (preferredSide === 'right') {
-    finalLeft = selectionRect.right + gap;
-  } else {
-    finalLeft = selectionRect.left - commentWidth - gap;
+  // Ensure it doesn't go off the right edge
+  if (finalLeft + commentWidth > window.innerWidth - margin) {
+    finalLeft = x - commentWidth - 10; // Position to the left if it doesn't fit on the right
   }
   
-  // Start with selection top
-  finalTop = selectionRect.top;
-  
-  // Check if it goes off the right edge
-  if (finalLeft + commentWidth > viewportWidth - margin) {
-    // Switch to left side
-    finalLeft = selectionRect.left - commentWidth - gap;
-  }
-  
-  // Check if it goes off the left edge
+  // Ensure it doesn't go off the left edge
   if (finalLeft < margin) {
-    // Switch to right side
-    finalLeft = selectionRect.right + gap;
-    
-    // If still off screen, clamp to margin and position vertically
-    if (finalLeft + commentWidth > viewportWidth - margin) {
-      finalLeft = margin;
-      // Position below selection to avoid overlap
-      finalTop = selectionRect.bottom + gap;
-      
-      // If below doesn't fit, position above
-      if (finalTop + commentHeight > viewportHeight - margin) {
-        finalTop = selectionRect.top - commentHeight - gap;
-      }
-    }
+    finalLeft = margin;
   }
   
   // Ensure it doesn't go off the bottom
-  if (finalTop + commentHeight > viewportHeight - margin) {
-    finalTop = viewportHeight - commentHeight - margin;
+  if (finalTop + commentHeight > window.innerHeight - margin) {
+    finalTop = y - commentHeight - 10; // Position above mouse if it doesn't fit below
   }
   
   // Ensure it doesn't go off the top
@@ -573,6 +564,13 @@ export function initTextSelection() {
 
   // Global click handler to hide floating comment when clicking elsewhere
   document.addEventListener('click', function(e) {
+    // Hide SuggestVariable button when clicking inside floating comment
+    if (e.target.closest('.floating-comment')) {
+      if (variablesManager && variablesManager.hideFloatingButton) {
+        variablesManager.hideFloatingButton();
+      }
+    }
+    
     // Only hide comment window if clicking completely outside the comment system
     if (!e.target.closest('.floating-comment') && 
         !e.target.closest('.text-comment-highlight') &&
@@ -690,8 +688,8 @@ function handleTextSelection(event) {
       console.log('Processing text selection:', cleanedText.substring(0, 50) + (cleanedText.length > 50 ? '...' : ''));
       console.log('Original selected text length:', selectedText.length, 'Cleaned length:', cleanedText.length);
       
-      // Use the extracted positioning function
-      const { left, top } = calculateCommentPosition(rect, 'right');
+      // Use the mouse event for positioning (similar to SuggestVariable button)
+      const { left, top } = calculateCommentPosition(event);
       
       floatingComment.style.display = 'block';
       floatingComment.style.top = `${top}px`;
@@ -749,6 +747,12 @@ export function initCommentButtons() {
   
   commentsData.askLLMHandler = async () => {
     console.log(`[${windowId}] Ask AI clicked - Mode: ${state.currentMode}`);
+    
+    // Hide SuggestVariable button when comment action is clicked
+    if (variablesManager && variablesManager.hideFloatingButton) {
+      variablesManager.hideFloatingButton();
+    }
+    
     const selectedText = floatingComment.dataset.selectedText;
     const commentText = getElements.commentText;
     const commentContent = commentText ? commentText.value : '';
@@ -799,6 +803,12 @@ export function initCommentButtons() {
   
   commentsData.addCommentHandler = async () => {
     console.log(`[${windowId}] Add comment clicked - Mode: ${state.currentMode}`);
+    
+    // Hide SuggestVariable button when comment action is clicked
+    if (variablesManager && variablesManager.hideFloatingButton) {
+      variablesManager.hideFloatingButton();
+    }
+    
     const selectedText = floatingComment.dataset.selectedText;
     const commentText = getElements.commentText;
     const commentContent = commentText ? commentText.value : '';
@@ -828,6 +838,12 @@ export function initCommentButtons() {
 
   commentsData.cancelCommentHandler = () => {
     console.log(`[${windowId}] Cancel comment clicked`);
+    
+    // Hide SuggestVariable button when comment action is clicked
+    if (variablesManager && variablesManager.hideFloatingButton) {
+      variablesManager.hideFloatingButton();
+    }
+    
     floatingComment.style.display = 'none';
   };
   

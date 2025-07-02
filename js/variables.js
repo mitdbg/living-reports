@@ -2,6 +2,7 @@
 import { state, elements, updateState } from './state.js';
 import { createDocumentDialog, createDocumentElementId, getDocumentElement, registerElement } from './element-id-manager.js';
 import { variableToolGenerator } from './variable-operator-generator.js';
+import { hideFloatingComment } from './comments.js';
 
 /**
  * Variables Management System
@@ -76,6 +77,15 @@ class VariablesManager {
     if (suggestBtn) {
       suggestBtn.addEventListener('click', () => {
         console.log('Suggest Variables button clicked');
+        
+        // Hide floating comment when SuggestVariable button is clicked
+        if (typeof hideFloatingComment === 'function') {
+          hideFloatingComment();
+        }
+        
+        // Hide the SuggestVariable button itself after clicking
+        this.hideFloatingButton();
+        
         this.showVariableDialog();
       });
       console.log('Event listener added to suggest button');
@@ -88,17 +98,32 @@ class VariablesManager {
    * Setup text selection detection
    */
   setupTextSelection() {
+    console.log('🔧 Setting up text selection detection');
+    
     document.addEventListener('mouseup', (e) => {
+      console.log('🔧 mouseup event triggered');
 
       const selection = window.getSelection();
-      const selectedText = selection.toString().trim();
-
-      // if the is not in the template editor, return
-      if (!this.isInTemplateContent(selection) || selectedText.length === 0) {
+      
+      // Early validation before setTimeout (same checks as comments.js)
+      if (selection.rangeCount === 0) {
+        console.log('🔧 mouseup: no selection range, hiding button');
         this.hideFloatingButton();
         return;
       }
       
+      const selectedText = selection.toString().trim();
+      const range = selection.getRangeAt(0);
+      const rect = range.getBoundingClientRect();
+
+      // Check for valid text selection with visible dimensions
+      if (!this.isInTemplateContent(selection) || selectedText.length === 0 || rect.width === 0 || rect.height === 0) {
+        console.log('🔧 mouseup: invalid selection (not in template, no text, or no dimensions), hiding button');
+        this.hideFloatingButton();
+        return;
+      }
+      
+      console.log('🔧 mouseup: valid visible selection detected, scheduling handleTextSelection in 10ms');
       setTimeout(() => {
         this.handleTextSelection(e);
       }, 10);
@@ -122,17 +147,32 @@ class VariablesManager {
     }
     
     const selection = window.getSelection();
-    const selectedText = selection.toString().trim();
     
-    if (selectedText.length > 0 && selection.rangeCount > 0) {
+    // Early return if no selection range (same as comments.js)
+    if (selection.rangeCount === 0) {
+      console.log('🔧 No selection range, hiding button');
+      this.hideFloatingButton();
+      return;
+    }
+    
+    const selectedText = selection.toString().trim();
+    const range = selection.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+    
+    // Key fix: Check for visible selection dimensions (same validation as comments.js)
+    if (selectedText.length > 0 && rect.width > 0 && rect.height > 0) {
       const isInTemplate = this.isInTemplateContent(selection);
-      console.log('Is in template content:', isInTemplate);
       
       if (isInTemplate) {
         this.selectedText = selectedText;
-        this.selectedRange = selection.getRangeAt(0).cloneRange();
+        this.selectedRange = range.cloneRange();
         
-        this.showFloatingButton(e);
+        // Check if we should show the button (don't show if dialog is open)
+        const shouldShow = !this.variableDialog || this.variableDialog.style.display === 'none';
+        
+        if (shouldShow) {
+          this.showFloatingButton(e);
+        }
       } else {
         this.hideFloatingButton();
       }
@@ -326,12 +366,12 @@ class VariablesManager {
 
     this.variableDialog.addEventListener('click', async (e) => {
       if (e.target.classList.contains('dialog-overlay')) {
-        this.hideVariableDialog();
+        this.clearSelectionAndHideDialog();
       }
       
       const action = e.target.getAttribute('data-action');
       if (action === 'close' || action === 'cancel') {
-        this.hideVariableDialog();
+        this.clearSelectionAndHideDialog();
       } else if (action === 'add-variable') {
         this.createVariable();
       } else if (action === 'update-variable') {
@@ -691,6 +731,11 @@ class VariablesManager {
   showVariableDialog(isEditing = false) {
     console.log('showVariableDialog called for text:', this.selectedText, 'isEditing:', isEditing);
     
+    // Hide floating comment when variable dialog is shown
+    if (typeof hideFloatingComment === 'function') {
+      hideFloatingComment();
+    }
+    
     // Check if the current dialog reference is valid (still in DOM)
     const dialogExists = this.variableDialog && document.body.contains(this.variableDialog);
     
@@ -729,17 +774,13 @@ class VariablesManager {
     
     this.variableDialog.style.display = 'flex';
     this.hideFloatingButton();
-    console.log('Variable dialog should now be visible');
 
     // Populate data source select
     this.populateDataSourceSelect();
 
     // Only call LLM suggestions when creating a new variable, not when editing
     if (!isEditing) {
-      console.log('Calling AI suggestions for new variable');
       this.populateVariableSuggestions();
-    } else {
-      console.log('Skipping AI suggestions - editing existing variable');
     }
   }
 
@@ -749,6 +790,24 @@ class VariablesManager {
       // Reset dialog to create mode when closed
       this.resetDialogToCreateMode();
     }
+  }
+
+  /**
+   * Clear text selection and hide dialog (prevents button from showing again)
+   */
+  clearSelectionAndHideDialog() {
+    
+    // Clear the text selection
+    if (window.getSelection) {
+      window.getSelection().removeAllRanges();
+    }
+    
+    // Clear our internal selection state
+    this.selectedText = null;
+    this.selectedRange = null;
+    
+    // Hide the dialog
+    this.hideVariableDialog();
   }
 
   async showVariablesPanel() {
@@ -832,7 +891,7 @@ class VariablesManager {
     this.replaceSelectedTextWithPlaceholder(variable);
     this.saveVariables();
     this.updateVariablesUI();
-    this.hideVariableDialog();
+    this.clearSelectionAndHideDialog(); // Clear selection to prevent button re-showing
     
     console.log('Variable created:', variable);
   }
@@ -1254,7 +1313,7 @@ class VariablesManager {
      this.saveVariables();
      
      // Close dialog and reset to create mode
-     this.hideVariableDialog();
+     this.clearSelectionAndHideDialog(); // Clear selection to prevent button re-showing
      this.resetDialogToCreateMode();
      
      console.log(`Variable "${variableName}" updated successfully`);
@@ -1462,7 +1521,7 @@ class VariablesManager {
       
       // Step 2: Hide the variable dialog
       console.log('Step 2: Hiding variable dialog...');
-      this.hideVariableDialog();
+      this.clearSelectionAndHideDialog(); // Clear selection to prevent button re-showing
       
       // Step 3: Show the floating window for tool/operator editing
       console.log('Step 3: Showing tool generator floating window...');
