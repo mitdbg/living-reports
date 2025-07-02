@@ -172,7 +172,7 @@ class VariableOperatorGenerator {
     style.textContent = `
       .variable-operator-generator-dialog,
       .variable-operator-generator-dialog .dialog-overlay {
-        z-index: 20000 !important; /* Above all other dialogs including variable dialog (9999) */
+        z-index: 20000 !important; /* Above all other dialogs including variable dialog (11000) and floating comment (10001) */
       }
       
       .variable-operator-generator-content {
