@@ -18,7 +18,7 @@ class Template:
 
         Args:
             template_text: The raw template text
-            document_id: The document ID for loading data lake items
+            document_id: The document ID for loading data sources items
         """
         self.template_text = template_text
         self.document_id = document_id
@@ -26,37 +26,37 @@ class Template:
         self.llm_pattern = r"^LLM\((.*)\)$"
         self.sum_pattern = r"^SUM\((.*)\)$"
         self.avg_pattern = r"^AVG\((.*)\)$"
-        self.data_lake_items = self._load_data_lake_items()
+        self.data_sources_items = self._load_data_sources_items()
         
-    def _load_data_lake_items(self) -> Dict[str, Any]:
-        """Load data lake items for the current document."""
+    def _load_data_sources_items(self) -> Dict[str, Any]:
+        """Load data sources items for the current document."""
         if not self.document_id:
             return {}
             
         try:
-            data_lake_file = os.path.join(os.path.dirname(__file__), 'database', 'data_lake.json')
-            if os.path.exists(data_lake_file):
-                with open(data_lake_file, 'r') as f:
-                    all_data_lake = json.load(f)
-                    document_data_lake = all_data_lake.get(self.document_id, [])
+            data_sources_file = os.path.join(os.path.dirname(__file__), 'database', 'data_sources.json')
+            if os.path.exists(data_sources_file):
+                with open(data_sources_file, 'r') as f:
+                    all_data_sources = json.load(f)
+                    document_data_sources = all_data_sources.get(self.document_id, [])
                     
                     # Convert to dict for easier lookup by reference name
-                    data_lake_dict = {}
-                    for item in document_data_lake:
-                        data_lake_dict[item.get('referenceName', '')] = item
+                    data_sources_dict = {}
+                    for item in document_data_sources:
+                        data_sources_dict[item.get('referenceName', '')] = item
                     
-                    return data_lake_dict
+                    return data_sources_dict
         except Exception as e:
-            print(f"Error loading data lake items: {e}")
+            print(f"Error loading data sources items: {e}")
             
         return {}
     
     def _render_data_source(self, reference_name: str) -> str:
         """Render a data source based on its type."""
-        if reference_name not in self.data_lake_items:
+        if reference_name not in self.data_sources_items:
             return f"${reference_name}"  # Keep original if not found
             
-        item = self.data_lake_items[reference_name]
+        item = self.data_sources_items[reference_name]
         content = item.get('content', '')
         item_type = item.get('type', 'unknown').lower()
         name = item.get('name', reference_name)

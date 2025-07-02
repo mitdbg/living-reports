@@ -87,28 +87,28 @@
     </div>
   </div>
 
-  <!-- Data Lake Dialog -->
-  <div class="data-lake-dialog" id="data-lake-dialog" style="display: none;">
+  <!-- Data Sources Dialog -->
+  <div class="data-sources-dialog" id="data-sources-dialog" style="display: none;">
     <div class="dialog-overlay">
-      <div class="dialog-content data-lake-content">
+      <div class="dialog-content data-sources-content">
         <div class="dialog-header">
-          <h3>🗄️ Data Lake</h3>
-          <button class="close-btn" id="close-data-lake-btn">✕</button>
+          <h3>🗄️ Data Sources</h3>
+          <button class="close-btn" id="close-data-sources-btn">✕</button>
         </div>
         
-        <div class="data-lake-search">
-          <input type="text" id="data-lake-search" placeholder="Search data sources..." />
+        <div class="data-sources-search">
+          <input type="text" id="data-sources-search" placeholder="Search data sources..." />
         </div>
         
-        <div class="data-lake-items" id="data-lake-items">
+        <div class="data-sources-items" id="data-sources-items">
           <div class="no-data-message" id="no-data-message">
-            <p>No data sources in your lake yet.</p>
-            <p>Use "Upload File" to add files to your data lake.</p>
+            <p>No data sources in your data sources yet.</p>
+            <p>Use "Upload File" to add files to your data sources.</p>
           </div>
         </div>
         
         <div class="dialog-actions">
-          <button class="btn-secondary" id="close-data-lake-bottom-btn">Close</button>
+          <button class="btn-secondary" id="close-data-sources-bottom-btn">Close</button>
         </div>
       </div>
     </div>
@@ -187,7 +187,7 @@
           <div class="action-buttons">
             <button class="share-btn mode-toggle">📤 Share</button>
             <button class="open-file-btn mode-toggle">📁 Upload File </button>
-            <button class="data-lake-btn mode-toggle">🗄️ Data Lake</button>
+            <button class="data-sources-btn mode-toggle">🗄️ Data Sources</button>
             <button class="variables-btn mode-toggle">📊 Variables</button>
             <button id="sidebar-toggle-btn" class="mode-toggle sidebar-toggle-btn" title="Show Collaboration Sidebar">
               <span class="icon">🤝</span>
@@ -330,7 +330,7 @@ def calculate():
                     </div>
                     <button type="button" class="btn-secondary add-parameter-btn">➕ Add Parameter</button>
                     <small style="color: #666; font-size: 12px; margin-top: 5px; display: block;">
-                      Each parameter can be a dataset from Data Lake or a literal value (e.g., false, 123, "text")
+                      Each parameter can be a dataset from Data Sources or a literal value (e.g., false, 123, "text")
                     </small>
                   </div>
                 </div>

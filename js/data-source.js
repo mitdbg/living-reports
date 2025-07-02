@@ -1,36 +1,35 @@
-// Data Lake Module
+// Data Sources Module
 import { state, elements, updateState, windowId } from './state.js';
 import { addMessageToUI } from './chat.js';
 import { createDocumentDialog, createDocumentElementId, getDocumentElement, registerElement } from './element-id-manager.js';
 
-// Data Lake state
-let dataLake = [];
+// Data Sources state
+let dataSources = [];
 
 // Get current document ID from DocumentManager
 function getCurrentDocumentId() {
   return window.documentManager?.activeDocumentId || null;
 }
 
-// Set current document ID and load data lake
-export async function loadDataLake(documentId) {
-  console.log(`[${windowId}] Loading Data Lake for document: ${documentId}`);
-  await loadDataLakeForCurrentDocument();
+// Set current document ID and load data sources
+export async function loadDataSources(documentId) {
+  console.log(`[${windowId}] Loading Data Sources for document: ${documentId}`);
+  await loadDataSourcesForCurrentDocument();
 }
 
-// Load data lake for current document from backend
-async function loadDataLakeForCurrentDocument() {
+// Load data sources for current document from backend
+async function loadDataSourcesForCurrentDocument() {
   const currentDocumentId = getCurrentDocumentId();
-  
   if (!currentDocumentId) {
-    console.warn(`[${windowId}] Cannot load data lake: no current document set`);
+    console.warn(`[${windowId}] Cannot load data sources: no current document set`);
     return;
   }
   
-  console.log(`[${windowId}] 🔍 DEBUG: loadDataLakeForCurrentDocument called`);
-  console.log(`[${windowId}] Loading Data Lake from backend for document: ${currentDocumentId}`);
+  console.log(`[${windowId}] 🔍 DEBUG: loadDataSourcesForCurrentDocument called`);
+  console.log(`[${windowId}] Loading Data Sources from backend for document: ${currentDocumentId}`);
   
   try {
-    const response = await fetch(`http://127.0.0.1:5000/api/data-lake?documentId=${currentDocumentId}&windowId=${windowId}&session_id=${state.sessionId || windowId}`);
+    const response = await fetch(`http://127.0.0.1:5000/api/data-sources?documentId=${currentDocumentId}&windowId=${windowId}&session_id=${state.sessionId || windowId}`);
     
     if (!response.ok) {
       throw new Error(`Backend responded with status: ${response.status}`);
@@ -39,45 +38,45 @@ async function loadDataLakeForCurrentDocument() {
     const result = await response.json();
     console.log(`[${windowId}] 🔍 DEBUG: Backend response:`, result);
     
-    if (result.success && result.dataLake) {
-      dataLake = result.dataLake;
-      console.log(`[${windowId}] ✅ Loaded ${dataLake.length} items from backend for document ${currentDocumentId}`);
-      console.log(`[${windowId}] 🔍 DEBUG: Loaded dataLake:`, dataLake);
+    if (result.success && result.dataSources) {
+      dataSources = result.dataSources;
+      console.log(`[${windowId}] ✅ Loaded ${dataSources.length} items from backend for document ${currentDocumentId}`);
+      console.log(`[${windowId}] 🔍 DEBUG: Loaded dataSources:`, dataSources);
     } else {
-      dataLake = [];
-      console.log(`[${windowId}] No data lake found in backend for document ${currentDocumentId}, starting fresh`);
+      dataSources = [];
+      console.log(`[${windowId}] No data sources found in backend for document ${currentDocumentId}, starting fresh`);
     }
     
   } catch (error) {
-    console.error(`[${windowId}] ❌ Error loading data lake from backend:`, error);
-    dataLake = [];
-    console.log(`[${windowId}] Starting with empty data lake due to backend error`);
+    console.error(`[${windowId}] ❌ Error loading data sources from backend:`, error);
+    dataSources = [];
+    console.log(`[${windowId}] Starting with empty data sources due to backend error`);
   }
   
-  console.log(`[${windowId}] 🔍 DEBUG: Final dataLake array:`, dataLake);
-  console.log(`[${windowId}] 🔍 DEBUG: Final dataLake length:`, dataLake.length);
+  console.log(`[${windowId}] 🔍 DEBUG: Final dataSources array:`, dataSources);
+  console.log(`[${windowId}] 🔍 DEBUG: Final dataSources length:`, dataSources.length);
 }
 
-// Save data lake for current document to backend
-async function saveDataLake() {
+// Save data sources for current document to backend
+async function saveDataSources() {
   const currentDocumentId = getCurrentDocumentId();
   
   if (!currentDocumentId) {
-    console.warn(`[${windowId}] Cannot save data lake: no current document set`);
+    console.warn(`[${windowId}] Cannot save data sources: no current document set`);
     return;
   }
   
-  console.log(`[${windowId}] 🔍 DEBUG: saveDataLake - saving to backend for document: ${currentDocumentId}`);
-  console.log(`[${windowId}] 🔍 DEBUG: saveDataLake - saving dataLake:`, dataLake);
+  console.log(`[${windowId}] 🔍 DEBUG: saveDataSources - saving to backend for document: ${currentDocumentId}`);
+  console.log(`[${windowId}] 🔍 DEBUG: saveDataSources - saving dataSources:`, dataSources);
   
   try {
-    const response = await fetch('http://127.0.0.1:5000/api/data-lake', {
+    const response = await fetch('http://127.0.0.1:5000/api/data-sources', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
         documentId: currentDocumentId,
         windowId: windowId,
-        dataLake: dataLake,
+        dataSources: dataSources,
         session_id: state.sessionId || windowId
       })
     });
@@ -87,38 +86,38 @@ async function saveDataLake() {
     }
 
     const result = await response.json();
-    console.log(`[${windowId}] ✅ Saved ${dataLake.length} items to Data Lake backend for document ${currentDocumentId}`);
+    console.log(`[${windowId}] ✅ Saved ${dataSources.length} items to Data Sources backend for document ${currentDocumentId}`);
     console.log(`[${windowId}] Backend response:`, result.message);
     
   } catch (error) {
-    console.error(`[${windowId}] ❌ Error saving data lake to backend:`, error);
+    console.error(`[${windowId}] ❌ Error saving data sources to backend:`, error);
   }
 }
 
-// Initialize Data Lake
-export function initDataLake() {
-  console.log(`[${windowId}] Initializing Data Lake`);
+// Initialize Data Sources
+export function initDataSources() {
+  console.log(`[${windowId}] Initializing Data Sources`);
   
-  // Set up event listeners for Data Lake button in document context
-  setupDataLakeEventListeners();
+  // Set up event listeners for Data Sources button in document context
+  setupDataSourcesEventListeners();
   
-  console.log(`[${windowId}] Data Lake initialized`);
+  console.log(`[${windowId}] Data Sources initialized`);
 }
 
-// Set up Data Lake event listeners
-function setupDataLakeEventListeners() {
-  // Listen for Data Lake buttons (since they are dynamically created)
+// Set up Data Sources event listeners
+function setupDataSourcesEventListeners() {
+  // Listen for Data Sources buttons (since they are dynamically created)
   document.addEventListener('click', (event) => {
-    if (event.target.matches('.data-lake-btn') || event.target.closest('.data-lake-btn')) {
-      console.log(`[${windowId}] Data Lake button clicked`);
-      showDataLakeDialog();
+    if (event.target.matches('.data-sources-btn') || event.target.closest('.data-sources-btn')) {
+      console.log(`[${windowId}] Data Sources button clicked`);
+      showDataSourcesDialog();
     }
   });
   
   // Dialog event listeners
   document.addEventListener('click', (event) => {
-    if (event.target.id === 'close-data-lake-btn' || event.target.id === 'close-data-lake-bottom-btn') {
-      hideDataLakeDialog();
+    if (event.target.id === 'close-data-sources-btn' || event.target.id === 'close-data-sources-bottom-btn') {
+      hideDataSourcesDialog();
     }
     
 
@@ -131,35 +130,35 @@ function setupDataLakeEventListeners() {
   
   // Search functionality
   document.addEventListener('input', (event) => {
-    if (event.target.id === 'data-lake-search') {
-      filterDataLakeItems(event.target.value);
+    if (event.target.id === 'data-sources-search') {
+      filterDataSourcesItems(event.target.value);
     }
   });
 }
 
-// Initialize Data Lake UI components (legacy - now handled by dynamic dialog creation)
-function initDataLakeUI() {
+// Initialize Data Sources UI components (legacy - now handled by dynamic dialog creation)
+function initDataSourcesUI() {
   // This function is now obsolete since we create dialogs dynamically
-  // All event listeners are handled in setupDataLakeEventListeners
-  console.log('initDataLakeUI: Using dynamic dialog creation instead of static elements');
+  // All event listeners are handled in setupDataSourcesEventListeners
+  console.log('initDataSourcesUI: Using dynamic dialog creation instead of static elements');
 }
 
-// Add item to Data Lake
-export async function addToDataLake(file) {
+// Add item to Data Sources
+export async function addToDataSources(file) {
   const currentDocumentId = getCurrentDocumentId();
   
-  console.log(`[${windowId}] 🔍 DEBUG: addToDataLake called with file:`, file);
+  console.log(`[${windowId}] 🔍 DEBUG: addToDataSources called with file:`, file);
   console.log(`[${windowId}] 🔍 DEBUG: currentDocumentId:`, currentDocumentId);
   
   if (!currentDocumentId) {
-    console.warn(`[${windowId}] Cannot add to data lake: no current document set`);
+    console.warn(`[${windowId}] Cannot add to data sources: no current document set`);
     return false;
   }
   
-  console.log(`[${windowId}] Adding to Data Lake for document ${currentDocumentId}:`, file.name);
+  console.log(`[${windowId}] Adding to Data Sources for document ${currentDocumentId}:`, file.name);
   
   // Generate clean reference name from filename
-  const referenceName = generateDataLakeName(file.name);
+  const referenceName = generateDataSourcesName(file.name);
   
   const dataItem = {
     id: Date.now().toString(),
@@ -176,80 +175,80 @@ export async function addToDataLake(file) {
   console.log(`[${windowId}] 🔍 DEBUG: Created dataItem:`, dataItem);
   
   // Check if item already exists
-  const existingIndex = dataLake.findIndex(item => item.name === dataItem.name);
+  const existingIndex = dataSources.findIndex(item => item.name === dataItem.name);
   if (existingIndex !== -1) {
-    dataLake[existingIndex] = dataItem; // Update existing
-    console.log(`[${windowId}] Updated existing item in Data Lake: ${dataItem.name}`);
+    dataSources[existingIndex] = dataItem; // Update existing
+    console.log(`[${windowId}] Updated existing item in Data Sources: ${dataItem.name}`);
   } else {
-    dataLake.push(dataItem);
-    console.log(`[${windowId}] Added new item to Data Lake: ${dataItem.name}`);
+    dataSources.push(dataItem);
+    console.log(`[${windowId}] Added new item to Data Sources: ${dataItem.name}`);
   }
   
-  console.log(`[${windowId}] 🔍 DEBUG: dataLake array after adding:`, dataLake);
-  console.log(`[${windowId}] 🔍 DEBUG: dataLake length:`, dataLake.length);
+  console.log(`[${windowId}] 🔍 DEBUG: dataSources array after adding:`, dataSources);
+  console.log(`[${windowId}] 🔍 DEBUG: dataSources length:`, dataSources.length);
   
-  await saveDataLake(); // Save to backend
+  await saveDataSources(); // Save to backend
   return true;
 }
 
-// Remove item from Data Lake
+// Remove item from Data Sources
 async function removeDataItem(itemId) {
-  const index = dataLake.findIndex(item => item.id === itemId);
+  const index = dataSources.findIndex(item => item.id === itemId);
   if (index !== -1) {
-    const removedItem = dataLake.splice(index, 1)[0];
-    console.log(`[${windowId}] Removed from Data Lake: ${removedItem.name}`);
-    await saveDataLake(); // Save updated data lake to backend
-    refreshDataLakeDialog();
+    const removedItem = dataSources.splice(index, 1)[0];
+    console.log(`[${windowId}] Removed from Data Sources: ${removedItem.name}`);
+    await saveDataSources(); // Save updated data sources to backend
+    refreshDataSourcesDialog();
   }
 }
 
 
 
-// Set up event listeners for the data lake dialog
-function setupDataLakeDialogEventListeners(dialog) {
-  console.log('Setting up data lake dialog event listeners');
+// Set up event listeners for the data sources dialog
+function setupDataSourcesDialogEventListeners(dialog) {
+  console.log('Setting up data sources dialog event listeners');
   
   // Use event delegation on the dialog itself
   dialog.addEventListener('click', (e) => {
     // Get document-specific button elements for comparison
-    const closeBtn = getDocumentElement('close-data-lake-btn');
-    const closeBottomBtn = getDocumentElement('close-data-lake-bottom-btn');
+    const closeBtn = getDocumentElement('close-data-sources-btn');
+    const closeBottomBtn = getDocumentElement('close-data-sources-bottom-btn');
     
     if (e.target === closeBtn || e.target.id === closeBtn?.id ||
         e.target === closeBottomBtn || e.target.id === closeBottomBtn?.id) {
-      hideDataLakeDialog();
+      hideDataSourcesDialog();
     } else if (e.target.matches('.data-item-btn.remove-btn')) {
       const itemId = e.target.getAttribute('data-item-id');
       removeDataItem(itemId);
     } else if (e.target.classList.contains('dialog-overlay')) {
-      hideDataLakeDialog();
+      hideDataSourcesDialog();
     }
   });
   
-  // Add click handler for data lake items (to show content preview)
+  // Add click handler for data sources items (to show content preview)
   dialog.addEventListener('click', (e) => {
-    // Check if clicked on a data lake item but not on the buttons
-    const dataLakeItem = e.target.closest('.data-lake-item');
-    if (dataLakeItem && !e.target.matches('.data-item-btn') && !e.target.closest('.data-item-btn')) {
-      const itemId = dataLakeItem.getAttribute('data-item-id');
+    // Check if clicked on a data sources item but not on the buttons
+    const dataSourcesItem = e.target.closest('.data-sources-item');
+    if (dataSourcesItem && !e.target.matches('.data-item-btn') && !e.target.closest('.data-item-btn')) {
+      const itemId = dataSourcesItem.getAttribute('data-item-id');
       showDatasetContentPreview(itemId);
     }
   });
   
   // Set up search input listener
-  const searchInput = getDocumentElement('data-lake-search');
+  const searchInput = getDocumentElement('data-sources-search');
   if (searchInput) {
     searchInput.addEventListener('input', (e) => {
-      filterDataLakeItems(e.target.value);
+      filterDataSourcesItems(e.target.value);
     });
   }
 }
 
-// Show Data Lake dialog
-function showDataLakeDialog() {
+// Show Data Sources dialog
+function showDataSourcesDialog() {
   const currentDocumentId = getCurrentDocumentId();
   
-  console.log(`[${windowId}] 🔍 DEBUG: showDataLakeDialog called`);
+  console.log(`[${windowId}] 🔍 DEBUG: showDataSourcesDialog called`);
   console.log(`[${windowId}] 🔍 DEBUG: currentDocumentId:`, currentDocumentId);
   
   if (!currentDocumentId) {
@@ -257,73 +256,73 @@ function showDataLakeDialog() {
     return;
   }
   
-  console.log(`[${windowId}] 🔍 DEBUG: dataLake array at dialog open:`, dataLake);
-  console.log(`[${windowId}] 🔍 DEBUG: dataLake length:`, dataLake.length);
+  console.log(`[${windowId}] 🔍 DEBUG: dataSources array at dialog open:`, dataSources);
+  console.log(`[${windowId}] 🔍 DEBUG: dataSources length:`, dataSources.length);
   
-  const dialog = getOrCreateDataLakeDialog();
+  const dialog = getOrCreateDataSourcesDialog();
   if (dialog) {
     dialog.style.display = 'flex';
-    refreshDataLakeDialog();
+    refreshDataSourcesDialog();
   } else {
-    console.error(`[${windowId}] 🔍 DEBUG: data-lake-dialog element not found!`);
+    console.error(`[${windowId}] 🔍 DEBUG: data-sources-dialog element not found!`);
   }
 }
 
-// Hide Data Lake dialog
-function hideDataLakeDialog() {
-  const dialog = getDocumentElement('data-lake-dialog');
+// Hide Data Sources dialog
+function hideDataSourcesDialog() {
+  const dialog = getDocumentElement('data-sources-dialog');
   if (dialog) {
     dialog.style.display = 'none';
   }
 }
 
-// Refresh Data Lake dialog content
-function refreshDataLakeDialog() {
-  console.log(`[${windowId}] 🔍 DEBUG: refreshDataLakeDialog called`);
+// Refresh Data Sources dialog content
+function refreshDataSourcesDialog() {
+  console.log(`[${windowId}] 🔍 DEBUG: refreshDataSourcesDialog called`);
   
-  const itemsContainer = getDocumentElement('data-lake-items');
+  const itemsContainer = getDocumentElement('data-sources-items');
   const noDataMessage = getDocumentElement('no-data-message');
   
   console.log(`[${windowId}] 🔍 DEBUG: itemsContainer found:`, !!itemsContainer);
   console.log(`[${windowId}] 🔍 DEBUG: noDataMessage found:`, !!noDataMessage);
-  console.log(`[${windowId}] 🔍 DEBUG: dataLake array in refresh:`, dataLake);
-  console.log(`[${windowId}] 🔍 DEBUG: dataLake length in refresh:`, dataLake.length);
+  console.log(`[${windowId}] 🔍 DEBUG: dataSources array in refresh:`, dataSources);
+  console.log(`[${windowId}] 🔍 DEBUG: dataSources length in refresh:`, dataSources.length);
   
   if (!itemsContainer) {
-    console.error(`[${windowId}] 🔍 DEBUG: data-lake-items container not found!`);
+    console.error(`[${windowId}] 🔍 DEBUG: data-sources-items container not found!`);
     return;
   }
   
   // Clear existing items
-  const existingItems = itemsContainer.querySelectorAll('.data-lake-item');
+  const existingItems = itemsContainer.querySelectorAll('.data-sources-item');
   console.log(`[${windowId}] 🔍 DEBUG: Found ${existingItems.length} existing items to remove`);
   existingItems.forEach(item => item.remove());
   
-  if (dataLake.length === 0) {
+  if (dataSources.length === 0) {
     console.log(`[${windowId}] 🔍 DEBUG: No data in lake, showing no-data message`);
     if (noDataMessage) {
       noDataMessage.style.display = 'block';
     }
   } else {
-    console.log(`[${windowId}] 🔍 DEBUG: Found ${dataLake.length} items, hiding no-data message and creating items`);
+    console.log(`[${windowId}] 🔍 DEBUG: Found ${dataSources.length} items, hiding no-data message and creating items`);
     if (noDataMessage) {
       noDataMessage.style.display = 'none';
     }
     
-    dataLake.forEach((item, index) => {
+    dataSources.forEach((item, index) => {
       console.log(`[${windowId}] 🔍 DEBUG: Creating UI element for item ${index}:`, item);
-      const itemElement = createDataLakeItemElement(item);
+      const itemElement = createDataSourcesItemElement(item);
       itemsContainer.appendChild(itemElement);
     });
   }
 }
 
-// Create Data Lake item element
-function createDataLakeItemElement(item) {
-  console.log(`[${windowId}] 🔍 DEBUG: createDataLakeItemElement called for item:`, item);
+// Create Data Sources item element
+function createDataSourcesItemElement(item) {
+  console.log(`[${windowId}] 🔍 DEBUG: createDataSourcesItemElement called for item:`, item);
   
   const itemElement = document.createElement('div');
-  itemElement.className = 'data-lake-item';
+  itemElement.className = 'data-sources-item';
   itemElement.setAttribute('data-item-id', item.id);
   
   const icon = getFileIcon(item.type);
@@ -355,8 +354,8 @@ function createDataLakeItemElement(item) {
   return itemElement;
 }
 
-// Generate a clean name for data lake from filename
-function generateDataLakeName(filename) {
+// Generate a clean name for data sources from filename
+function generateDataSourcesName(filename) {
   return filename.replace(/\.[^/.]+$/, "") // Remove extension
     .replace(/[^a-zA-Z0-9]/g, '_') // Replace special chars with underscore
     .replace(/_{2,}/g, '_') // Replace multiple underscores with single
@@ -369,59 +368,59 @@ function getFileExtension(filename) {
   return filename.split('.').pop().toLowerCase();
 }
 
-// Open Data Lake dialog
-function openDataLakeDialog() {
-  const dialog = getOrCreateDataLakeDialog();
+// Open Data Sources dialog
+function openDataSourcesDialog() {
+  const dialog = getOrCreateDataSourcesDialog();
   if (dialog) {
     dialog.style.display = 'flex';
-    updateDataLakeDisplay();
+    updateDataSourcesDisplay();
     
     // Focus search input
-    const searchInput = getDocumentElement('data-lake-search');
+    const searchInput = getDocumentElement('data-sources-search');
     if (searchInput) {
       setTimeout(() => searchInput.focus(), 100);
     }
   }
 }
 
-// Close Data Lake dialog
-function closeDataLakeDialog() {
-  const dialog = getDocumentElement('data-lake-dialog');
+// Close Data Sources dialog
+function closeDataSourcesDialog() {
+  const dialog = getDocumentElement('data-sources-dialog');
   if (dialog) {
     dialog.style.display = 'none';
   }
 }
 
-// Check if Data Lake dialog is open
-function isDataLakeDialogOpen() {
-  const dialog = getDocumentElement('data-lake-dialog');
+// Check if Data Sources dialog is open
+function isDataSourcesDialogOpen() {
+  const dialog = getDocumentElement('data-sources-dialog');
   return dialog && dialog.style.display === 'flex';
 }
 
-// Update Data Lake display
-function updateDataLakeDisplay() {
-  const itemsContainer = getDocumentElement('data-lake-items');
+// Update Data Sources display
+function updateDataSourcesDisplay() {
+  const itemsContainer = getDocumentElement('data-sources-items');
   const noDataMessage = getDocumentElement('no-data-message');
   
   if (!itemsContainer) return;
   
-  if (dataLake.length === 0) {
+  if (dataSources.length === 0) {
     itemsContainer.innerHTML = `
       <div class="no-data-message">
         <p>No data sources in your lake yet.</p>
-        <p>Use "Load Context" to add files to your data lake.</p>
+        <p>Use "Load Context" to add files to your data sources.</p>
       </div>
     `;
     return;
   }
   
-  const itemsHTML = dataLake.map(item => {
+  const itemsHTML = dataSources.map(item => {
     const icon = getFileIcon(item.fileType);
     const formattedSize = formatFileSize(item.size);
     const formattedDate = formatDate(item.addedAt);
     
     return `
-      <div class="data-lake-item" data-item-id="${item.id}">
+      <div class="data-sources-item" data-item-id="${item.id}">
         <div class="data-item-info">
           <div class="data-item-icon">${icon}</div>
           <div class="data-item-details">
@@ -435,7 +434,7 @@ function updateDataLakeDisplay() {
           </div>
         </div>
         <div class="data-item-actions">
-          <button class="data-item-btn remove-btn" onclick="removeFromDataLake('${item.id}')">
+          <button class="data-item-btn remove-btn" onclick="removeFromDataSources('${item.id}')">
             Remove
           </button>
         </div>
@@ -482,9 +481,9 @@ function formatDate(dateString) {
   return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-// Filter data lake items
-function filterDataLakeItems(searchTerm) {
-  const items = document.querySelectorAll('.data-lake-item');
+// Filter data sources items
+function filterDataSourcesItems(searchTerm) {
+  const items = document.querySelectorAll('.data-sources-item');
   items.forEach(item => {
     const name = item.querySelector('.data-item-name').textContent.toLowerCase();
     const meta = item.querySelector('.data-item-meta').textContent.toLowerCase();
@@ -497,15 +496,15 @@ function filterDataLakeItems(searchTerm) {
   });
 }
 
-// Remove item from Data Lake
-window.removeFromDataLake = function(itemId) {
-  const itemIndex = dataLake.findIndex(item => item.id === parseFloat(itemId));
+// Remove item from Data Sources
+window.removeFromDataSources = function(itemId) {
+  const itemIndex = dataSources.findIndex(item => item.id === parseFloat(itemId));
   if (itemIndex !== -1) {
-    const itemName = dataLake[itemIndex].name;
-    dataLake.splice(itemIndex, 1);
-    saveDataLake();
-    updateDataLakeDisplay();
-    addMessageToUI('system', `Removed "${itemName}" from Data Lake`);
+    const itemName = dataSources[itemIndex].name;
+    dataSources.splice(itemIndex, 1);
+    saveDataSources();
+    updateDataSourcesDisplay();
+    addMessageToUI('system', `Removed "${itemName}" from Data Sources`);
   }
 };
 
@@ -515,17 +514,17 @@ window.removeFromDataLake = function(itemId) {
 
 // Get data source by name
 export function getDataSource(name) {
-  return dataLake.find(item => item.name === name);
+  return dataSources.find(item => item.name === name);
 }
 
 // Get all data sources
 export function getAllDataSources() {
-  return [...dataLake];
+  return [...dataSources];
 }
 
 // Show dataset content preview in floating window
 function showDatasetContentPreview(itemId) {
-  const item = dataLake.find(item => item.id === itemId);
+  const item = dataSources.find(item => item.id === itemId);
   if (!item) {
     console.error('Data item not found:', itemId);
     return;
@@ -844,56 +843,56 @@ function escapeHtml(text) {
 }
 
 // Export for global access
-window.dataLakeModule = {
-  addToDataLake,
+window.dataSourcesModule = {
+  addToDataSources,
   getDataSource,
   getAllDataSources,
-  removeFromDataLake: window.removeFromDataLake
+  removeFromDataSources: window.removeFromDataSources
 };
 
-// Function to reset data lake state (for DocumentManager)
-export function resetDataLakeInitialization() {
-  console.log(`[${windowId}] Resetting data lake initialization`);
-  // Clear data lake array to force re-initialization
-  dataLake = [];
+// Function to reset data sources state (for DocumentManager)
+export function resetDataSourcesInitialization() {
+  console.log(`[${windowId}] Resetting data sources initialization`);
+  // Clear data sources array to force re-initialization
+  dataSources = [];
 }
 
-// Create or get the data lake dialog with document-specific IDs
-function getOrCreateDataLakeDialog() {
-  let dialog = getDocumentElement('data-lake-dialog');
+// Create or get the data sources dialog with document-specific IDs
+function getOrCreateDataSourcesDialog() {
+  let dialog = getDocumentElement('data-sources-dialog');
   
   if (!dialog) {
     const dialogHtml = `
       <div class="dialog-overlay">
-        <div class="dialog-content data-lake-content">
+        <div class="dialog-content data-sources-content">
           <div class="dialog-header">
-            <h3>🗄️ Data Lake</h3>
-            <button class="close-btn" id="close-data-lake-btn">✕</button>
+            <h3>🗄️ Data Sources</h3>
+            <button class="close-btn" id="close-data-sources-btn">✕</button>
           </div>
           
-          <div class="data-lake-search">
-            <input type="text" id="data-lake-search" placeholder="Search data sources..." />
+          <div class="data-sources-search">
+            <input type="text" id="data-sources-search" placeholder="Search data sources..." />
           </div>
           
-          <div class="data-lake-items" id="data-lake-items">
+          <div class="data-sources-items" id="data-sources-items">
             <div class="no-data-message" id="no-data-message">
               <p>No data sources in your lake yet.</p>
-              <p>Use "Load Context" to add files to your data lake.</p>
+              <p>Use "Load Context" to add files to your data sources.</p>
             </div>
           </div>
           
           <div class="dialog-actions">
-            <button class="btn-secondary" id="close-data-lake-bottom-btn">Close</button>
+            <button class="btn-secondary" id="close-data-sources-bottom-btn">Close</button>
           </div>
         </div>
       </div>
     `;
 
-    console.log('Creating data lake dialog with document-specific IDs');
+    console.log('Creating data sources dialog with document-specific IDs');
     
     // Create dialog with document-specific IDs (all IDs in HTML will be auto-prefixed and registered)
-    dialog = createDocumentDialog('data-lake-dialog', dialogHtml, 'data-lake');
-    dialog.className = 'data-lake-dialog';
+    dialog = createDocumentDialog('data-sources-dialog', dialogHtml, 'data-sources');
+    dialog.className = 'data-sources-dialog';
     dialog.style.display = 'none';
     
     // Mark dialog as hidden by design to prevent auto-restoration when switching documents
@@ -902,7 +901,7 @@ function getOrCreateDataLakeDialog() {
     document.body.appendChild(dialog);
 
     // Set up event listeners for the new dialog
-    setupDataLakeDialogEventListeners(dialog);
+    setupDataSourcesDialogEventListeners(dialog);
   }
   
   return dialog;

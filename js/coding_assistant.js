@@ -302,9 +302,9 @@ class CodingAssistant {
           context.variables = window.variablesModule.getAllVariables();
         }
         
-        // Add data lake context if available
-        if (window.dataLakeModule && window.dataLakeModule.getCurrentDatasets) {
-          context.available_datasets = window.dataLakeModule.getCurrentDatasets();
+        // Add data sources context if available
+        if (window.dataSourcesModule && window.dataSourcesModule.getCurrentDatasets) {
+          context.available_datasets = window.dataSourcesModule.getCurrentDatasets();
         }
       }
     }

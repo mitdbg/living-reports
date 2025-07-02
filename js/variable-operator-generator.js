@@ -496,16 +496,16 @@ class VariableOperatorGenerator {
   }
 
   /**
-   * Populate data sources from data lake
+   * Populate data sources from data sources
    */
   async populateDataSources() {
     const dropdown = this.generatorDialog?.querySelector('[id$="generator-datasource-dropdown"]');
     if (!dropdown) return;
     
-    // Get data sources from data lake
+    // Get data sources from data sources
     let dataSources = [];
-    if (window.dataLakeModule && window.dataLakeModule.getAllDataSources) {
-      dataSources = window.dataLakeModule.getAllDataSources();
+    if (window.dataSourcesModule && window.dataSourcesModule.getAllDataSources) {
+      dataSources = window.dataSourcesModule.getAllDataSources();
     }
 
     // Clear existing options (keep the default option)

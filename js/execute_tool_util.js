@@ -160,8 +160,8 @@ export async function executeOperatorWithData(tool, datasets, parameters, window
         if (typeof paramData === 'object' && paramData.type && paramData.value !== undefined) {
           // New format: { type: 'dataset|literal', value: '...' }
           if (paramData.type === 'dataset') {
-            // Load dataset from data lake
-            const dataset = window.dataLakeModule?.getDataSource(paramData.value);
+            // Load dataset from data sources
+            const dataset = window.dataSourcesModule?.getDataSource(paramData.value);
             if (dataset) {
               datasetsFromParams[key] = dataset;
             } else {

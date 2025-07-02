@@ -128,7 +128,7 @@ export async function executeTemplate(clearCache = false, isLiveUpdate = false) 
 
 async function executeTemplateRequest(templateText, clearCache = false, isLiveUpdate = false) {
   try {
-    // Get current document ID for data lake context
+    // Get current document ID for data sources context
     const documentId = window.documentManager?.activeDocumentId || null;
     
     const response = await fetch('http://127.0.0.1:5000/api/execute-template', {

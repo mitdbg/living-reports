@@ -7,7 +7,7 @@ import { initTextSelection, initCommentButtons, resetTextSelectionInitialization
 import { initFileOperations, resetFileOperationsInitialization } from './file-operations.js';
 import { initSharing, resetSharingInitialization } from './sharing.js';
 import { initContentMapping, resetContentMappingInitialization } from './content-mapping.js';
-import { initDataLake, resetDataLakeInitialization, loadDataLake } from './data-lake.js';
+import { initDataSources, resetDataSourcesInitialization, loadDataSources } from './data-source.js';
 import { initOperators, resetOperatorsInitialization } from './operators.js';
 import { initCodingAssistant } from './coding_assistant.js';
 import { initVerification } from './verification.js';
@@ -366,7 +366,7 @@ export class DocumentManager {
       resetContentMappingInitialization();
       resetFileOperationsInitialization();
       resetSharingInitialization();
-      resetDataLakeInitialization();
+      resetDataSourcesInitialization();
       resetOperatorsInitialization();
       resetVariablesInitialization();
       // Note: Other modules may not have reset functions yet, but should be added as needed
@@ -381,7 +381,7 @@ export class DocumentManager {
       initContentMapping();   // ✅ Works with docID-prefixed content elements
       initFileOperations();   // ✅ docID-open-file-btn, docID-clear-context-btn, docID-context-files-list
       initSharing();          // ✅ docID-share-btn and sharing dialogs  
-      initDataLake();         // ✅ docID-data-lake panels, buttons, UI elements
+      initDataSources();         // ✅ docID-data-sources panels, buttons, UI elements
       initOperators();        // ✅ docID-operators-btn, docID-instances-items, operator panels
       initCodingAssistant();  // ✅ docID-coding-assistant elements and dialogs
       initVerification();     // ✅ docID-verification panels and controls
@@ -399,8 +399,8 @@ export class DocumentManager {
       // Initialize variables for this specific document
       initVariablesForDocument();
       
-      // Load data lake for this specific document
-      await loadDataLake(documentId);
+      // Load data sources for this specific document
+      await loadDataSources(documentId);
       
       // Initialize sidebar comments system (NEW FEATURE - ADDITIONAL)
       try {
@@ -2561,7 +2561,7 @@ export class DocumentManager {
       // Action buttons
       'share-btn': `${docId}-share-btn`,
       'clear-comments-btn': `${docId}-clear-comments-btn`,
-      'data-lake-btn': `${docId}-data-lake-btn`,
+      'data-sources-btn': `${docId}-data-sources-btn`,
       'variables-btn': `${docId}-variables-btn`,
       'operators-btn': `${docId}-operators-btn`,
       
@@ -2624,7 +2624,7 @@ export class DocumentManager {
       // Action buttons
       'share-btn': `${docId}-share-btn`,
       'clear-comments-btn': `${docId}-clear-comments-btn`,
-      'data-lake-btn': `${docId}-data-lake-btn`,
+      'data-sources-btn': `${docId}-data-sources-btn`,
       'variables-btn': `${docId}-variables-btn`,
       'operators-btn': `${docId}-operators-btn`,
       

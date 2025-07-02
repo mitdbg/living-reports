@@ -226,37 +226,37 @@ def save_verifications(verifications):
 # Initialize verifications storage
 verifications = load_verifications()
 
-# Persistent storage for Data Lake
-DATA_LAKE_FILE = os.path.join(DATABASE_DIR, 'data_lake.json')
+# Persistent storage for Data Sources
+DATA_SOURCES_FILE = os.path.join(DATABASE_DIR, 'data_sources.json')
 
-def load_data_lake():
-    """Load all data lake items from file"""
+def load_data_sources():
+    """Load all data sources from file"""
     try:
         ensure_database_dir()
-        if os.path.exists(DATA_LAKE_FILE):
-            with open(DATA_LAKE_FILE, 'r') as f:
-                data_lake = json.load(f)
-                logger.info(f"🗂️ Loaded data lake for {len(data_lake)} documents from {DATA_LAKE_FILE}")
-                return data_lake
+        if os.path.exists(DATA_SOURCES_FILE):
+            with open(DATA_SOURCES_FILE, 'r') as f:
+                data_sources = json.load(f)
+                logger.info(f"🗂️ Loaded data sources for {len(data_sources)} documents from {DATA_SOURCES_FILE}")
+                return data_sources
         else:
-            logger.info("🗂️ No existing data lake file found. Starting fresh.")
+            logger.info("🗂️ No existing data sources file found. Starting fresh.")
             return {}
     except Exception as e:
-        logger.error(f"❌ Error loading data lake: {e}")
+        logger.error(f"❌ Error loading data sources: {e}")
         return {}
 
-def save_data_lake(data_lake):
-    """Save all data lake items to file"""
+def save_data_sources(data_sources):
+    """Save all data sources to file"""
     try:
         ensure_database_dir()
-        with open(DATA_LAKE_FILE, 'w') as f:
-            json.dump(data_lake, f, indent=2)
-        logger.info(f"💾 Saved data lake for {len(data_lake)} documents to {DATA_LAKE_FILE}")
+        with open(DATA_SOURCES_FILE, 'w') as f:
+            json.dump(data_sources, f, indent=2)
+        logger.info(f"💾 Saved data sources for {len(data_sources)} documents to {DATA_SOURCES_FILE}")
     except Exception as e:
-        logger.error(f"❌ Error saving data lake: {e}")
+        logger.error(f"❌ Error saving data sources: {e}")
 
-# Initialize data lake storage
-data_lake_storage = load_data_lake()
+# Initialize data sources storage
+data_sources_storage = load_data_sources()
 
 # Initialize task manager
 task_manager = TaskManager(DATABASE_DIR)
@@ -974,13 +974,13 @@ def delete_document(document_id):
                 cleanup_summary.append(f"{variables_count} variables")
                 logger.info(f"📊 Cleaned up {variables_count} variables for document {document_id}")
             
-            # Clean up data lake entries for this document
-            if document_id in data_lake_storage:
-                data_lake_count = len(data_lake_storage[document_id])
-                del data_lake_storage[document_id]
-                save_data_lake(data_lake_storage)
-                cleanup_summary.append(f"{data_lake_count} data lake items")
-                logger.info(f"🗂️ Cleaned up {data_lake_count} data lake items for document {document_id}")
+            # Clean up data sources entries for this document
+            if document_id in data_sources_storage:
+                data_sources_count = len(data_sources_storage[document_id])
+                del data_sources_storage[document_id]
+                save_data_sources(data_sources_storage)
+                cleanup_summary.append(f"{data_sources_count} data sources")
+                logger.info(f"🗂️ Cleaned up {data_sources_count} data sources for document {document_id}")
             
             # Clean up verifications for this document (using session_id)
             if session_id and session_id in verifications:
@@ -1105,9 +1105,9 @@ def get_verification(session_id):
         logger.error(f"Error getting verification for {session_id}: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
-@app.route('/api/data-lake', methods=['GET'])
-def get_data_lake():
-    """Get data lake items for a specific document."""
+@app.route('/api/data-sources', methods=['GET'])
+def get_data_sources():
+    """Get data sources for a specific document."""
     try:
         document_id = request.args.get('documentId')
         window_id = request.args.get('windowId', 'default')
@@ -1119,32 +1119,32 @@ def get_data_lake():
                 'error': 'Missing documentId parameter'
             }), 400
         
-        # Get data lake items for this document
-        document_data_lake = data_lake_storage.get(document_id, [])
+        # Get data sources items for this document
+        document_data_sources = data_sources_storage.get(document_id, [])
         
-        logger.info(f"🗂️ Returning {len(document_data_lake)} data lake items for document {document_id}")
+        logger.info(f"🗂️ Returning {len(document_data_sources)} data sources for document {document_id}")
         
         return jsonify({
             'success': True,
-            'dataLake': document_data_lake,
+            'dataSources': document_data_sources,
             'documentId': document_id,
-            'count': len(document_data_lake)
+            'count': len(document_data_sources)
         })
         
     except Exception as e:
-        logger.error(f"Error getting data lake: {e}")
+        logger.error(f"Error getting data sources: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
-@app.route('/api/data-lake', methods=['POST'])
-def save_data_lake_endpoint():
-    """Save data lake items for a specific document."""
+@app.route('/api/data-sources', methods=['POST'])
+def save_data_sources_endpoint():
+    """Save data sources for a specific document."""
     try:
         data = request.get_json()
         
         document_id = data.get('documentId')
         window_id = data.get('windowId', 'default')
         session_id = data.get('session_id', 'default')
-        data_lake_items = data.get('dataLake', [])
+        data_sources = data.get('dataSources', [])
         
         if not document_id:
             return jsonify({
@@ -1152,23 +1152,23 @@ def save_data_lake_endpoint():
                 'error': 'Missing documentId in request'
             }), 400
         
-        # Store data lake items for this document
-        data_lake_storage[document_id] = data_lake_items
+        # Store data sources items for this document
+        data_sources_storage[document_id] = data_sources
         
         # Persist to file
-        save_data_lake(data_lake_storage)
+        save_data_sources(data_sources_storage)
         
-        logger.info(f"🗂️ Saved {len(data_lake_items)} data lake items for document {document_id}")
+        logger.info(f"🗂️ Saved {len(data_sources)} data sources for document {document_id}")
         
         return jsonify({
             'success': True,
-            'message': f'Data lake saved for document {document_id}',
+            'message': f'Data sources saved for document {document_id}',
             'documentId': document_id,
-            'count': len(data_lake_items)
+            'count': len(data_sources)
         })
         
     except Exception as e:
-        logger.error(f"Error saving data lake: {e}")
+        logger.error(f"Error saving data sources: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/variables', methods=['GET'])
@@ -1277,9 +1277,9 @@ def delete_variables():
         logger.error(f"Error deleting variables for document: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
-@app.route('/api/data-lake', methods=['DELETE'])
-def delete_data_lake():
-    """Delete data lake entries for a specific document."""
+@app.route('/api/data-sources', methods=['DELETE'])
+def delete_data_sources():
+    """Delete data sources for a specific document."""
     try:
         document_id = request.args.get('documentId')
         
@@ -1289,32 +1289,32 @@ def delete_data_lake():
                 'error': 'Missing documentId parameter'
             }), 400
         
-        # Remove data lake entries for this document
-        if document_id in data_lake_storage:
-            entries_count = len(data_lake_storage[document_id])
-            del data_lake_storage[document_id]
+        # Remove data sources for this document
+        if document_id in data_sources_storage:
+            entries_count = len(data_sources_storage[document_id])
+            del data_sources_storage[document_id]
             
             # Persist changes
-            save_data_lake(data_lake_storage)
+            save_data_sources(data_sources_storage)
             
-            logger.info(f"🗂️ Deleted {entries_count} data lake entries for document {document_id}")
+            logger.info(f"🗂️ Deleted {entries_count} data sources for document {document_id}")
             
             return jsonify({
                 'success': True,
-                'message': f'Data lake entries deleted for document {document_id}',
+                'message': f'Data sources deleted for document {document_id}',
                 'documentId': document_id,
                 'deleted_count': entries_count
             })
         else:
             return jsonify({
                 'success': True,
-                'message': f'No data lake entries found for document {document_id}',
+                'message': f'No data sources found for document {document_id}',
                 'documentId': document_id,
                 'deleted_count': 0
             })
         
     except Exception as e:
-        logger.error(f"Error deleting data lake entries for document: {e}")
+        logger.error(f"Error deleting data sources for document: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/get-verification/<session_id>', methods=['DELETE'])
@@ -2016,11 +2016,11 @@ def generate_variable_code():
                 'error': 'AI service not available (API key not configured)'
             })
         
-        # Get data source information from data lake
-        data_lake_data = data_lake_storage.get(document_id, [])
+        # Get data source information from data sources
+        data_sources = data_sources_storage.get(document_id, [])
         selected_data_source = None
         
-        for item in data_lake_data:
+        for item in data_sources:
             if item.get('filePath') == data_source:
                 selected_data_source = item
                 break

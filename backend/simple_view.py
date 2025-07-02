@@ -58,7 +58,7 @@ class SimpleView(View):
 
         Args:
             editor_content: The new content from the editor
-            document_id: The document ID for loading data lake items
+            document_id: The document ID for loading data sources items
         """
         self.template = Template(editor_content, document_id)
         self.execution_result = self.template.execute(self.client, self.execution_result)
@@ -69,7 +69,7 @@ class SimpleView(View):
 
         Args:
             template_text: The new template text
-            document_id: The document ID for loading data lake items
+            document_id: The document ID for loading data sources items
         """
         self.template = Template(template_text, document_id)
         self.execution_result = self.template.execute(self.client, self.execution_result)

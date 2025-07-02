@@ -357,10 +357,10 @@ class OperatorManager {
     for (const ref of datasetReferences) {
       if (typeof ref === 'string') {
         // Simple string reference to dataset name or file path
-        let dataset = window.dataLakeModule?.getDataSource(ref);
+        let dataset = window.dataSourcesModule?.getDataSource(ref);
         if (!dataset) {
           // Try to find by file path if not found by reference name
-          const allDataSources = window.dataLakeModule?.getAllDataSources() || [];
+          const allDataSources = window.dataSourcesModule?.getAllDataSources() || [];
           dataset = allDataSources.find(ds => ds.filePath === ref || ds.referenceName === ref);
         }
         
@@ -374,10 +374,10 @@ class OperatorManager {
         }
       } else if (typeof ref === 'object' && ref.name) {
         // Object with name and optional alias
-        let dataset = window.dataLakeModule?.getDataSource(ref.name);
+        let dataset = window.dataSourcesModule?.getDataSource(ref.name);
         if (!dataset) {
           // Try to find by file path if not found by reference name
-          const allDataSources = window.dataLakeModule?.getAllDataSources() || [];
+          const allDataSources = window.dataSourcesModule?.getAllDataSources() || [];
           dataset = allDataSources.find(ds => ds.filePath === ref.name || ds.referenceName === ref.name);
         }
         
@@ -1521,7 +1521,7 @@ function addParameterField(key = '', value = '', valueType = 'literal') {
   if (!container) return;
 
   // Get available datasets for the dropdown (use same approach as variable-operator-generator)
-  const datasets = window.dataLakeModule?.getAllDataSources() || [];
+  const datasets = window.dataSourcesModule?.getAllDataSources() || [];
   const datasetOptions = datasets.map(dataset => {
     // Use filePath as the value for code execution, fallback to referenceName for backward compatibility
     const datasetValue = dataset.filePath || dataset.referenceName;

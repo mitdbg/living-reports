@@ -90,7 +90,7 @@ googledoc_demo/
 
 ### Database
 - Documents are stored in `backend/database/documents.json`
-- Data lake items in `backend/database/data_lake.json`
+- Data sources items in `backend/database/data_sources.json`
 - Variables in `backend/database/vars.json`
 - All data persists between sessions
 

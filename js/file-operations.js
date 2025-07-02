@@ -3,7 +3,7 @@ import { elements, state, updateState, windowId } from './state.js';
 import { addMessageToUI } from './chat.js';
 import { switchToPreview, switchToTemplate } from './modes.js';
 import { refreshHighlightEventListeners } from './comments.js';
-import { addToDataLake } from './data-lake.js';
+import { addToDataSources } from './data-source.js';
 import { createDocumentDialog, createDocumentElementId, getDocumentElement } from './element-id-manager.js';
 const { ipcRenderer } = require('electron');
 
@@ -258,7 +258,7 @@ async function loadContextFile() {
     }
     
     // Add file to context display immediately
-    // addContextFileToDisplay(processedFile, false); // Removed: using Data Lake instead
+    // addContextFileToDisplay(processedFile, false); // Removed: using Data Sources instead
     
     // Try to send file to backend as context
     let backendSaved = false;
@@ -321,7 +321,7 @@ function showDisplayChoiceDialog(file, backendSaved) {
         <p>What would you like to do with <strong>${file.name}</strong>?</p>
         <div class="dialog-actions">
           <button id="display-context-btn" class="btn-primary">Display in Preview</button>
-          <button id="add-to-data-lake-btn" class="btn-primary">Add to Data Lake</button>
+          <button id="add-to-data-sources-btn" class="btn-primary">Add to Data Sources</button>
           <button id="keep-hidden-btn" class="btn-secondary">Keep Hidden</button>
         </div>
       </div>
@@ -338,14 +338,14 @@ function showDisplayChoiceDialog(file, backendSaved) {
   const removeDialog = () => {
     // Unregister all elements created for this dialog
     const displayBtnId = createDocumentElementId('display-context-btn', currentDocumentId);
-    const dataLakeBtnId = createDocumentElementId('add-to-data-lake-btn', currentDocumentId);
+    const dataSourcesBtnId = createDocumentElementId('add-to-data-sources-btn', currentDocumentId);
     const hideBtnId = createDocumentElementId('keep-hidden-btn', currentDocumentId);
     const dialogId = createDocumentElementId('display-choice-dialog', currentDocumentId);
     
     // Unregister elements
     if (window.documentManager) {
       window.documentManager.constructor.unregisterDynamicElement(currentDocumentId, displayBtnId);
-      window.documentManager.constructor.unregisterDynamicElement(currentDocumentId, dataLakeBtnId);
+      window.documentManager.constructor.unregisterDynamicElement(currentDocumentId, dataSourcesBtnId);
       window.documentManager.constructor.unregisterDynamicElement(currentDocumentId, hideBtnId);
       window.documentManager.constructor.unregisterDynamicElement(currentDocumentId, dialogId);
     }
@@ -358,7 +358,7 @@ function showDisplayChoiceDialog(file, backendSaved) {
   
   // Get elements using document-specific IDs
   const displayBtn = getDocumentElement('display-context-btn', currentDocumentId);
-  const dataLakeBtn = getDocumentElement('add-to-data-lake-btn', currentDocumentId);
+  const dataSourcesBtn = getDocumentElement('add-to-data-sources-btn', currentDocumentId);
   const hideBtn = getDocumentElement('keep-hidden-btn', currentDocumentId);
   
   if (displayBtn) {
@@ -368,15 +368,15 @@ function showDisplayChoiceDialog(file, backendSaved) {
     });
   }
   
-  if (dataLakeBtn) {
-    dataLakeBtn.addEventListener('click', async () => {
+  if (dataSourcesBtn) {
+    dataSourcesBtn.addEventListener('click', async () => {
       // Add file to data lake
-      const result = await addToDataLake(file);
+      const result = await addToDataSources(file);
       
-      // Generate the same reference name that data lake uses
+      // Generate the same reference name that data sources uses
       const referenceName = file.name.replace(/\.[^/.]+$/, "").replace(/[^a-zA-Z0-9]/g, '_').replace(/_{2,}/g, '_').replace(/^_|_$/g, '').toLowerCase();
       
-      addMessageToUI('system', `${file.name} added to Data Lake. Reference it with $${referenceName}`);
+      addMessageToUI('system', `${file.name} added to Data Sources. Reference it with $${referenceName}`);
       removeDialog();
     });
   }
@@ -951,7 +951,7 @@ async function clearFileContext() {
     const data = await response.json();
     addMessageToUI('system', data.message);
     
-    // Clear the context files display - removed since using Data Lake
+    // Clear the context files display - removed since using Data Sources
     // state.loadedContextFiles = [];
     // updateContextFilesDisplay();
   } catch (error) {

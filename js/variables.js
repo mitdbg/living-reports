@@ -374,7 +374,7 @@ class VariablesManager {
    * Set up Variables event listeners using event delegation
    */
   setupVariablesEventListeners() {
-    // Listen for Variables buttons (using event delegation like Data Lake)
+    // Listen for Variables buttons (using event delegation like Data Sources)
     document.addEventListener('click', async (event) => {
       if (event.target.matches('.variables-btn') || event.target.closest('.variables-btn')) {
         console.log('Variables button clicked');
@@ -1879,10 +1879,10 @@ class VariablesManager {
     const existingOptions = select.querySelectorAll('option[data-source]');
     existingOptions.forEach(option => option.remove());
     
-    // Get data sources from data lake module (same as variable-operator-generator.js)
+    // Get data sources from data sources module (same as variable-operator-generator.js)
     let dataSources = [];
-    if (window.dataLakeModule && window.dataLakeModule.getAllDataSources) {
-      dataSources = window.dataLakeModule.getAllDataSources();
+    if (window.dataSourcesModule && window.dataSourcesModule.getAllDataSources) {
+      dataSources = window.dataSourcesModule.getAllDataSources();
     }
     
     if (dataSources.length === 0) {
