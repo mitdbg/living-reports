@@ -11,7 +11,7 @@ import os
 # Add the backend directory to the path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from task_manager import TaskManager, TaskStatus, TaskPriority
+from task_manager import TaskManager, TaskStatus
 
 def test_task_framework():
     """Test the task framework functionality"""

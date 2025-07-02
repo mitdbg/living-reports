@@ -5,6 +5,9 @@ import os
 import logging
 from datetime import datetime
 import shutil
+import hashlib
+import base64
+from werkzeug.utils import secure_filename
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from openai import OpenAI
@@ -118,6 +121,48 @@ def ensure_database_dir():
     if not os.path.exists(DATABASE_DIR):
         os.makedirs(DATABASE_DIR)
         logger.info(f"📁 Created database directory: {DATABASE_DIR}")
+
+def convert_base64_images_to_files(content: str, document_id: str) -> str:
+    """Convert any base64 images in content to file URLs."""
+    import re
+    
+    # Pattern to match base64 image data URLs
+    pattern = r'<img[^>]*src="data:image/([^;]+);base64,([^"]+)"[^>]*>'
+    
+    def replace_base64_image(match):
+        try:
+            full_tag = match.group(0)
+            image_format = match.group(1)  # png, jpg, etc.
+            base64_data = match.group(2)
+            
+            # Create document images directory
+            doc_dir = os.path.join(DATABASE_DIR, 'files', document_id, 'images')
+            os.makedirs(doc_dir, exist_ok=True)
+            
+            # Generate unique filename based on content hash
+            content_hash = hashlib.md5(base64_data.encode()).hexdigest()[:12]
+            filename = f"converted_{content_hash}.{image_format}"
+            file_save_path = os.path.join(doc_dir, filename)
+            
+            # Save file from base64 content
+            if not os.path.exists(file_save_path):
+                image_data = base64.b64decode(base64_data)
+                with open(file_save_path, 'wb') as f:
+                    f.write(image_data)
+                logger.info(f"💾 Converted base64 image to file: {filename} ({len(image_data)} bytes)")
+            
+            # Create file URL
+            relative_path = f"database/files/{document_id}/images/{filename}"
+            file_url = f"http://127.0.0.1:5000/api/serve-file/{relative_path}"
+            
+            # Replace the src attribute in the original tag
+            return full_tag.replace(f'data:image/{image_format};base64,{base64_data}', file_url)
+            
+        except Exception as e:
+            logger.error(f"Error converting base64 image: {e}")
+            return match.group(0)  # Return original if conversion fails
+    
+    return re.sub(pattern, replace_base64_image, content)
 
 def load_documents():
     """Load all documents from file on startup"""
@@ -707,7 +752,34 @@ def process_file():
         file_ext = Path(file_name).suffix.lower()
         output_json_path = ""
 
-        if file_ext in ['.xlsx', '.xls']:
+        # Handle images by saving them as files and returning URL
+        if file_ext in ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.svg', '.tiff', '.ico']:
+            # Create document images directory
+            doc_dir = os.path.join(DATABASE_DIR, 'files', document_id, 'images')
+            os.makedirs(doc_dir, exist_ok=True)
+            
+            # Generate unique filename based on content hash
+            content_hash = hashlib.md5(file_content.encode()).hexdigest()[:12]
+            secure_name = secure_filename(file_name)
+            name_without_ext = os.path.splitext(secure_name)[0]
+            
+            # Create filename with hash to avoid conflicts
+            filename = f"{name_without_ext}_{content_hash}{file_ext}"
+            file_save_path = os.path.join(doc_dir, filename)
+            
+            # Save file from base64 content
+            if not os.path.exists(file_save_path):
+                image_data = base64.b64decode(file_content)
+                with open(file_save_path, 'wb') as f:
+                    f.write(image_data)
+                logger.info(f"💾 Saved image: {filename} ({len(image_data)} bytes)")
+            
+            # Return file URL instead of base64 content
+            relative_path = f"database/files/{document_id}/images/{filename}"
+            file_url = f"http://127.0.0.1:5000/api/serve-file/{relative_path}"
+            processed_content = file_url
+                
+        elif file_ext in ['.xlsx', '.xls']:
             processed_content = process_excel_file(file_content, file_name)
         elif file_ext == '.pdf':
             output_json_path = output_json_path_dir+"/"+file_name+".json"
@@ -727,6 +799,7 @@ def process_file():
         logger.error(f"Error processing file: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
+
 @app.route('/api/documents', methods=['POST'])
 def save_document():
     """Save a document to backend storage."""
@@ -745,6 +818,12 @@ def save_document():
         chat_history = data.get('chatHistory', [])
         variables = data.get('variables', {})
         context_files = data.get('contextFiles', [])
+        
+        # Convert any base64 images to file URLs before saving
+        if document_id:
+            template_content = convert_base64_images_to_files(template_content, document_id)
+            source_content = convert_base64_images_to_files(source_content, document_id)
+            preview_content = convert_base64_images_to_files(preview_content, document_id)
         
         # Core document schema
         author = data.get('author')
@@ -2180,11 +2259,55 @@ def serve_file(file_path):
             return jsonify({'error': 'Not a file'}), 400
         
         logger.info(f"📎 Serving file: {safe_path}")
-        return send_file(full_path)
+        
+        # Send file with proper headers for images
+        response = send_file(full_path)
+        
+        # Add CORS headers to allow cross-origin requests
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
+        
+        return response
         
     except Exception as e:
         logger.error(f"❌ Error serving file {file_path}: {e}")
         return jsonify({'error': 'Internal server error'}), 500
+
+@app.route('/api/test-file-access/<document_id>')
+def test_file_access(document_id):
+    """Test endpoint to check what files exist for a document"""
+    try:
+        doc_dir = os.path.join(DATABASE_DIR, 'files', document_id, 'images')
+        backend_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        result = {
+            'document_id': document_id,
+            'backend_directory': backend_dir,
+            'images_directory': doc_dir,
+            'images_directory_exists': os.path.exists(doc_dir),
+            'files': []
+        }
+        
+        if os.path.exists(doc_dir):
+            files = os.listdir(doc_dir)
+            for file in files:
+                file_path = os.path.join(doc_dir, file)
+                relative_path = f"database/files/{document_id}/images/{file}"
+                result['files'].append({
+                    'filename': file,
+                    'full_path': file_path,
+                    'relative_path': relative_path,
+                    'file_url': f"http://127.0.0.1:5000/api/serve-file/{relative_path}",
+                    'file_exists': os.path.exists(file_path),
+                    'file_size': os.path.getsize(file_path) if os.path.exists(file_path) else 0
+                })
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"❌ Error in test file access: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 # ============================================================================

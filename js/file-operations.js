@@ -209,7 +209,7 @@ async function loadContextFile() {
     addMessageToUI('system', `Context file loaded: ${file.name}`);
     
     const fileExt = file.name.split('.').pop().toLowerCase();
-    const needsBackendProcessing = ['xlsx', 'xls', 'html', 'htm', 'pdf'].includes(fileExt);
+    const needsBackendProcessing = ['xlsx', 'xls', 'html', 'htm', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'svg', 'tiff', 'ico'].includes(fileExt);
     const isPowerPoint = ['pptx', 'ppt'].includes(fileExt);
     
     let processedFile = file;
@@ -255,10 +255,6 @@ async function loadContextFile() {
         addMessageToUI('system', `Warning: Could not process file on backend (${error.message}). Using raw content.`);
         // Continue with original file content
       }
-    } else if (isPowerPoint) {
-      // For PowerPoint files, we'll process them client-side
-      addMessageToUI('system', `PowerPoint file will be processed client-side for better visual fidelity.`);
-      // Keep the original file with base64 content for client-side processing
     }
     
     // Add file to context display immediately
@@ -374,12 +370,8 @@ function showDisplayChoiceDialog(file, backendSaved) {
   
   if (dataLakeBtn) {
     dataLakeBtn.addEventListener('click', async () => {
-      console.log('🔍 DEBUG: Add to Data Lake button clicked');
-      console.log('🔍 DEBUG: File object being added:', file);
-      
       // Add file to data lake
       const result = await addToDataLake(file);
-      console.log('🔍 DEBUG: addToDataLake result:', result);
       
       // Generate the same reference name that data lake uses
       const referenceName = file.name.replace(/\.[^/.]+$/, "").replace(/[^a-zA-Z0-9]/g, '_').replace(/_{2,}/g, '_').replace(/^_|_$/g, '').toLowerCase();
@@ -434,6 +426,17 @@ function displayContextInPreview(file) {
     case 'ppt':
       renderedContent = renderPowerPoint(file);
       break;
+    case 'png':
+    case 'jpg':
+    case 'jpeg':
+    case 'gif':
+    case 'bmp':
+    case 'tiff':
+    case 'webp':
+    case 'svg':
+    case 'ico':
+      renderedContent = renderImage(file);
+      break;
     default:
       renderedContent = renderPlainText(file.content);
   }
@@ -453,8 +456,6 @@ function displayContextInPreview(file) {
   // Switch to preview mode
   switchToPreview();
 }
-
-
 
 // Format renderers
 function renderMarkdown(content) {
@@ -620,6 +621,27 @@ function renderJSON(content) {
   } catch (error) {
     return `<div class="json-content"><p>Error parsing JSON: ${error.message}</p><pre>${escapeHtml(content)}</pre></div>`;
   }
+}
+
+function renderImage(file) {
+  // Check if this is a direct file upload (has fileUrl) or file URL stored in content
+  if (file.isImageFile && file.fileUrl) {
+    // Direct file upload - use the file URL
+    return `<img src="${file.fileUrl}" alt="${file.name}" style="max-width: 100%; height: auto;" />`;
+  } else if (file.content && (file.content.startsWith('/api/serve-file/') || file.content.startsWith('http://127.0.0.1:5000/api/serve-file/'))) {
+    // File URL stored in content
+    return `<img src="${file.content}" alt="${file.name}" style="max-width: 100%; height: auto;" />`;
+  } else {
+    // No valid file URL found
+    return `<div class="image-error">⚠️ Unable to display image: ${file.name}</div>`;
+  }
+}
+
+// Helper function to format file size
+function formatFileSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' KB';
+  return Math.round(bytes / (1024 * 1024)) + ' MB';
 }
 
 // Client-side PPTX processing using PPTX2HTML
