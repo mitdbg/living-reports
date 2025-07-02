@@ -681,6 +681,14 @@ function renderDatasetContent(item) {
     case 'html':
     case 'htm':
       return renderHTMLContent(content);
+    case 'png':
+    case 'jpg':
+    case 'jpeg':
+    case 'gif':
+    case 'bmp':
+    case 'webp':
+    case 'svg':
+      return renderImageContent(content);
     default:
       return renderPlainContent(content);
   }
@@ -784,6 +792,37 @@ function renderHTMLContent(content) {
     <div style="background-color: #f8f9fa; padding: 8px 12px; font-size: 12px; font-weight: 600; border-bottom: 1px solid #dee2e6;">Rendered HTML:</div>
     <div style="padding: 15px;">${content}</div>
   </div>`;
+}
+
+// Render image content
+function renderImageContent(content) {
+  if (!content || content.trim() === '') {
+    return '<p style="color: #666; font-style: italic;">No image available</p>';
+  }
+  
+  // Check if content is a file URL or base64 data
+  if (content.startsWith('http://') || content.startsWith('https://') || content.startsWith('/api/')) {
+    // File URL - display as image
+    return `<div style="text-align: center; padding: 20px;">
+      <img src="${content}" alt="Preview" style="max-width: 100%; max-height: 400px; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);" />
+      <p style="margin-top: 10px; color: #666; font-size: 12px;">Image served from: ${content}</p>
+    </div>`;
+  } else if (content.startsWith('data:image/')) {
+    // Base64 data - display as image
+    return `<div style="text-align: center; padding: 20px;">
+      <img src="${content}" alt="Preview" style="max-width: 100%; max-height: 400px; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);" />
+      <p style="margin-top: 10px; color: #666; font-size: 12px;">Base64 encoded image</p>
+    </div>`;
+  } else {
+    // Unknown format
+    return `<div style="color: #856404; padding: 10px; background-color: #fff3cd; border-radius: 4px;">
+      <strong>Image content format not recognized:</strong><br>
+      <details style="margin-top: 10px;">
+        <summary>Raw content:</summary>
+        <pre style="white-space: pre-wrap; font-size: 12px; margin-top: 5px;">${escapeHtml(content.substring(0, 500))}${content.length > 500 ? '...' : ''}</pre>
+      </details>
+    </div>`;
+  }
 }
 
 // Render plain content

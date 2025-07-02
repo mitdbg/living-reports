@@ -209,7 +209,7 @@ async function loadContextFile() {
     addMessageToUI('system', `Context file loaded: ${file.name}`);
     
     const fileExt = file.name.split('.').pop().toLowerCase();
-    const needsBackendProcessing = ['xlsx', 'xls', 'html', 'htm', 'pdf'].includes(fileExt);
+    const needsBackendProcessing = ['xlsx', 'xls', 'html', 'htm', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'svg', 'tiff', 'ico'].includes(fileExt);
     const isPowerPoint = ['pptx', 'ppt'].includes(fileExt);
     
     let processedFile = file;
@@ -255,10 +255,6 @@ async function loadContextFile() {
         addMessageToUI('system', `Warning: Could not process file on backend (${error.message}). Using raw content.`);
         // Continue with original file content
       }
-    } else if (isPowerPoint) {
-      // For PowerPoint files, we'll process them client-side
-      addMessageToUI('system', `PowerPoint file will be processed client-side for better visual fidelity.`);
-      // Keep the original file with base64 content for client-side processing
     }
     
     // Add file to context display immediately
@@ -374,12 +370,8 @@ function showDisplayChoiceDialog(file, backendSaved) {
   
   if (dataLakeBtn) {
     dataLakeBtn.addEventListener('click', async () => {
-      console.log('🔍 DEBUG: Add to Data Lake button clicked');
-      console.log('🔍 DEBUG: File object being added:', file);
-      
       // Add file to data lake
       const result = await addToDataLake(file);
-      console.log('🔍 DEBUG: addToDataLake result:', result);
       
       // Generate the same reference name that data lake uses
       const referenceName = file.name.replace(/\.[^/.]+$/, "").replace(/[^a-zA-Z0-9]/g, '_').replace(/_{2,}/g, '_').replace(/^_|_$/g, '').toLowerCase();
@@ -632,27 +624,17 @@ function renderJSON(content) {
 }
 
 function renderImage(file) {
-  // Get MIME type based on file extension
-  const ext = file.name.split('.').pop().toLowerCase();
-  const mimeTypes = {
-    'png': 'image/png',
-    'jpg': 'image/jpeg', 
-    'jpeg': 'image/jpeg',
-    'gif': 'image/gif',
-    'bmp': 'image/bmp',
-    'webp': 'image/webp',
-    'svg': 'image/svg+xml',
-    'ico': 'image/x-icon',
-    'tiff': 'image/tiff',
-    'tif': 'image/tiff'
-  };
-  
-  const mimeType = mimeTypes[ext] || 'image/png';
-  
-  // Create data URL from base64 content
-  const dataUrl = `data:${mimeType};base64,${file.content}`;
-  
-  return `<img src="${dataUrl}" alt="${file.name}" style="max-width: 100%; height: auto;" />`;
+  // Check if this is a direct file upload (has fileUrl) or file URL stored in content
+  if (file.isImageFile && file.fileUrl) {
+    // Direct file upload - use the file URL
+    return `<img src="${file.fileUrl}" alt="${file.name}" style="max-width: 100%; height: auto;" />`;
+  } else if (file.content && (file.content.startsWith('/api/serve-file/') || file.content.startsWith('http://127.0.0.1:5000/api/serve-file/'))) {
+    // File URL stored in content
+    return `<img src="${file.content}" alt="${file.name}" style="max-width: 100%; height: auto;" />`;
+  } else {
+    // No valid file URL found
+    return `<div class="image-error">⚠️ Unable to display image: ${file.name}</div>`;
+  }
 }
 
 // Helper function to format file size

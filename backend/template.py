@@ -67,6 +67,9 @@ class Template:
             if content.startswith('data:'):
                 # Already a data URL
                 return f'<img src="{content}" alt="{name}" style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin: 10px 0;" />'
+            elif content.startswith('http://') or content.startswith('https://'):
+                # File URL - use directly without conversion
+                return f'<img src="{content}" alt="{name}" style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin: 10px 0;" />'
             else:
                 # Try to detect if it's base64 encoded binary data
                 try:
