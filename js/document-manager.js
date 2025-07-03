@@ -431,20 +431,17 @@ export class DocumentManager {
       console.error(`Error initializing document functionality:`, error);
     }
     
-    // Import state to access elements and set default mode
+    // Import state and ensure template mode is properly set with correct button states
     import('./state.js').then(({ getElements, state }) => {
-      // Ensure the document is visible and in template mode by default
-      const templatePanel = getElements.templatePanel;
-      const previewPanel = getElements.previewPanel;
-      const sourcePanel = getElements.sourcePanel;
+      // Set the state first
+      state.currentMode = 'template';
       
-      if (templatePanel && previewPanel && sourcePanel) {
-        sourcePanel.classList.remove('active');
-        templatePanel.classList.remove('active');
-        previewPanel.classList.remove('active');
-        templatePanel.classList.add('active');
-        state.currentMode = 'template';
-      }
+      // Use the proper mode switching function to ensure both panels and buttons are correct
+      import('./modes.js').then(({ switchToTemplate }) => {
+        switchToTemplate();
+      }).catch(error => {
+        console.error('Error switching to template mode:', error);
+      });
     }).catch(error => {
       console.error('Error importing state module:', error);
     });
