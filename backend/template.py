@@ -51,6 +51,65 @@ class Template:
             
         return {}
     
+    def _detect_content_type(self, content: str, name: str) -> str:
+        """
+        Detect content type from file extension or URL.
+        
+        Args:
+            content: The content string (could be URL, file path, etc.)
+            name: The name of the data source
+            
+        Returns:
+            Detected MIME type or 'unknown' if can't detect
+        """
+        # Check URL or file path for extension
+        url_or_path = content.strip()
+        
+        # Remove @ prefix if present
+        if url_or_path.startswith('@'):
+            url_or_path = url_or_path[1:]
+        
+        # Get the file extension
+        import os
+        _, ext = os.path.splitext(url_or_path.lower())
+        
+        # Also check the name for extension as fallback
+        if not ext and name:
+            _, ext = os.path.splitext(name.lower())
+        
+        # Map common extensions to MIME types
+        ext_to_mime = {
+            '.png': 'image/png',
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.gif': 'image/gif',
+            '.webp': 'image/webp',
+            '.svg': 'image/svg+xml',
+            '.bmp': 'image/bmp',
+            '.tiff': 'image/tiff',
+            '.tif': 'image/tiff',
+            '.ico': 'image/x-icon',
+            '.mp4': 'video/mp4',
+            '.webm': 'video/webm',
+            '.avi': 'video/x-msvideo',
+            '.mov': 'video/quicktime',
+            '.wmv': 'video/x-ms-wmv',
+            '.flv': 'video/x-flv',
+            '.csv': 'text/csv',
+            '.txt': 'text/plain',
+            '.json': 'application/json',
+            '.xml': 'application/xml',
+            '.pdf': 'application/pdf',
+            '.doc': 'application/msword',
+            '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            '.xls': 'application/vnd.ms-excel',
+            '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            '.ppt': 'application/vnd.ms-powerpoint',
+            '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+        }
+        
+        return ext_to_mime.get(ext, 'unknown')
+    
     def _render_data_source(self, reference_name: str) -> str:
         """Render a data source based on its type."""
         if reference_name not in self.data_sources_items:
@@ -61,6 +120,12 @@ class Template:
         item_type = item.get('type', 'unknown').lower()
         name = item.get('name', reference_name)
         
+        # If type is unknown, try to detect from file extension or URL
+        if item_type == 'unknown' and content:
+            item_type = self._detect_content_type(content, name)
+        
+        print(f"++++++++++++ Rendering data source: {reference_name} with content: {content} and type: {item_type}")
+
         # Handle different content types
         if item_type.startswith('image/'):
             # For images, create an HTML img tag
@@ -166,6 +231,26 @@ class Template:
                    .replace('"', '&quot;')
                    .replace("'", '&#x27;'))
 
+    def _resolve_variable_value_from_datasource(self, value: str) -> str:
+        """
+        Resolve a variable value, checking if it's a data source reference.
+        
+        Args:
+            value: The variable value to resolve
+            
+        Returns:
+            The resolved value (rendered data source content or original value)
+        """
+        # Check if the variable's value is a data source reference
+        if isinstance(value, str) and value.startswith("$"):
+            # Remove the $ prefix to get the data source reference name
+            data_source_ref = value[1:]  # Remove the $ prefix
+            rendered_data_source = self._render_data_source(data_source_ref)
+            if rendered_data_source != f"${data_source_ref}":  # Found a data source
+                return rendered_data_source
+        
+        return value
+
     @staticmethod
     def _call_llm(client: Any, prompt: str):
             if isinstance(client, OpenAI):
@@ -234,8 +319,10 @@ class Template:
                     variable_instances[var_name] += 1
                     
                     value = variables[var_name].get("value", "")
+                    resolved_value = self._resolve_variable_value_from_datasource(value)
+                    
                     # Wrap in span with metadata for content-to-template mapping
-                    return f'<span class="var-ref" data-var="{var_name}" data-instance="{variable_instances[var_name]}" data-value="{value}">{value}</span>'
+                    return f'<span class="var-ref" data-var="{var_name}" data-instance="{variable_instances[var_name]}" data-value="{value}">{resolved_value}</span>'
                 else:
                     # Check if it's a data source reference
                     rendered_data_source = self._render_data_source(var_name)
@@ -256,8 +343,10 @@ class Template:
                     variable_instances[var_name] += 1
                     
                     value = variables[var_name].get("value", "")
+                    resolved_value = self._resolve_variable_value_from_datasource(value)
+                    
                     # Wrap in span with metadata for content-to-template mapping
-                    return f'<span class="var-ref" data-var="{var_name}" data-instance="{variable_instances[var_name]}" data-value="{value}">{value}</span>'
+                    return f'<span class="var-ref" data-var="{var_name}" data-instance="{variable_instances[var_name]}" data-value="{value}">{resolved_value}</span>'
                 else:
                     # Check if it's a data source reference
                     rendered_data_source = self._render_data_source(var_name)
@@ -283,8 +372,10 @@ class Template:
                     variable_instances[var_name] += 1
                     
                     value = variables[var_name].get("value", "")
+                    resolved_value = self._resolve_variable_value_from_datasource(value)
+                    
                     # Wrap in span with metadata for content-to-template mapping
-                    return f'<span class="var-ref" data-var="{var_name}" data-instance="{variable_instances[var_name]}" data-value="{value}">{value}</span>'
+                    return f'<span class="var-ref" data-var="{var_name}" data-instance="{variable_instances[var_name]}" data-value="{value}">{resolved_value}</span>'
                 else:
                     # Check if it's a data source reference
                     rendered_data_source = self._render_data_source(var_name)
@@ -417,8 +508,12 @@ class Template:
             def substitute_variable(match):
                 var_name = match.group(1)
                 if var_name in variables:
+                    # Get the variable value
+                    value = variables[var_name]['value']
+                    resolved_value = self._resolve_variable_value_from_datasource(value)
+                    
                     # Special marked-up format for variables
-                    formatted = f"$${var_name}:{{{variables[var_name]['value']}}}"
+                    formatted = f"$${var_name}:{{{resolved_value}}}"
                     print(f"Formatting variable {var_name} as: {formatted}")
                     return formatted
                 else:
@@ -435,8 +530,12 @@ class Template:
             def substitute_curly_variable(match):
                 var_name = match.group(1)
                 if var_name in variables:
+                    # Get the variable value
+                    value = variables[var_name]['value']
+                    resolved_value = self._resolve_variable_value_from_datasource(value)
+                    
                     # Special marked-up format for variables
-                    return f"$${var_name}:{{{variables[var_name]['value']}}}"
+                    return f"$${var_name}:{{{resolved_value}}}"
                 else:
                     # Check if it's a data source reference
                     rendered_data_source = self._render_data_source(var_name)
@@ -456,8 +555,12 @@ class Template:
                     return full_match  # Keep assignment syntax unchanged
                     
                 if var_name in variables:
+                    # Get the variable value
+                    value = variables[var_name]['value']
+                    resolved_value = self._resolve_variable_value_from_datasource(value)
+                    
                     # Special marked-up format for variables in references mode
-                    return f"$${var_name}:{{{variables[var_name]['value']}}}"
+                    return f"$${var_name}:{{{resolved_value}}}"
                 else:
                     # Check if it's a data source reference
                     rendered_data_source = self._render_data_source(var_name)
@@ -624,7 +727,8 @@ class Template:
         def substitute_variable(match):
             var_name = match.group(1)
             if var_name in variables:
-                return variables[var_name]["value"]
+                value = variables[var_name]["value"]
+                return self._resolve_variable_value_from_datasource(value)
             else:
                 # Check if it's a data source reference
                 rendered_data_source = self._render_data_source(var_name)
@@ -639,7 +743,8 @@ class Template:
         def substitute_curly_variable(match):
             var_name = match.group(1)
             if var_name in variables:
-                return variables[var_name]["value"]
+                value = variables[var_name]["value"]
+                return self._resolve_variable_value_from_datasource(value)
             else:
                 # Check if it's a data source reference
                 rendered_data_source = self._render_data_source(var_name)

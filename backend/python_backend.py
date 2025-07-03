@@ -251,9 +251,104 @@ def save_data_sources(data_sources):
         ensure_database_dir()
         with open(DATA_SOURCES_FILE, 'w') as f:
             json.dump(data_sources, f, indent=2)
-        logger.info(f"💾 Saved data sources for {len(data_sources)} documents to {DATA_SOURCES_FILE}")
+        total_data_sources = sum(len(doc_data_sources) for doc_data_sources in data_sources.values())
+        logger.info(f"💾 Saved data sources for {len(data_sources)} documents ({total_data_sources} total data sources) to {DATA_SOURCES_FILE}")
     except Exception as e:
         logger.error(f"❌ Error saving data sources: {e}")
+
+def detect_content_type(filename, content="", current_type=""):
+    """
+    Detect MIME type from filename extension.
+    
+    Args:
+        filename: The filename to detect type from
+        content: The content (optional, for URL detection)
+        current_type: The current type (if valid, return it)
+        
+    Returns:
+        Detected MIME type or 'application/octet-stream' if unknown
+    """
+    # If current type is valid (not empty/unknown), use it
+    if current_type and current_type not in ['unknown', '', 'application/octet-stream']:
+        return current_type
+    
+    # Check content for URL extensions first
+    if content and isinstance(content, str):
+        # Remove @ prefix if present
+        url_or_path = content.strip()
+        if url_or_path.startswith('@'):
+            url_or_path = url_or_path[1:]
+        
+        # Get extension from URL/path
+        import os
+        _, ext = os.path.splitext(url_or_path.lower())
+        if ext:
+            filename_ext = ext
+        else:
+            _, filename_ext = os.path.splitext(filename.lower())
+    else:
+        # Get extension from filename
+        import os
+        _, filename_ext = os.path.splitext(filename.lower())
+    
+    # Map extensions to MIME types
+    ext_to_mime = {
+        # Images
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.gif': 'image/gif',
+        '.webp': 'image/webp',
+        '.svg': 'image/svg+xml',
+        '.bmp': 'image/bmp',
+        '.tiff': 'image/tiff',
+        '.tif': 'image/tiff',
+        '.ico': 'image/x-icon',
+        
+        # Videos
+        '.mp4': 'video/mp4',
+        '.webm': 'video/webm',
+        '.avi': 'video/x-msvideo',
+        '.mov': 'video/quicktime',
+        '.wmv': 'video/x-ms-wmv',
+        '.flv': 'video/x-flv',
+        
+        # Documents
+        '.pdf': 'application/pdf',
+        '.doc': 'application/msword',
+        '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        '.xls': 'application/vnd.ms-excel',
+        '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        '.ppt': 'application/vnd.ms-powerpoint',
+        '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        
+        # Text/Data
+        '.csv': 'text/csv',
+        '.txt': 'text/plain',
+        '.json': 'application/json',
+        '.xml': 'application/xml',
+        '.html': 'text/html',
+        '.htm': 'text/html',
+        '.css': 'text/css',
+        '.js': 'text/javascript',
+        '.ts': 'text/typescript',
+        '.py': 'text/x-python',
+        '.java': 'text/x-java-source',
+        '.cpp': 'text/x-c++src',
+        '.c': 'text/x-csrc',
+        '.h': 'text/x-chdr',
+        '.md': 'text/markdown',
+        
+        # Archives
+        '.zip': 'application/zip',
+        '.rar': 'application/x-rar-compressed',
+        '.7z': 'application/x-7z-compressed',
+        '.tar': 'application/x-tar',
+        '.gz': 'application/gzip'
+    }
+    
+    detected_type = ext_to_mime.get(filename_ext, 'application/octet-stream')
+    return detected_type
 
 # Initialize data sources storage
 data_sources_storage = load_data_sources()
@@ -1152,19 +1247,40 @@ def save_data_sources_endpoint():
                 'error': 'Missing documentId in request'
             }), 400
         
-        # Store data sources items for this document
-        data_sources_storage[document_id] = data_sources
+        # Process each data source to detect and fix content types
+        processed_data_sources = []
+        for item in data_sources:
+            # Create a copy to avoid modifying the original
+            processed_item = item.copy()
+            
+            # Detect and fix content type if it's unknown or invalid
+            current_type = processed_item.get('type', 'unknown')
+            filename = processed_item.get('name', '')
+            content = processed_item.get('content', '')
+            
+            # Detect proper content type
+            detected_type = detect_content_type(filename, content, current_type)
+            processed_item['type'] = detected_type
+            
+            # Log the detection if type was changed
+            if current_type != detected_type:
+                logger.info(f"🔍 Content type detected: {filename} -> {current_type} -> {detected_type}")
+            
+            processed_data_sources.append(processed_item)
+        
+        # Store processed data sources items for this document
+        data_sources_storage[document_id] = processed_data_sources
         
         # Persist to file
         save_data_sources(data_sources_storage)
         
-        logger.info(f"🗂️ Saved {len(data_sources)} data sources for document {document_id}")
+        logger.info(f"🗂️ Saved {len(processed_data_sources)} data sources for document {document_id}")
         
         return jsonify({
             'success': True,
             'message': f'Data sources saved for document {document_id}',
             'documentId': document_id,
-            'count': len(data_sources)
+            'count': len(processed_data_sources)
         })
         
     except Exception as e:
