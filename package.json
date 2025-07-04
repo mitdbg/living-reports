@@ -1,8 +1,16 @@
 {
-  "name": "electron-ui",
+  "name": "googledoc_demo",
   "version": "1.0.0",
-  "description": "Collaborative whiteboard and chat application",
+  "description": "Collaborative Document Workspace - A modern collaborative document creation and management platform with AI-powered features",
   "main": "main.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MITDBG/googledoc_demo.git"
+  },
+  "homepage": "https://github.com/MITDBG/googledoc_demo#readme",
+  "bugs": {
+    "url": "https://github.com/MITDBG/googledoc_demo/issues"
+  },
   "scripts": {
     "start": "electron .",
     "python-backend": "cd backend && python3 python_backend.py",
@@ -16,10 +24,12 @@
     "chat",
     "collaboration",
     "templates",
-    "ai"
+    "ai",
+    "document-management",
+    "real-time-collaboration"
   ],
-  "author": "",
-  "license": "ISC",
+  "author": "MITDBG",
+  "license": "MIT",
   "devDependencies": {
     "concurrently": "^8.2.2",
     "electron": "^35.1.5"

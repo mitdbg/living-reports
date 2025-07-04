@@ -22,7 +22,7 @@ A modern collaborative document creation and management platform with AI-powered
 
 ### 1. Clone the Repository
 ```bash
-git clone <repository-url>
+git clone https://github.com/MITDBG/googledoc_demo.git
 cd googledoc_demo
 ```
 
