@@ -17,6 +17,7 @@ from openai import OpenAI
 # Load environment variables from .env file BEFORE importing midrc
 try:
     from dotenv import load_dotenv
+
     load_dotenv()
 except ImportError:
     pass  # python-dotenv not installed, continue without .env support
@@ -45,38 +46,48 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    datefmt='%H:%M:%S'
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    datefmt="%H:%M:%S",
 )
-logger = logging.getLogger('backend')
+logger = logging.getLogger("backend")
+
 
 def ensure_gen3_installed():
     """Ensure gen3 package is installed for MIDRC downloads"""
     try:
         # Check if gen3 command is available
-        result = subprocess.run(['gen3', '--version'], 
-                              capture_output=True, text=True, timeout=10)
+        result = subprocess.run(
+            ["gen3", "--version"], capture_output=True, text=True, timeout=10
+        )
         if result.returncode == 0:
             logger.info("✅ gen3 command-line tool is already available")
             return True
-    except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.CalledProcessError):
+    except (
+        subprocess.TimeoutExpired,
+        FileNotFoundError,
+        subprocess.CalledProcessError,
+    ):
         pass
-    
+
     try:
         # Check if gen3 package is installed
         import gen3
+
         logger.info("✅ gen3 Python package is available")
         return True
     except ImportError:
         pass
-    
+
     # Install gen3 package
     logger.info("📦 Installing gen3 package for MIDRC downloads...")
     try:
-        result = subprocess.run([
-            sys.executable, "-m", "pip", "install", "gen3"
-        ], capture_output=True, text=True, timeout=120)
-        
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "gen3"],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+
         if result.returncode == 0:
             logger.info("✅ gen3 package installed successfully")
             return True
@@ -86,6 +97,7 @@ def ensure_gen3_installed():
     except Exception as e:
         logger.error(f"❌ Error installing gen3: {e}")
         return False
+
 
 # Ensure gen3 is available
 ensure_gen3_installed()
@@ -99,7 +111,7 @@ try:
     if not api_key:
         logger.warning("OPENAI_API_KEY not set! AI features will be limited.")
         logger.info("Set it in your .env file: OPENAI_API_KEY='your-key'")
-    
+
     client = OpenAI(api_key=api_key) if api_key else None
     if client:
         logger.info("✓ OpenAI client initialized successfully")
@@ -110,9 +122,11 @@ try:
             logger.info("✓ Together client initialized successfully")
         else:
             if not Together:
-                logger.warning("⚠ Together module not available (install with: pip install together)")
+                logger.warning(
+                    "⚠ Together module not available (install with: pip install together)"
+                )
             logger.warning("⚠ Running without OpenAI or Together client")
-        
+
 except Exception as e:
     logger.error(f"Failed to initialize OpenAI client: {e}")
     client = None
@@ -125,11 +139,12 @@ view_registry = {}  # session_id -> View
 chat_manager = ChatManager(client, view_registry) if client else None
 task_manager = TaskManager()
 
+
 def initialize_mcp_at_startup():
     """Initialize MCP service at startup with persistent event loop."""
     import threading
     import asyncio
-    
+
     def init_mcp():
         try:
             logger.info("🚀 Starting MCP initialization at startup...")
@@ -146,18 +161,20 @@ def initialize_mcp_at_startup():
                 loop.close()
         except Exception as e:
             logger.error(f"❌ Error during MCP startup initialization: {e}")
-    
+
     # Start initialization in background thread to not block Flask startup
     thread = threading.Thread(target=init_mcp, daemon=True)
     thread.start()
     logger.info("🔄 MCP initialization started in background thread")
 
+
 # Initialize MCP at startup
 initialize_mcp_at_startup()
 
 # Persistent storage for all documents
-DATABASE_DIR = 'database'
-DOCUMENTS_FILE = os.path.join(DATABASE_DIR, 'documents.json')
+DATABASE_DIR = "database"
+DOCUMENTS_FILE = os.path.join(DATABASE_DIR, "documents.json")
+
 
 def ensure_database_dir():
     """Ensure database directory exists"""
@@ -165,47 +182,53 @@ def ensure_database_dir():
         os.makedirs(DATABASE_DIR)
         logger.info(f"📁 Created database directory: {DATABASE_DIR}")
 
+
 def convert_base64_images_to_files(content: str, document_id: str) -> str:
     """Convert any base64 images in content to file URLs."""
     import re
-    
+
     # Pattern to match base64 image data URLs
     pattern = r'<img[^>]*src="data:image/([^;]+);base64,([^"]+)"[^>]*>'
-    
+
     def replace_base64_image(match):
         try:
             full_tag = match.group(0)
             image_format = match.group(1)  # png, jpg, etc.
             base64_data = match.group(2)
-            
+
             # Create document images directory
-            doc_dir = os.path.join(DATABASE_DIR, 'files', document_id, 'images')
+            doc_dir = os.path.join(DATABASE_DIR, "files", document_id, "images")
             os.makedirs(doc_dir, exist_ok=True)
-            
+
             # Generate unique filename based on content hash
             content_hash = hashlib.md5(base64_data.encode()).hexdigest()[:12]
             filename = f"converted_{content_hash}.{image_format}"
             file_save_path = os.path.join(doc_dir, filename)
-            
+
             # Save file from base64 content
             if not os.path.exists(file_save_path):
                 image_data = base64.b64decode(base64_data)
-                with open(file_save_path, 'wb') as f:
+                with open(file_save_path, "wb") as f:
                     f.write(image_data)
-                logger.info(f"💾 Converted base64 image to file: {filename} ({len(image_data)} bytes)")
-            
+                logger.info(
+                    f"💾 Converted base64 image to file: {filename} ({len(image_data)} bytes)"
+                )
+
             # Create file URL
             relative_path = f"database/files/{document_id}/images/{filename}"
             file_url = f"http://127.0.0.1:5000/api/serve-file/{relative_path}"
-            
+
             # Replace the src attribute in the original tag
-            return full_tag.replace(f'data:image/{image_format};base64,{base64_data}', file_url)
-            
+            return full_tag.replace(
+                f"data:image/{image_format};base64,{base64_data}", file_url
+            )
+
         except Exception as e:
             logger.error(f"Error converting base64 image: {e}")
             return match.group(0)  # Return original if conversion fails
-    
+
     return re.sub(pattern, replace_base64_image, content)
+
 
 def load_documents():
     """Load all documents from file on startup"""
@@ -213,9 +236,11 @@ def load_documents():
     try:
         ensure_database_dir()
         if os.path.exists(DOCUMENTS_FILE):
-            with open(DOCUMENTS_FILE, 'r') as f:
+            with open(DOCUMENTS_FILE, "r") as f:
                 documents = json.load(f)
-                logger.info(f"📄 Loaded {len(documents)} documents from {DOCUMENTS_FILE}")
+                logger.info(
+                    f"📄 Loaded {len(documents)} documents from {DOCUMENTS_FILE}"
+                )
         else:
             documents = {}
             logger.info("📄 No existing documents file found. Starting fresh.")
@@ -223,31 +248,36 @@ def load_documents():
         logger.error(f"❌ Error loading documents: {e}")
         documents = {}
 
+
 def save_documents():
     """Save all documents to file for persistence"""
     try:
         ensure_database_dir()
-        with open(DOCUMENTS_FILE, 'w') as f:
+        with open(DOCUMENTS_FILE, "w") as f:
             json.dump(documents, f, indent=2)
         logger.info(f"💾 Saved {len(documents)} documents to {DOCUMENTS_FILE}")
     except Exception as e:
         logger.error(f"❌ Error saving documents: {e}")
+
 
 # Initialize storage
 documents = {}  # Global storage for all documents
 load_documents()
 
 # Persistent storage for document verifications
-VERIFICATIONS_FILE = os.path.join(DATABASE_DIR, 'verifications.json')
+VERIFICATIONS_FILE = os.path.join(DATABASE_DIR, "verifications.json")
+
 
 def load_verifications():
     """Load all verifications from file"""
     try:
         ensure_database_dir()
         if os.path.exists(VERIFICATIONS_FILE):
-            with open(VERIFICATIONS_FILE, 'r') as f:
+            with open(VERIFICATIONS_FILE, "r") as f:
                 verifications = json.load(f)
-                logger.info(f"📋 Loaded verifications for {len(verifications)} documents from {VERIFICATIONS_FILE}")
+                logger.info(
+                    f"📋 Loaded verifications for {len(verifications)} documents from {VERIFICATIONS_FILE}"
+                )
                 return verifications
         else:
             logger.info("📋 No existing verifications file found. Starting fresh.")
@@ -256,30 +286,37 @@ def load_verifications():
         logger.error(f"❌ Error loading verifications: {e}")
         return {}
 
+
 def save_verifications(verifications):
     """Save all verifications to file"""
     try:
         ensure_database_dir()
-        with open(VERIFICATIONS_FILE, 'w') as f:
+        with open(VERIFICATIONS_FILE, "w") as f:
             json.dump(verifications, f, indent=2)
-        logger.info(f"💾 Saved verifications for {len(verifications)} documents to {VERIFICATIONS_FILE}")
+        logger.info(
+            f"💾 Saved verifications for {len(verifications)} documents to {VERIFICATIONS_FILE}"
+        )
     except Exception as e:
         logger.error(f"❌ Error saving verifications: {e}")
+
 
 # Initialize verifications storage
 verifications = load_verifications()
 
 # Persistent storage for Data Sources
-DATA_SOURCES_FILE = os.path.join(DATABASE_DIR, 'data_sources.json')
+DATA_SOURCES_FILE = os.path.join(DATABASE_DIR, "data_sources.json")
+
 
 def load_data_sources():
     """Load all data sources from file"""
     try:
         ensure_database_dir()
         if os.path.exists(DATA_SOURCES_FILE):
-            with open(DATA_SOURCES_FILE, 'r') as f:
+            with open(DATA_SOURCES_FILE, "r") as f:
                 data_sources = json.load(f)
-                logger.info(f"🗂️ Loaded data sources for {len(data_sources)} documents from {DATA_SOURCES_FILE}")
+                logger.info(
+                    f"🗂️ Loaded data sources for {len(data_sources)} documents from {DATA_SOURCES_FILE}"
+                )
                 return data_sources
         else:
             logger.info("🗂️ No existing data sources file found. Starting fresh.")
@@ -288,42 +325,49 @@ def load_data_sources():
         logger.error(f"❌ Error loading data sources: {e}")
         return {}
 
+
 def save_data_sources(data_sources):
     """Save all data sources to file"""
     try:
         ensure_database_dir()
-        with open(DATA_SOURCES_FILE, 'w') as f:
+        with open(DATA_SOURCES_FILE, "w") as f:
             json.dump(data_sources, f, indent=2)
-        total_data_sources = sum(len(doc_data_sources) for doc_data_sources in data_sources.values())
-        logger.info(f"💾 Saved data sources for {len(data_sources)} documents ({total_data_sources} total data sources) to {DATA_SOURCES_FILE}")
+        total_data_sources = sum(
+            len(doc_data_sources) for doc_data_sources in data_sources.values()
+        )
+        logger.info(
+            f"💾 Saved data sources for {len(data_sources)} documents ({total_data_sources} total data sources) to {DATA_SOURCES_FILE}"
+        )
     except Exception as e:
         logger.error(f"❌ Error saving data sources: {e}")
+
 
 def detect_content_type(filename, content="", current_type=""):
     """
     Detect MIME type from filename extension.
-    
+
     Args:
         filename: The filename to detect type from
         content: The content (optional, for URL detection)
         current_type: The current type (if valid, return it)
-        
+
     Returns:
         Detected MIME type or 'application/octet-stream' if unknown
     """
     # If current type is valid (not empty/unknown), use it
-    if current_type and current_type not in ['unknown', '', 'application/octet-stream']:
+    if current_type and current_type not in ["unknown", "", "application/octet-stream"]:
         return current_type
-    
+
     # Check content for URL extensions first
     if content and isinstance(content, str):
         # Remove @ prefix if present
         url_or_path = content.strip()
-        if url_or_path.startswith('@'):
+        if url_or_path.startswith("@"):
             url_or_path = url_or_path[1:]
-        
+
         # Get extension from URL/path
         import os
+
         _, ext = os.path.splitext(url_or_path.lower())
         if ext:
             filename_ext = ext
@@ -332,66 +376,64 @@ def detect_content_type(filename, content="", current_type=""):
     else:
         # Get extension from filename
         import os
+
         _, filename_ext = os.path.splitext(filename.lower())
-    
+
     # Map extensions to MIME types
     ext_to_mime = {
         # Images
-        '.png': 'image/png',
-        '.jpg': 'image/jpeg',
-        '.jpeg': 'image/jpeg',
-        '.gif': 'image/gif',
-        '.webp': 'image/webp',
-        '.svg': 'image/svg+xml',
-        '.bmp': 'image/bmp',
-        '.tiff': 'image/tiff',
-        '.tif': 'image/tiff',
-        '.ico': 'image/x-icon',
-        
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".gif": "image/gif",
+        ".webp": "image/webp",
+        ".svg": "image/svg+xml",
+        ".bmp": "image/bmp",
+        ".tiff": "image/tiff",
+        ".tif": "image/tiff",
+        ".ico": "image/x-icon",
         # Videos
-        '.mp4': 'video/mp4',
-        '.webm': 'video/webm',
-        '.avi': 'video/x-msvideo',
-        '.mov': 'video/quicktime',
-        '.wmv': 'video/x-ms-wmv',
-        '.flv': 'video/x-flv',
-        
+        ".mp4": "video/mp4",
+        ".webm": "video/webm",
+        ".avi": "video/x-msvideo",
+        ".mov": "video/quicktime",
+        ".wmv": "video/x-ms-wmv",
+        ".flv": "video/x-flv",
         # Documents
-        '.pdf': 'application/pdf',
-        '.doc': 'application/msword',
-        '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        '.xls': 'application/vnd.ms-excel',
-        '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        '.ppt': 'application/vnd.ms-powerpoint',
-        '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-        
+        ".pdf": "application/pdf",
+        ".doc": "application/msword",
+        ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ".xls": "application/vnd.ms-excel",
+        ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ".ppt": "application/vnd.ms-powerpoint",
+        ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
         # Text/Data
-        '.csv': 'text/csv',
-        '.txt': 'text/plain',
-        '.json': 'application/json',
-        '.xml': 'application/xml',
-        '.html': 'text/html',
-        '.htm': 'text/html',
-        '.css': 'text/css',
-        '.js': 'text/javascript',
-        '.ts': 'text/typescript',
-        '.py': 'text/x-python',
-        '.java': 'text/x-java-source',
-        '.cpp': 'text/x-c++src',
-        '.c': 'text/x-csrc',
-        '.h': 'text/x-chdr',
-        '.md': 'text/markdown',
-        
+        ".csv": "text/csv",
+        ".txt": "text/plain",
+        ".json": "application/json",
+        ".xml": "application/xml",
+        ".html": "text/html",
+        ".htm": "text/html",
+        ".css": "text/css",
+        ".js": "text/javascript",
+        ".ts": "text/typescript",
+        ".py": "text/x-python",
+        ".java": "text/x-java-source",
+        ".cpp": "text/x-c++src",
+        ".c": "text/x-csrc",
+        ".h": "text/x-chdr",
+        ".md": "text/markdown",
         # Archives
-        '.zip': 'application/zip',
-        '.rar': 'application/x-rar-compressed',
-        '.7z': 'application/x-7z-compressed',
-        '.tar': 'application/x-tar',
-        '.gz': 'application/gzip'
+        ".zip": "application/zip",
+        ".rar": "application/x-rar-compressed",
+        ".7z": "application/x-7z-compressed",
+        ".tar": "application/x-tar",
+        ".gz": "application/gzip",
     }
-    
-    detected_type = ext_to_mime.get(filename_ext, 'application/octet-stream')
+
+    detected_type = ext_to_mime.get(filename_ext, "application/octet-stream")
     return detected_type
+
 
 # Initialize data sources storage
 data_sources_storage = load_data_sources()
@@ -400,16 +442,19 @@ data_sources_storage = load_data_sources()
 task_manager = TaskManager(DATABASE_DIR)
 
 # Persistent storage for Variables
-VARIABLES_FILE = os.path.join(DATABASE_DIR, 'vars.json')
+VARIABLES_FILE = os.path.join(DATABASE_DIR, "vars.json")
+
 
 def load_variables():
     """Load all variables from file"""
     try:
         ensure_database_dir()
         if os.path.exists(VARIABLES_FILE):
-            with open(VARIABLES_FILE, 'r') as f:
+            with open(VARIABLES_FILE, "r") as f:
                 variables = json.load(f)
-                logger.info(f"📊 Loaded variables for {len(variables)} documents from {VARIABLES_FILE}")
+                logger.info(
+                    f"📊 Loaded variables for {len(variables)} documents from {VARIABLES_FILE}"
+                )
                 return variables
         else:
             logger.info("📊 No existing variables file found. Starting fresh.")
@@ -418,38 +463,47 @@ def load_variables():
         logger.error(f"❌ Error loading variables: {e}")
         return {}
 
+
 def save_variables(variables):
     """Save all variables to file"""
     try:
         ensure_database_dir()
-        with open(VARIABLES_FILE, 'w') as f:
+        with open(VARIABLES_FILE, "w") as f:
             json.dump(variables, f, indent=2)
-        logger.info(f"💾 Saved variables for {len(variables)} documents to {VARIABLES_FILE}")
+        logger.info(
+            f"💾 Saved variables for {len(variables)} documents to {VARIABLES_FILE}"
+        )
     except Exception as e:
         logger.error(f"❌ Error saving variables: {e}")
+
 
 # Initialize variables storage
 variables_storage = load_variables()
 
 # Persistent storage for Tools
-TOOLS_FILE = os.path.join(DATABASE_DIR, 'tools.json')
+TOOLS_FILE = os.path.join(DATABASE_DIR, "tools.json")
+
 
 def load_tools():
     """Load all tools from file"""
     try:
         ensure_database_dir()
         if os.path.exists(TOOLS_FILE):
-            with open(TOOLS_FILE, 'r') as f:
+            with open(TOOLS_FILE, "r") as f:
                 tools = json.load(f)
                 # Handle migration from array format to document_id keyed format
                 if isinstance(tools, list):
                     # Migrate old format: move all tools to a 'global' document_id
-                    logger.info(f"🔧 Migrating {len(tools)} tools from array to document-keyed format")
-                    migrated_tools = {'global': tools}
+                    logger.info(
+                        f"🔧 Migrating {len(tools)} tools from array to document-keyed format"
+                    )
+                    migrated_tools = {"global": tools}
                     save_tools(migrated_tools)
                     return migrated_tools
                 elif isinstance(tools, dict):
-                    logger.info(f"🔧 Loaded tools for {len(tools)} documents from {TOOLS_FILE}")
+                    logger.info(
+                        f"🔧 Loaded tools for {len(tools)} documents from {TOOLS_FILE}"
+                    )
                     return tools
                 else:
                     logger.warning("🔧 Invalid tools format, starting fresh")
@@ -461,51 +515,64 @@ def load_tools():
         logger.error(f"❌ Error loading tools: {e}")
         return {}
 
+
 def save_tools(tools):
     """Save all tools to file"""
     try:
         ensure_database_dir()
-        with open(TOOLS_FILE, 'w') as f:
+        with open(TOOLS_FILE, "w") as f:
             json.dump(tools, f, indent=2)
         total_tools = sum(len(doc_tools) for doc_tools in tools.values())
-        logger.info(f"💾 Saved tools for {len(tools)} documents ({total_tools} total tools) to {TOOLS_FILE}")
+        logger.info(
+            f"💾 Saved tools for {len(tools)} documents ({total_tools} total tools) to {TOOLS_FILE}"
+        )
     except Exception as e:
         logger.error(f"❌ Error saving tools: {e}")
 
+
 # Initialize tools storage
 tools_storage = load_tools()
+
 
 @app.before_request
 def log_request():
     """Log all incoming requests for debugging."""
     print(f"📥 Incoming request: {request.method} {request.url}", flush=True)
 
-@app.route('/api/chat', methods=['POST'])
+
+@app.route("/api/chat", methods=["POST"])
 def handle_chat():
     """Handle chat messages using the ChatManager."""
     try:
         data = request.get_json()
-        user_message = data.get('user_message', '')
-        session_id = data.get('session_id', 'default')
-        current_template = data.get('current_template', '')
-        current_preview = data.get('current_preview', '')
-        current_mode = data.get('current_mode', 'preview')
-        suggest_template = data.get('suggest_template', False)  # Default to False for regular chat
-        
+        user_message = data.get("user_message", "")
+        session_id = data.get("session_id", "default")
+        current_template = data.get("current_template", "")
+        current_preview = data.get("current_preview", "")
+        current_mode = data.get("current_mode", "preview")
+        suggest_template = data.get(
+            "suggest_template", False
+        )  # Default to False for regular chat
+
         # Check if chat_manager is available (requires OpenAI API key)
         if chat_manager is None:
-            return jsonify({
-                'error': 'OpenAI API key not configured',
-                'response': 'Sorry, I cannot process chat messages because the OpenAI API key is not set. Please set the OPENAI_API_KEY environment variable and restart the server.',
-                'content': 'To enable AI chat features, please:\n1. Get an OpenAI API key from https://platform.openai.com/\n2. Set it in your .env file: OPENAI_API_KEY="your-key-here"\n3. Restart the Python backend',
-                'result': '',
-                'variables': {},
-                'cache_info': {'variables_count': 0, 'cached': False},
-                'template': {'current_template': current_template, 'view_type': 'simple'},
-                'output': {'result': '', 'variables': {}, 'view_type': 'simple'},
-                'view_type': 'simple'
-            })
-        
+            return jsonify(
+                {
+                    "error": "OpenAI API key not configured",
+                    "response": "Sorry, I cannot process chat messages because the OpenAI API key is not set. Please set the OPENAI_API_KEY environment variable and restart the server.",
+                    "content": 'To enable AI chat features, please:\n1. Get an OpenAI API key from https://platform.openai.com/\n2. Set it in your .env file: OPENAI_API_KEY="your-key-here"\n3. Restart the Python backend',
+                    "result": "",
+                    "variables": {},
+                    "cache_info": {"variables_count": 0, "cached": False},
+                    "template": {
+                        "current_template": current_template,
+                        "view_type": "simple",
+                    },
+                    "output": {"result": "", "variables": {}, "view_type": "simple"},
+                    "view_type": "simple",
+                }
+            )
+
         # Use chat_manager to handle the message
         response = chat_manager.handle_chat_message(
             user_message=user_message,
@@ -513,33 +580,35 @@ def handle_chat():
             current_template=current_template,
             current_preview=current_preview,
             current_mode=current_mode,
-            suggest_template=suggest_template
+            suggest_template=suggest_template,
         )
-        
-        return jsonify(response)
-        
-    except Exception as e:
-        return jsonify({
-            'error': str(e),
-            'content': f'Error processing message: {str(e)}'
-        }), 500
 
-@app.route('/api/execute-template', methods=['POST'])
+        return jsonify(response)
+
+    except Exception as e:
+        return jsonify(
+            {"error": str(e), "content": f"Error processing message: {str(e)}"}
+        ), 500
+
+
+@app.route("/api/execute-template", methods=["POST"])
 def execute_template():
     """Execute a template and return the result."""
     try:
         data = request.get_json()
-        template_text = data.get('template_text', '')
-        session_id = data.get('session_id', 'default')
-        document_id = data.get('document_id', None)
+        template_text = data.get("template_text", "")
+        session_id = data.get("session_id", "default")
+        document_id = data.get("document_id", None)
 
         print(f"📊 Document ID: {document_id}")
         print(f"📊 Session ID: {session_id}")
         print(f"📊 Template Text: {template_text}")
-        
+
         # **FIRST: Load and merge variables from multiple sources**
         template_variables = variables_storage.get(document_id, {})
-        logger.info(f"📊 Merged variables for {document_id}: {len(template_variables)} from template")
+        logger.info(
+            f"📊 Merged variables for {document_id}: {len(template_variables)} from template"
+        )
 
         # Create or get the view for this session with pre-loaded variables
         if session_id not in view_registry:
@@ -550,11 +619,10 @@ def execute_template():
             # Update existing view with merged variables
             view = view_registry[session_id]
             view.execution_result.variables = template_variables
-        
+
         # Update the template and execute it (now with all variables available)
         view = view_registry[session_id]
         view.update_from_editor(template_text, document_id)
-        
 
         for var_name, var_data in template_variables.items():
             print(f"📊 Variable {var_name}: {var_data}")
@@ -566,14 +634,14 @@ def execute_template():
         except Exception as e:
             print(f"❌ Error in render_output(): {e}")
             raise e
-            
+
         try:
             template_data = view.render_template()
             print("✅ render_template() completed")
         except Exception as e:
             print(f"❌ Error in render_template(): {e}")
             raise e
-        
+
         # Safe debug print
         try:
             print(f"📊 Output data type: {type(output_data)}")
@@ -581,71 +649,71 @@ def execute_template():
                 print(f"📊 Output data keys: {list(output_data.keys())}")
         except Exception as e:
             print(f"⚠️ Could not print output_data debug info: {e}")
-            
-        return jsonify({
-            'success': True,
-            'template_text': template_data.get('template_text', template_text),
-            'rendered_output': output_data.get('result', ''),
-            'variables': output_data.get('variables', {}),
-            'view_type': output_data.get('view_type', 'simple')
-        })
-        
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e),
-            'rendered_output': f'Error executing template: {str(e)}'
-        }), 500
 
-@app.route('/api/file-context', methods=['POST'])
+        return jsonify(
+            {
+                "success": True,
+                "template_text": template_data.get("template_text", template_text),
+                "rendered_output": output_data.get("result", ""),
+                "variables": output_data.get("variables", {}),
+                "view_type": output_data.get("view_type", "simple"),
+            }
+        )
+
+    except Exception as e:
+        return jsonify(
+            {
+                "success": False,
+                "error": str(e),
+                "rendered_output": f"Error executing template: {str(e)}",
+            }
+        ), 500
+
+
+@app.route("/api/file-context", methods=["POST"])
 def set_file_context():
     """Set file context for chat."""
     try:
         data = request.get_json()
-        file_name = data.get('fileName', '')
-        content = data.get('content', '')
-        session_id = data.get('session_id', 'default')
-        redirect_output_file_path = data.get('redirect_output_file_path', '')
-        
+        file_name = data.get("fileName", "")
+        content = data.get("content", "")
+        session_id = data.get("session_id", "default")
+        redirect_output_file_path = data.get("redirect_output_file_path", "")
+
         if redirect_output_file_path != "":
-            with open(redirect_output_file_path, 'r') as f:
+            with open(redirect_output_file_path, "r") as f:
                 content = f.read()
 
         # Create a template from the file content
         template = Template(content)
         execution_result = ExecutionResult()
         view_registry[session_id] = SimpleView(template, execution_result, client)
-        
-        return jsonify({
-            'message': f'File "{file_name}" has been loaded as context for chat.',
-            'success': True
-        })
-        
-    except Exception as e:
-        return jsonify({
-            'error': str(e),
-            'success': False
-        }), 500
 
-@app.route('/api/file-context', methods=['DELETE'])
+        return jsonify(
+            {
+                "message": f'File "{file_name}" has been loaded as context for chat.',
+                "success": True,
+            }
+        )
+
+    except Exception as e:
+        return jsonify({"error": str(e), "success": False}), 500
+
+
+@app.route("/api/file-context", methods=["DELETE"])
 def clear_file_context():
     """Clear file context for chat."""
     try:
-        session_id = request.args.get('session_id', 'default')
-        
+        session_id = request.args.get("session_id", "default")
+
         if session_id in view_registry:
             del view_registry[session_id]
-        
-        return jsonify({
-            'message': 'File context has been cleared.',
-            'success': True
-        })
-        
+
+        return jsonify({"message": "File context has been cleared.", "success": True})
+
     except Exception as e:
-        return jsonify({
-            'error': str(e),
-            'success': False
-        }), 500
+        return jsonify({"error": str(e), "success": False}), 500
+
 
 def fix_pptx_css_location(ai_generated_content, original_content):
     """
@@ -654,90 +722,100 @@ def fix_pptx_css_location(ai_generated_content, original_content):
     """
     try:
         import re
-        
+
         # Extract original CSS from the original content
-        original_css_match = re.search(r'<style[^>]*>(.*?)</style>', original_content, re.DOTALL | re.IGNORECASE)
+        original_css_match = re.search(
+            r"<style[^>]*>(.*?)</style>", original_content, re.DOTALL | re.IGNORECASE
+        )
         if not original_css_match:
             return ai_generated_content
-        
+
         original_css = original_css_match.group(1)
-        
+
         # Check if AI moved CSS outside of style tags
         # Look for CSS rules that appear as plain text
-        css_pattern = r'\._css_\w+\s*\{[^}]*\}'
+        css_pattern = r"\._css_\w+\s*\{[^}]*\}"
         loose_css_matches = re.findall(css_pattern, ai_generated_content)
-        
+
         if loose_css_matches:
             # Remove loose CSS from content
             cleaned_content = ai_generated_content
             for css_rule in loose_css_matches:
-                cleaned_content = cleaned_content.replace(css_rule, '')
-            
+                cleaned_content = cleaned_content.replace(css_rule, "")
+
             # Clean up extra whitespace
-            cleaned_content = re.sub(r'\s+', ' ', cleaned_content).strip()
-            
+            cleaned_content = re.sub(r"\s+", " ", cleaned_content).strip()
+
             # Ensure the original CSS is present in a style tag
-            if '<style>' not in cleaned_content:
+            if "<style>" not in cleaned_content:
                 # Add style tag with original CSS at the beginning
-                cleaned_content = f'<style>{original_css}</style>\n{cleaned_content}'
-            
+                cleaned_content = f"<style>{original_css}</style>\n{cleaned_content}"
+
             return cleaned_content
-        
+
         # If no loose CSS found, return as-is
         return ai_generated_content
-        
+
     except Exception as e:
         print(f"Error fixing PPTX CSS location: {e}")
         return ai_generated_content
 
-@app.route('/api/ai-suggestion', methods=['POST'])
+
+@app.route("/api/ai-suggestion", methods=["POST"])
 def get_ai_suggestion():
     """Get AI suggestion for content improvement in specific mode (preview, template, source)."""
     try:
         data = request.get_json()
-        
+
         # Extract request data
-        full_content = data.get('full_content', '')
-        selected_text = data.get('selected_text', '')
-        user_request = data.get('user_request', '')
-        mode = data.get('mode', 'preview')  # 'preview', 'template', 'source'
-        session_id = data.get('session_id', 'default')
-        
+        full_content = data.get("full_content", "")
+        selected_text = data.get("selected_text", "")
+        user_request = data.get("user_request", "")
+        mode = data.get("mode", "preview")  # 'preview', 'template', 'source'
+        session_id = data.get("session_id", "default")
+
         # Validate required fields
         if not full_content:
-            return jsonify({
-                'success': False,
-                'error': 'Full content is required'
-            }), 400
-            
+            return jsonify({"success": False, "error": "Full content is required"}), 400
+
         if not selected_text:
-            return jsonify({
-                'success': False,
-                'error': 'Selected text is required'
-            }), 400
-            
+            return jsonify(
+                {"success": False, "error": "Selected text is required"}
+            ), 400
+
         if not user_request:
-            return jsonify({
-                'success': False,
-                'error': 'User request is required'
-            }), 400
-        
+            return jsonify({"success": False, "error": "User request is required"}), 400
+
         # Check if LLM client is available
         if client is None:
-            return jsonify({
-                'success': False,
-                'error': 'AI service not available (API key not configured)'
-            })
-        
+            return jsonify(
+                {
+                    "success": False,
+                    "error": "AI service not available (API key not configured)",
+                }
+            )
+
         # Detect if this is PPTX content with embedded CSS
-        has_pptx_css = '<style>' in full_content and '_css_' in full_content
-        
+        has_pptx_css = "<style>" in full_content and "_css_" in full_content
+
         # Define strings with backslashes outside f-string
-        newline_instruction = 'Use <br> for line breaks, not newlines.'
-        pptx_warning = 'CRITICAL - PPTX CONTENT DETECTED: This content contains PowerPoint slides with embedded CSS styles. You MUST preserve all <style> tags and CSS rules EXACTLY as they are. Do NOT move, modify, or relocate any CSS code. The CSS must remain in <style> tags at the top of the content.' if has_pptx_css else ''
-        css_requirement = 'If content has <style> tags with CSS, preserve them EXACTLY in their original location' if has_pptx_css else 'You can modify any part of the content to address the user\'s request'
-        css_rule = '6. DO NOT move or modify any <style> tags or CSS rules - they control slide formatting' if has_pptx_css else ''
-        
+        newline_instruction = "Use <br> for line breaks, not newlines."
+        pptx_warning = (
+            "CRITICAL - PPTX CONTENT DETECTED: This content contains PowerPoint slides with embedded CSS styles. You MUST preserve all <style> tags and CSS rules EXACTLY as they are. Do NOT move, modify, or relocate any CSS code. The CSS must remain in <style> tags at the top of the content."
+            if has_pptx_css
+            else ""
+        )
+        css_requirement = (
+            "If content has <style> tags with CSS, preserve them EXACTLY in their original location"
+            if has_pptx_css
+            else "You can modify any part of the content to address the user's request"
+        )
+        css_rule = (
+            "6. DO NOT move or modify any <style> tags or CSS rules - they control slide formatting"
+            if has_pptx_css
+            else ""
+        )
+
         # Create structured prompt for LLM
         prompt = f"""You are an AI assistant helping to improve content based on user feedback.
 
@@ -772,12 +850,12 @@ Requirements:
 JSON:"""
         try:
             # Call LLM for suggestion
-            if hasattr(client, 'chat'):
+            if hasattr(client, "chat"):
                 response = client.chat.completions.create(
                     model="gpt-4.1-mini",
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.3,
-                    max_tokens=8000
+                    max_tokens=8000,
                 )
                 suggestion_text = response.choices[0].message.content.strip()
             else:
@@ -786,762 +864,860 @@ JSON:"""
                     model="Qwen/Qwen2.5-Coder-32B-Instruct",
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.3,
-                    max_tokens=8000
+                    max_tokens=8000,
                 )
                 suggestion_text = response.choices[0].message.content.strip()
-            
+
             print(f"AI Suggestion Raw Response: {suggestion_text}")
-            
+
             try:
                 import json
                 import re
-                
+
                 # Clean up the response to extract JSON
-                json_match = re.search(r'\{[\s\S]*\}', suggestion_text)
+                json_match = re.search(r"\{[\s\S]*\}", suggestion_text)
                 if json_match:
                     json_str = json_match.group()
                     parsed_suggestion = json.loads(json_str)
                 else:
                     raise ValueError("No JSON found in response")
-                
-                required_fields = ['new_text', 'explanation', 'confidence']
+
+                required_fields = ["new_text", "explanation", "confidence"]
                 for field in required_fields:
                     if field not in parsed_suggestion:
                         raise ValueError(f"Missing required field: {field}")
-                
-                parsed_suggestion['confidence'] = parsed_suggestion.get('confidence', 0.7)
-                new_text = parsed_suggestion.get('new_text', '')
-                
+
+                parsed_suggestion["confidence"] = parsed_suggestion.get(
+                    "confidence", 0.7
+                )
+                new_text = parsed_suggestion.get("new_text", "")
+
                 # Post-process PPTX content to ensure CSS stays in proper location
                 if has_pptx_css:
                     new_text = fix_pptx_css_location(new_text, full_content)
-                
-                parsed_suggestion['new_text'] = new_text
-                return jsonify({
-                    'success': True,
-                    'suggestion': parsed_suggestion,
-                    'mode': mode,
-                    'raw_response': suggestion_text
-                })
-                
+
+                parsed_suggestion["new_text"] = new_text
+                return jsonify(
+                    {
+                        "success": True,
+                        "suggestion": parsed_suggestion,
+                        "mode": mode,
+                        "raw_response": suggestion_text,
+                    }
+                )
+
             except (json.JSONDecodeError, ValueError) as parse_error:
                 print(f"Error parsing AI response: {parse_error}")
-                
-                return jsonify({
-                    'success': False,
-                    'mode': mode,
-                    'raw_response': suggestion_text,
-                })
-                
+
+                return jsonify(
+                    {
+                        "success": False,
+                        "mode": mode,
+                        "raw_response": suggestion_text,
+                    }
+                )
+
         except Exception as llm_error:
             print(f"Error calling LLM: {llm_error}")
-            return jsonify({
-                'success': False,
-                'error': f'LLM error: {str(llm_error)}'
-            }), 500
-        
+            return jsonify(
+                {"success": False, "error": f"LLM error: {str(llm_error)}"}
+            ), 500
+
     except Exception as e:
         print(f"Error in AI suggestion endpoint: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
-
-
-@app.route('/api/chat/clear', methods=['POST'])
+@app.route("/api/chat/clear", methods=["POST"])
 def clear_chat_history():
     """Clear chat history for a session."""
     try:
         data = request.get_json()
-        session_id = data.get('session_id', 'default')
-        
+        session_id = data.get("session_id", "default")
+
         # Clear conversation history in chat manager if it exists
         cleared = False
         if chat_manager:
             cleared = chat_manager.clear_conversation_history(session_id)
-        
-        return jsonify({
-            'success': True,
-            'cleared': cleared,
-            'message': f'Chat history cleared for session {session_id}' if cleared else f'No chat history found for session {session_id}'
-        })
-        
+
+        return jsonify(
+            {
+                "success": True,
+                "cleared": cleared,
+                "message": f"Chat history cleared for session {session_id}"
+                if cleared
+                else f"No chat history found for session {session_id}",
+            }
+        )
+
     except Exception as e:
-        return jsonify({
-            'error': str(e),
-            'success': False
-        }), 500
+        return jsonify({"error": str(e), "success": False}), 500
 
 
-
-@app.route('/api/process-file', methods=['POST'])
+@app.route("/api/process-file", methods=["POST"])
 def process_file():
     """Process uploaded files (Excel, PDF, HTML) and return extracted content."""
     try:
         data = request.get_json()
-        file_name = data.get('fileName', '')
-        file_content = data.get('content', '')  # Base64 encoded for binary files
-        file_path = data.get('filePath', '')
-        document_id = data.get('document_id', 'default')
+        file_name = data.get("fileName", "")
+        file_content = data.get("content", "")  # Base64 encoded for binary files
+        file_path = data.get("filePath", "")
+        document_id = data.get("document_id", "default")
         output_json_path_dir = "database/files/" + document_id
         # Determine file type and process accordingly
         file_ext = Path(file_name).suffix.lower()
         output_json_path = ""
 
         # Handle images by saving them as files and returning URL
-        if file_ext in ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.svg', '.tiff', '.ico']:
+        if file_ext in [
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".gif",
+            ".bmp",
+            ".webp",
+            ".svg",
+            ".tiff",
+            ".ico",
+        ]:
             # Create document images directory
-            doc_dir = os.path.join(DATABASE_DIR, 'files', document_id, 'images')
+            doc_dir = os.path.join(DATABASE_DIR, "files", document_id, "images")
             os.makedirs(doc_dir, exist_ok=True)
-            
+
             # Generate unique filename based on content hash
             content_hash = hashlib.md5(file_content.encode()).hexdigest()[:12]
             secure_name = secure_filename(file_name)
             name_without_ext = os.path.splitext(secure_name)[0]
-            
+
             # Create filename with hash to avoid conflicts
             filename = f"{name_without_ext}_{content_hash}{file_ext}"
             file_save_path = os.path.join(doc_dir, filename)
-            
+
             # Save file from base64 content
             if not os.path.exists(file_save_path):
                 image_data = base64.b64decode(file_content)
-                with open(file_save_path, 'wb') as f:
+                with open(file_save_path, "wb") as f:
                     f.write(image_data)
                 logger.info(f"💾 Saved image: {filename} ({len(image_data)} bytes)")
-            
+
             # Return file URL instead of base64 content
             relative_path = f"database/files/{document_id}/images/{filename}"
             file_url = f"http://127.0.0.1:5000/api/serve-file/{relative_path}"
             processed_content = file_url
-                
-        elif file_ext in ['.xlsx', '.xls']:
+
+        elif file_ext in [".xlsx", ".xls"]:
             processed_content = process_excel_file(file_content, file_name)
-        elif file_ext == '.pdf':
-            output_json_path = output_json_path_dir+"/"+file_name+".json"
-            output_image_dir = output_json_path_dir+"/"+file_name+"_images"
-            processed_content = process_pdf_file(file_path, json_path=output_json_path, clean_image_dir=output_image_dir)
-        elif file_ext in ['.html', '.htm']:
+        elif file_ext == ".pdf":
+            output_json_path = output_json_path_dir + "/" + file_name + ".json"
+            output_image_dir = output_json_path_dir + "/" + file_name + "_images"
+            processed_content = process_pdf_file(
+                file_path, json_path=output_json_path, clean_image_dir=output_image_dir
+            )
+        elif file_ext in [".html", ".htm"]:
             processed_content = process_html_file(file_content, file_name)
-        elif file_ext in ['.pptx', '.ppt']:
+        elif file_ext in [".pptx", ".ppt"]:
             processed_content = process_pptx_file(file_path)
         else:
             # For other file types, return as-is (assuming text)
             processed_content = file_content
-        
-        return jsonify({'success': True, 'message': 'File processed successfully', 'content': processed_content, 'fileName': file_name, 'filePath': file_path, 'output_file_path': output_json_path})
-        
+
+        return jsonify(
+            {
+                "success": True,
+                "message": "File processed successfully",
+                "content": processed_content,
+                "fileName": file_name,
+                "filePath": file_path,
+                "output_file_path": output_json_path,
+            }
+        )
+
     except Exception as e:
         logger.error(f"Error processing file: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
-@app.route('/api/documents', methods=['POST'])
+@app.route("/api/documents", methods=["POST"])
 def save_document():
     """Save a document to backend storage."""
     try:
         data = request.get_json()
-        
+
         # Extract document data
-        document_id = data.get('documentId')
-        title = data.get('title', 'Untitled Document')
-        template_content = data.get('template_content', '')
-        source_content = data.get('source_content', '')
-        preview_content = data.get('preview_content', '')
-        session_id = data.get('sessionId')
-        created_at = data.get('createdAt')
-        last_modified = data.get('lastModified')
-        chat_history = data.get('chatHistory', [])
-        variables = data.get('variables', {})
-        context_files = data.get('contextFiles', [])
-        
+        document_id = data.get("documentId")
+        title = data.get("title", "Untitled Document")
+        template_content = data.get("template_content", "")
+        source_content = data.get("source_content", "")
+        preview_content = data.get("preview_content", "")
+        session_id = data.get("sessionId")
+        created_at = data.get("createdAt")
+        last_modified = data.get("lastModified")
+        chat_history = data.get("chatHistory", [])
+        variables = data.get("variables", {})
+        context_files = data.get("contextFiles", [])
+
         # Convert any base64 images to file URLs before saving
         if document_id:
-            template_content = convert_base64_images_to_files(template_content, document_id)
+            template_content = convert_base64_images_to_files(
+                template_content, document_id
+            )
             source_content = convert_base64_images_to_files(source_content, document_id)
-            preview_content = convert_base64_images_to_files(preview_content, document_id)
-        
+            preview_content = convert_base64_images_to_files(
+                preview_content, document_id
+            )
+
         # Core document schema
-        author = data.get('author')
-        author_name = data.get('authorName', 'Unknown')
-        editors = data.get('editors', [])
-        viewers = data.get('viewers', [])
-        
+        author = data.get("author")
+        author_name = data.get("authorName", "Unknown")
+        editors = data.get("editors", [])
+        viewers = data.get("viewers", [])
+
         # Extract comments data (new field)
-        comments = data.get('comments', {})
-        
+        comments = data.get("comments", {})
+
         # Create document with unified schema
         document = {
-            'id': document_id,
-            'title': title,
-            'source_content': source_content,
-            'template_content': template_content,
-            'preview_content': preview_content,
-            'sessionId': session_id,
-            'createdAt': created_at,
-            'lastModified': last_modified,
-            'chatHistory': chat_history,
-            'variables': variables,
-            'contextFiles': context_files,
-            'author': author,
-            'authorName': author_name,
-            'editors': editors,
-            'viewers': viewers,
-            'comments': comments,  # Add comments to document schema
-            'savedAt': datetime.now().isoformat()
+            "id": document_id,
+            "title": title,
+            "source_content": source_content,
+            "template_content": template_content,
+            "preview_content": preview_content,
+            "sessionId": session_id,
+            "createdAt": created_at,
+            "lastModified": last_modified,
+            "chatHistory": chat_history,
+            "variables": variables,
+            "contextFiles": context_files,
+            "author": author,
+            "authorName": author_name,
+            "editors": editors,
+            "viewers": viewers,
+            "comments": comments,  # Add comments to document schema
+            "savedAt": datetime.now().isoformat(),
         }
-        
+
         # Store document
         documents[document_id] = document
-        
+
         # Persist to file
         save_documents()
-        
+
         # Log comment information for debugging
         comment_count = len(comments) if isinstance(comments, dict) else 0
-        logger.info(f"Document '{title}' (ID: {document_id}) saved by {author_name} with {comment_count} comments")
-        
-        return jsonify({
-            'success': True,
-            'message': f'Document "{title}" has been saved',
-            'documentId': document_id
-        })
-            
+        logger.info(
+            f"Document '{title}' (ID: {document_id}) saved by {author_name} with {comment_count} comments"
+        )
+
+        return jsonify(
+            {
+                "success": True,
+                "message": f'Document "{title}" has been saved',
+                "documentId": document_id,
+            }
+        )
+
     except Exception as e:
         logger.error(f"Error saving document: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/api/documents', methods=['GET'])
+
+@app.route("/api/documents", methods=["GET"])
 def get_all_documents():
     """Get all documents."""
     try:
         documents_list = list(documents.values())
-        
+
         logger.info(f"Returning {len(documents_list)} documents")
-        
-        return jsonify({
-            'success': True,
-            'documents': documents_list,
-            'count': len(documents_list)
-        })
-        
+
+        return jsonify(
+            {"success": True, "documents": documents_list, "count": len(documents_list)}
+        )
+
     except Exception as e:
         logger.error(f"Error getting documents: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/api/documents/user/<user_id>', methods=['GET'])
+
+@app.route("/api/documents/user/<user_id>", methods=["GET"])
 def get_user_documents(user_id):
     """Get all documents accessible to a specific user."""
     try:
         accessible_docs = []
-        
+
         for doc_id, doc in documents.items():
             # User can access if they are:
             # 1. The author
-            # 2. In the editors list  
+            # 2. In the editors list
             # 3. In the viewers list
-            if (doc.get('author') == user_id or
-                user_id in doc.get('editors', []) or
-                user_id in doc.get('viewers', [])):
-                
+            if (
+                doc.get("author") == user_id
+                or user_id in doc.get("editors", [])
+                or user_id in doc.get("viewers", [])
+            ):
                 # Add permission info for frontend
                 doc_copy = doc.copy()
-                doc_copy['userPermission'] = {
-                    'isAuthor': doc.get('author') == user_id,
-                    'canEdit': doc.get('author') == user_id or user_id in doc.get('editors', []),
-                    'canView': True  # If they can access it, they can view it
+                doc_copy["userPermission"] = {
+                    "isAuthor": doc.get("author") == user_id,
+                    "canEdit": doc.get("author") == user_id
+                    or user_id in doc.get("editors", []),
+                    "canView": True,  # If they can access it, they can view it
                 }
                 accessible_docs.append(doc_copy)
-        
+
         # logger.info(f"Returning {len(accessible_docs)} accessible documents for user {user_id}")
-        
-        return jsonify({
-            'success': True,
-            'documents': accessible_docs,
-            'count': len(accessible_docs)
-        })
-        
+
+        return jsonify(
+            {
+                "success": True,
+                "documents": accessible_docs,
+                "count": len(accessible_docs),
+            }
+        )
+
     except Exception as e:
         logger.error(f"Error getting documents for user {user_id}: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/api/documents/<document_id>', methods=['GET'])
+
+@app.route("/api/documents/<document_id>", methods=["GET"])
 def get_shared_document(document_id):
     """Get a specific shared document by ID."""
     try:
         if document_id in documents:
             document = documents[document_id]
             # logger.info(f"Returning shared document: {document['title']}")
-            
-            return jsonify({
-                'success': True,
-                'document': document
-            })
+
+            return jsonify({"success": True, "document": document})
         else:
-            return jsonify({
-                'success': False,
-                'error': 'Document not found'
-            }), 404
-            
+            return jsonify({"success": False, "error": "Document not found"}), 404
+
     except Exception as e:
         logger.error(f"Error getting shared document {document_id}: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/api/documents/<document_id>', methods=['DELETE'])
+
+@app.route("/api/documents/<document_id>", methods=["DELETE"])
 def delete_document(document_id):
     """Delete a document and perform cascading cleanup of related data."""
     try:
         if document_id in documents:
-            document_title = documents[document_id]['title']
-            session_id = documents[document_id].get('sessionId', '')
-            
+            document_title = documents[document_id]["title"]
+            session_id = documents[document_id].get("sessionId", "")
+
             # Delete main document
             del documents[document_id]
             save_documents()
-            
+
             # Cascading cleanup - remove related data
             cleanup_summary = []
-            
+
             # Clean up variables for this document
             if document_id in variables_storage:
                 variables_count = len(variables_storage[document_id])
                 del variables_storage[document_id]
                 save_variables(variables_storage)
                 cleanup_summary.append(f"{variables_count} variables")
-                logger.info(f"📊 Cleaned up {variables_count} variables for document {document_id}")
-            
+                logger.info(
+                    f"📊 Cleaned up {variables_count} variables for document {document_id}"
+                )
+
             # Clean up data sources entries for this document
             if document_id in data_sources_storage:
                 data_sources_count = len(data_sources_storage[document_id])
                 del data_sources_storage[document_id]
                 save_data_sources(data_sources_storage)
                 cleanup_summary.append(f"{data_sources_count} data sources")
-                logger.info(f"🗂️ Cleaned up {data_sources_count} data sources for document {document_id}")
-            
+                logger.info(
+                    f"🗂️ Cleaned up {data_sources_count} data sources for document {document_id}"
+                )
+
             # Clean up verifications for this document (using session_id)
             if session_id and session_id in verifications:
-                verifications_count = sum(len(user_verifications) for user_verifications in verifications[session_id].values())
+                verifications_count = sum(
+                    len(user_verifications)
+                    for user_verifications in verifications[session_id].values()
+                )
                 del verifications[session_id]
                 save_verifications(verifications)
                 cleanup_summary.append(f"{verifications_count} verifications")
-                logger.info(f"📋 Cleaned up {verifications_count} verifications for document {document_id} (session {session_id})")
-            
+                logger.info(
+                    f"📋 Cleaned up {verifications_count} verifications for document {document_id} (session {session_id})"
+                )
+
             # Clean up tools for this document
             if document_id in tools_storage:
                 tools_count = len(tools_storage[document_id])
                 del tools_storage[document_id]
                 save_tools(tools_storage)
                 cleanup_summary.append(f"{tools_count} tools")
-                logger.info(f"🔧 Cleaned up {tools_count} tools for document {document_id}")
+                logger.info(
+                    f"🔧 Cleaned up {tools_count} tools for document {document_id}"
+                )
 
             # Clean up tasks for this document
             tasks_count = task_manager.delete_tasks_by_document(document_id)
             if tasks_count > 0:
                 cleanup_summary.append(f"{tasks_count} tasks")
-                logger.info(f"📋 Cleaned up {tasks_count} tasks for document {document_id}")
+                logger.info(
+                    f"📋 Cleaned up {tasks_count} tasks for document {document_id}"
+                )
 
             # Clean up file from the file system
             file_path = "database/files/" + document_id
             if os.path.exists(file_path):
                 shutil.rmtree(file_path)
-                logger.info(f"🗂️ Cleaned up file from the file system for document {document_id}")
-            
+                logger.info(
+                    f"🗂️ Cleaned up file from the file system for document {document_id}"
+                )
+
             cleanup_message = f'Document "{document_title}" has been deleted'
             if cleanup_summary:
                 cleanup_message += f" along with {', '.join(cleanup_summary)}"
-            
-            logger.info(f"✅ Complete deletion of document: {document_title} ({document_id})")
-            
-            return jsonify({
-                'success': True,
-                'message': cleanup_message,
-                'cleanup_summary': cleanup_summary
-            })
+
+            logger.info(
+                f"✅ Complete deletion of document: {document_title} ({document_id})"
+            )
+
+            return jsonify(
+                {
+                    "success": True,
+                    "message": cleanup_message,
+                    "cleanup_summary": cleanup_summary,
+                }
+            )
         else:
-            return jsonify({
-                'success': False,
-                'error': 'Document not found'
-            }), 404
-            
+            return jsonify({"success": False, "error": "Document not found"}), 404
+
     except Exception as e:
         logger.error(f"Error deleting document {document_id}: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/api/verify-document', methods=['POST'])
+
+@app.route("/api/verify-document", methods=["POST"])
 def verify_document():
     """Save document verification."""
     try:
         data = request.get_json()
-        
+
         # Extract verification data
-        session_id = data.get('session_id')
-        user_id = data.get('user_id')
-        user_name = data.get('user_name')
-        user_emoji = data.get('user_emoji')
-        verified_at = data.get('verified_at')
-        document_content = data.get('document_content', '')
-        
+        session_id = data.get("session_id")
+        user_id = data.get("user_id")
+        user_name = data.get("user_name")
+        user_emoji = data.get("user_emoji")
+        verified_at = data.get("verified_at")
+        document_content = data.get("document_content", "")
+
         if not session_id or not user_id or not user_name:
-            return jsonify({
-                'success': False,
-                'error': 'Missing required fields: session_id, user_id, user_name'
-            }), 400
-        
+            return jsonify(
+                {
+                    "success": False,
+                    "error": "Missing required fields: session_id, user_id, user_name",
+                }
+            ), 400
+
         # Create verification record
         verification = {
-            'user_id': user_id,
-            'user_name': user_name,
-            'user_emoji': user_emoji,
-            'verified_at': verified_at,
-            'document_content_hash': hash(document_content) if document_content else None,
-            'content_length': len(document_content) if document_content else 0,
-            'saved_at': datetime.now().isoformat()
+            "user_id": user_id,
+            "user_name": user_name,
+            "user_emoji": user_emoji,
+            "verified_at": verified_at,
+            "document_content_hash": hash(document_content)
+            if document_content
+            else None,
+            "content_length": len(document_content) if document_content else 0,
+            "saved_at": datetime.now().isoformat(),
         }
-        
+
         # Initialize verifications structure for this session if not exists
         if session_id not in verifications:
             verifications[session_id] = {}
-        
+
         # Initialize user's verification list if not exists
         if user_id not in verifications[session_id]:
             verifications[session_id][user_id] = []
-        
+
         # Add verification to the user's list
         verifications[session_id][user_id].append(verification)
-        
+
         # Save to file
         save_verifications(verifications)
-        
-        logger.info(f"✅ Document verification saved: {user_name} verified document {session_id}")
-        
-        return jsonify({
-            'success': True,
-            'message': f'Document verified by {user_name}',
-            'verification': verification
-        })
-        
+
+        logger.info(
+            f"✅ Document verification saved: {user_name} verified document {session_id}"
+        )
+
+        return jsonify(
+            {
+                "success": True,
+                "message": f"Document verified by {user_name}",
+                "verification": verification,
+            }
+        )
+
     except Exception as e:
         logger.error(f"Error saving verification: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/api/get-verification/<session_id>', methods=['GET'])
+
+@app.route("/api/get-verification/<session_id>", methods=["GET"])
 def get_verification(session_id):
     """Get verification history for a document."""
     try:
         document_verifications = verifications.get(session_id, {})
-        
-        return jsonify({
-            'success': True,
-            'session_id': session_id,
-            'verifications': document_verifications,
-            'count': len(document_verifications)
-        })
-        
+
+        return jsonify(
+            {
+                "success": True,
+                "session_id": session_id,
+                "verifications": document_verifications,
+                "count": len(document_verifications),
+            }
+        )
+
     except Exception as e:
         logger.error(f"Error getting verification for {session_id}: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/api/data-sources', methods=['GET'])
+
+@app.route("/api/data-sources", methods=["GET"])
 def get_data_sources():
     """Get data sources for a specific document."""
     try:
-        document_id = request.args.get('documentId')
-        window_id = request.args.get('windowId', 'default')
-        session_id = request.args.get('session_id', 'default')
-        
+        document_id = request.args.get("documentId")
+        window_id = request.args.get("windowId", "default")
+        session_id = request.args.get("session_id", "default")
+
         if not document_id:
-            return jsonify({
-                'success': False,
-                'error': 'Missing documentId parameter'
-            }), 400
-        
+            return jsonify(
+                {"success": False, "error": "Missing documentId parameter"}
+            ), 400
+
         # Get data sources items for this document
         document_data_sources = data_sources_storage.get(document_id, [])
-        
-        logger.info(f"🗂️ Returning {len(document_data_sources)} data sources for document {document_id}")
-        
-        return jsonify({
-            'success': True,
-            'dataSources': document_data_sources,
-            'documentId': document_id,
-            'count': len(document_data_sources)
-        })
-        
+
+        logger.info(
+            f"🗂️ Returning {len(document_data_sources)} data sources for document {document_id}"
+        )
+
+        return jsonify(
+            {
+                "success": True,
+                "dataSources": document_data_sources,
+                "documentId": document_id,
+                "count": len(document_data_sources),
+            }
+        )
+
     except Exception as e:
         logger.error(f"Error getting data sources: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/api/data-sources', methods=['POST'])
+
+@app.route("/api/data-sources", methods=["POST"])
 def save_data_sources_endpoint():
     """Save data sources for a specific document."""
     try:
         data = request.get_json()
-        
-        document_id = data.get('documentId')
-        window_id = data.get('windowId', 'default')
-        session_id = data.get('session_id', 'default')
-        data_sources = data.get('dataSources', [])
-        
+
+        document_id = data.get("documentId")
+        window_id = data.get("windowId", "default")
+        session_id = data.get("session_id", "default")
+        data_sources = data.get("dataSources", [])
+
         if not document_id:
-            return jsonify({
-                'success': False,
-                'error': 'Missing documentId in request'
-            }), 400
-        
+            return jsonify(
+                {"success": False, "error": "Missing documentId in request"}
+            ), 400
+
         # Process each data source to detect and fix content types
         processed_data_sources = []
         for item in data_sources:
             # Create a copy to avoid modifying the original
             processed_item = item.copy()
-            
+
             # Detect and fix content type if it's unknown or invalid
-            current_type = processed_item.get('type', 'unknown')
-            filename = processed_item.get('name', '')
-            content = processed_item.get('content', '')
-            
+            current_type = processed_item.get("type", "unknown")
+            filename = processed_item.get("name", "")
+            content = processed_item.get("content", "")
+
             # Detect proper content type
             detected_type = detect_content_type(filename, content, current_type)
-            processed_item['type'] = detected_type
-            
+            processed_item["type"] = detected_type
+
             # Log the detection if type was changed
             if current_type != detected_type:
-                logger.info(f"🔍 Content type detected: {filename} -> {current_type} -> {detected_type}")
-            
+                logger.info(
+                    f"🔍 Content type detected: {filename} -> {current_type} -> {detected_type}"
+                )
+
             processed_data_sources.append(processed_item)
-        
+
         # Store processed data sources items for this document
         data_sources_storage[document_id] = processed_data_sources
-        
+
         # Persist to file
         save_data_sources(data_sources_storage)
-        
-        logger.info(f"🗂️ Saved {len(processed_data_sources)} data sources for document {document_id}")
-        
-        return jsonify({
-            'success': True,
-            'message': f'Data sources saved for document {document_id}',
-            'documentId': document_id,
-            'count': len(processed_data_sources)
-        })
-        
+
+        logger.info(
+            f"🗂️ Saved {len(processed_data_sources)} data sources for document {document_id}"
+        )
+
+        return jsonify(
+            {
+                "success": True,
+                "message": f"Data sources saved for document {document_id}",
+                "documentId": document_id,
+                "count": len(processed_data_sources),
+            }
+        )
+
     except Exception as e:
         logger.error(f"Error saving data sources: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/api/variables', methods=['GET'])
+
+@app.route("/api/variables", methods=["GET"])
 def get_variables():
     """Get variables for a specific document."""
     try:
-        document_id = request.args.get('documentId')
-        window_id = request.args.get('windowId', 'default')
-        session_id = request.args.get('session_id', 'default')
-        
+        document_id = request.args.get("documentId")
+        window_id = request.args.get("windowId", "default")
+        session_id = request.args.get("session_id", "default")
+
         if not document_id:
-            return jsonify({
-                'success': False,
-                'error': 'Missing documentId parameter'
-            }), 400
-        
+            return jsonify(
+                {"success": False, "error": "Missing documentId parameter"}
+            ), 400
+
         # Get variables for this document
         document_variables = variables_storage.get(document_id, {})
-        
-        logger.info(f"📊 Returning {len(document_variables)} variables for document {document_id}")
-        
-        return jsonify({
-            'success': True,
-            'variables': document_variables,
-            'documentId': document_id,
-            'count': len(document_variables)
-        })
-        
+
+        logger.info(
+            f"📊 Returning {len(document_variables)} variables for document {document_id}"
+        )
+
+        return jsonify(
+            {
+                "success": True,
+                "variables": document_variables,
+                "documentId": document_id,
+                "count": len(document_variables),
+            }
+        )
+
     except Exception as e:
         logger.error(f"Error getting variables: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/api/variables', methods=['POST'])
+
+@app.route("/api/variables", methods=["POST"])
 def save_variables_endpoint():
     """Save variables for a specific document."""
     try:
         data = request.get_json()
-        
-        document_id = data.get('documentId')
-        window_id = data.get('windowId', 'default')
-        session_id = data.get('session_id', 'default')
-        variables_data = data.get('variables', {})
-        
+
+        document_id = data.get("documentId")
+        window_id = data.get("windowId", "default")
+        session_id = data.get("session_id", "default")
+        variables_data = data.get("variables", {})
+
         if not document_id:
-            return jsonify({
-                'success': False,
-                'error': 'Missing documentId in request'
-            }), 400
-        
+            return jsonify(
+                {"success": False, "error": "Missing documentId in request"}
+            ), 400
+
         # Store variables for this document
         variables_storage[document_id] = variables_data
-        
+
         # Persist to file
         save_variables(variables_storage)
-        
-        logger.info(f"📊 Saved {len(variables_data)} variables for document {document_id}")
-        
-        return jsonify({
-            'success': True,
-            'message': f'Variables saved for document {document_id}',
-            'documentId': document_id,
-            'count': len(variables_data)
-        })
-        
+
+        logger.info(
+            f"📊 Saved {len(variables_data)} variables for document {document_id}"
+        )
+
+        return jsonify(
+            {
+                "success": True,
+                "message": f"Variables saved for document {document_id}",
+                "documentId": document_id,
+                "count": len(variables_data),
+            }
+        )
+
     except Exception as e:
         logger.error(f"Error saving variables: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/api/variables', methods=['DELETE'])
+
+@app.route("/api/variables", methods=["DELETE"])
 def delete_variables():
     """Delete variables for a specific document."""
     try:
-        document_id = request.args.get('documentId')
-        
+        document_id = request.args.get("documentId")
+
         if not document_id:
-            return jsonify({
-                'success': False,
-                'error': 'Missing documentId parameter'
-            }), 400
-        
+            return jsonify(
+                {"success": False, "error": "Missing documentId parameter"}
+            ), 400
+
         # Remove variables for this document
         if document_id in variables_storage:
             variables_count = len(variables_storage[document_id])
             del variables_storage[document_id]
-            
+
             # Persist changes
             save_variables(variables_storage)
-            
-            logger.info(f"📊 Deleted {variables_count} variables for document {document_id}")
-            
-            return jsonify({
-                'success': True,
-                'message': f'Variables deleted for document {document_id}',
-                'documentId': document_id,
-                'deleted_count': variables_count
-            })
+
+            logger.info(
+                f"📊 Deleted {variables_count} variables for document {document_id}"
+            )
+
+            return jsonify(
+                {
+                    "success": True,
+                    "message": f"Variables deleted for document {document_id}",
+                    "documentId": document_id,
+                    "deleted_count": variables_count,
+                }
+            )
         else:
-            return jsonify({
-                'success': True,
-                'message': f'No variables found for document {document_id}',
-                'documentId': document_id,
-                'deleted_count': 0
-            })
-        
+            return jsonify(
+                {
+                    "success": True,
+                    "message": f"No variables found for document {document_id}",
+                    "documentId": document_id,
+                    "deleted_count": 0,
+                }
+            )
+
     except Exception as e:
         logger.error(f"Error deleting variables for document: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/api/data-sources', methods=['DELETE'])
+
+@app.route("/api/data-sources", methods=["DELETE"])
 def delete_data_sources():
     """Delete data sources for a specific document."""
     try:
-        document_id = request.args.get('documentId')
-        
+        document_id = request.args.get("documentId")
+
         if not document_id:
-            return jsonify({
-                'success': False,
-                'error': 'Missing documentId parameter'
-            }), 400
-        
+            return jsonify(
+                {"success": False, "error": "Missing documentId parameter"}
+            ), 400
+
         # Remove data sources for this document
         if document_id in data_sources_storage:
             entries_count = len(data_sources_storage[document_id])
             del data_sources_storage[document_id]
-            
+
             # Persist changes
             save_data_sources(data_sources_storage)
-            
-            logger.info(f"🗂️ Deleted {entries_count} data sources for document {document_id}")
-            
-            return jsonify({
-                'success': True,
-                'message': f'Data sources deleted for document {document_id}',
-                'documentId': document_id,
-                'deleted_count': entries_count
-            })
+
+            logger.info(
+                f"🗂️ Deleted {entries_count} data sources for document {document_id}"
+            )
+
+            return jsonify(
+                {
+                    "success": True,
+                    "message": f"Data sources deleted for document {document_id}",
+                    "documentId": document_id,
+                    "deleted_count": entries_count,
+                }
+            )
         else:
-            return jsonify({
-                'success': True,
-                'message': f'No data sources found for document {document_id}',
-                'documentId': document_id,
-                'deleted_count': 0
-            })
-        
+            return jsonify(
+                {
+                    "success": True,
+                    "message": f"No data sources found for document {document_id}",
+                    "documentId": document_id,
+                    "deleted_count": 0,
+                }
+            )
+
     except Exception as e:
         logger.error(f"Error deleting data sources for document: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/api/get-verification/<session_id>', methods=['DELETE'])
+
+@app.route("/api/get-verification/<session_id>", methods=["DELETE"])
 def delete_verification(session_id):
     """Delete verification history for a document (by session_id)."""
     try:
         # Remove verifications for this session
         if session_id in verifications:
-            verifications_count = sum(len(user_verifications) for user_verifications in verifications[session_id].values())
+            verifications_count = sum(
+                len(user_verifications)
+                for user_verifications in verifications[session_id].values()
+            )
             del verifications[session_id]
-            
+
             # Persist changes
             save_verifications(verifications)
-            
-            logger.info(f"📋 Deleted {verifications_count} verifications for session {session_id}")
-            
-            return jsonify({
-                'success': True,
-                'message': f'Verifications deleted for session {session_id}',
-                'session_id': session_id,
-                'deleted_count': verifications_count
-            })
+
+            logger.info(
+                f"📋 Deleted {verifications_count} verifications for session {session_id}"
+            )
+
+            return jsonify(
+                {
+                    "success": True,
+                    "message": f"Verifications deleted for session {session_id}",
+                    "session_id": session_id,
+                    "deleted_count": verifications_count,
+                }
+            )
         else:
-            return jsonify({
-                'success': True,
-                'message': f'No verifications found for session {session_id}',
-                'session_id': session_id,
-                'deleted_count': 0
-            })
-        
+            return jsonify(
+                {
+                    "success": True,
+                    "message": f"No verifications found for session {session_id}",
+                    "session_id": session_id,
+                    "deleted_count": 0,
+                }
+            )
+
     except Exception as e:
         logger.error(f"Error deleting verifications for session {session_id}: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
-@app.route('/api/suggest-variable', methods=['POST'])
+@app.route("/api/suggest-variable", methods=["POST"])
 def suggest_variable():
     """Get LLM-powered variable suggestions based on selected text and template context."""
     try:
         data = request.get_json()
-        
+
         # Extract request data
-        template_content = data.get('template_content', '')
-        selected_text = data.get('selected_text', '')
-        existing_variables = data.get('existing_variables', {})
-        document_id = data.get('document_id', 'default')
-        
+        template_content = data.get("template_content", "")
+        selected_text = data.get("selected_text", "")
+        existing_variables = data.get("existing_variables", {})
+        document_id = data.get("document_id", "default")
+
         # Validate required fields
         if not selected_text:
-            return jsonify({
-                'success': False,
-                'error': 'Selected text is required'
-            }), 400
-        
+            return jsonify(
+                {"success": False, "error": "Selected text is required"}
+            ), 400
+
         # Check if LLM client is available
         if client is None:
-            return jsonify({
-                'success': False,
-                'error': 'AI service not available (API key not configured)'
-            })
-        
+            return jsonify(
+                {
+                    "success": False,
+                    "error": "AI service not available (API key not configured)",
+                }
+            )
+
         # Create structured prompt for LLM
         existing_vars_text = ""
         if existing_variables:
             existing_vars_text = "\nExisting variables in template:\n"
             for var_name, var_info in existing_variables.items():
                 existing_vars_text += f"- {var_name}: {var_info.get('description', 'No description')} ({var_info.get('type', 'unknown')})\n"
-        
+
         prompt = f"""You are an AI assistant helping to create template variables. Based on the selected text and template context, suggest appropriate variable information.
 
 TEMPLATE CONTENT:
@@ -1588,16 +1764,16 @@ Requirements:
 8. Return ONLY the JSON object, no other text
 
 JSON:"""
-        
+
         try:
             # Call LLM for suggestion
-            if hasattr(client, 'chat'):
+            if hasattr(client, "chat"):
                 # OpenAI client
                 response = client.chat.completions.create(
                     model="gpt-4.1-mini",
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.3,
-                    max_tokens=400
+                    max_tokens=400,
                 )
                 suggestion_text = response.choices[0].message.content.strip()
             else:
@@ -1606,145 +1782,182 @@ JSON:"""
                     model="Qwen/Qwen2.5-Coder-32B-Instruct",
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.3,
-                    max_tokens=400
+                    max_tokens=400,
                 )
                 suggestion_text = response.choices[0].message.content.strip()
-            
+
             print(f"Variable Suggestion Raw Response: {suggestion_text}")
-            
+
             # Parse LLM response
             try:
                 import json
                 import re
-                
+
                 # Clean up the response to extract JSON
-                json_match = re.search(r'\{[\s\S]*\}', suggestion_text)
+                json_match = re.search(r"\{[\s\S]*\}", suggestion_text)
                 if json_match:
                     json_str = json_match.group()
                     suggestion = json.loads(json_str)
-                    
+
                     # Validate suggestion structure
-                    required_fields = ['name', 'description', 'type', 'value_to_replace']
+                    required_fields = [
+                        "name",
+                        "description",
+                        "type",
+                        "value_to_replace",
+                    ]
                     if all(field in suggestion for field in required_fields):
                         # Ensure name is valid
                         import re
-                        if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', suggestion['name']):
-                            suggestion['name'] = re.sub(r'[^a-zA-Z0-9_]', '_', suggestion['name'])
-                            if not suggestion['name'][0].isalpha() and suggestion['name'][0] != '_':
-                                suggestion['name'] = 'var_' + suggestion['name']
-                        
+
+                        if not re.match(
+                            r"^[a-zA-Z_][a-zA-Z0-9_]*$", suggestion["name"]
+                        ):
+                            suggestion["name"] = re.sub(
+                                r"[^a-zA-Z0-9_]", "_", suggestion["name"]
+                            )
+                            if (
+                                not suggestion["name"][0].isalpha()
+                                and suggestion["name"][0] != "_"
+                            ):
+                                suggestion["name"] = "var_" + suggestion["name"]
+
                         # Ensure type is valid
-                        valid_types = ['currency', 'number', 'percentage', 'date', 'text']
-                        if suggestion['type'] not in valid_types:
-                            suggestion['type'] = 'text'
-                        
+                        valid_types = [
+                            "currency",
+                            "number",
+                            "percentage",
+                            "date",
+                            "text",
+                        ]
+                        if suggestion["type"] not in valid_types:
+                            suggestion["type"] = "text"
+
                         # Set default values for optional fields
-                        suggestion.setdefault('format', '')
-                        suggestion.setdefault('confidence', 0.8)
-                        suggestion.setdefault('reasoning', 'AI-generated suggestion')
-                        suggestion.setdefault('static_prefix', '')
-                        suggestion.setdefault('static_suffix', '')
-                        
+                        suggestion.setdefault("format", "")
+                        suggestion.setdefault("confidence", 0.8)
+                        suggestion.setdefault("reasoning", "AI-generated suggestion")
+                        suggestion.setdefault("static_prefix", "")
+                        suggestion.setdefault("static_suffix", "")
+
                         # Validate that the parts add up to the original text
-                        reconstructed = suggestion['static_prefix'] + suggestion['value_to_replace'] + suggestion['static_suffix']
-                        
+                        reconstructed = (
+                            suggestion["static_prefix"]
+                            + suggestion["value_to_replace"]
+                            + suggestion["static_suffix"]
+                        )
+
                         # Normalize whitespace for comparison (handle non-breaking spaces, etc.)
                         def normalize_whitespace(text):
-                            return re.sub(r'\s+', ' ', text.replace('\xa0', ' ').replace('\u00a0', ' '))
-                        
+                            return re.sub(
+                                r"\s+",
+                                " ",
+                                text.replace("\xa0", " ").replace("\u00a0", " "),
+                            )
+
                         original_normalized = normalize_whitespace(selected_text)
                         reconstructed_normalized = normalize_whitespace(reconstructed)
-                        
+
                         if reconstructed_normalized != original_normalized:
-                            print("Warning: Reconstructed text doesn't match original after normalization.")
-                            print(f"  Original: '{selected_text}' (normalized: '{original_normalized}')")
-                            print(f"  Reconstructed: '{reconstructed}' (normalized: '{reconstructed_normalized}')")
+                            print(
+                                "Warning: Reconstructed text doesn't match original after normalization."
+                            )
+                            print(
+                                f"  Original: '{selected_text}' (normalized: '{original_normalized}')"
+                            )
+                            print(
+                                f"  Reconstructed: '{reconstructed}' (normalized: '{reconstructed_normalized}')"
+                            )
                             # Fallback: treat entire text as variable
-                            suggestion['value_to_replace'] = selected_text
-                            suggestion['static_prefix'] = ''
-                            suggestion['static_suffix'] = ''
+                            suggestion["value_to_replace"] = selected_text
+                            suggestion["static_prefix"] = ""
+                            suggestion["static_suffix"] = ""
                         else:
-                            print(f"✓ Text reconstruction successful: '{original_normalized}'")
-                        
-                        logger.info(f"Generated variable suggestion for '{selected_text}': {suggestion['name']} (replacing '{suggestion['value_to_replace']}')")
-                        
-                        return jsonify({
-                            'success': True,
-                            'suggestion': suggestion,
-                            'analysis': {
-                                'selected_text_length': len(selected_text),
-                                'template_length': len(template_content),
-                                'existing_variables_count': len(existing_variables),
-                                'document_id': document_id
+                            print(
+                                f"✓ Text reconstruction successful: '{original_normalized}'"
+                            )
+
+                        logger.info(
+                            f"Generated variable suggestion for '{selected_text}': {suggestion['name']} (replacing '{suggestion['value_to_replace']}')"
+                        )
+
+                        return jsonify(
+                            {
+                                "success": True,
+                                "suggestion": suggestion,
+                                "analysis": {
+                                    "selected_text_length": len(selected_text),
+                                    "template_length": len(template_content),
+                                    "existing_variables_count": len(existing_variables),
+                                    "document_id": document_id,
+                                },
                             }
-                        })
+                        )
                     else:
                         raise ValueError("Missing required fields in LLM response")
                 else:
                     raise ValueError("No valid JSON found in LLM response")
-                    
+
             except (json.JSONDecodeError, ValueError) as parse_error:
                 print(f"Error parsing LLM response: {parse_error}")
                 print(f"Raw response: {suggestion_text}")
-                
-                return jsonify({
-                    'success': False,
-                    'warning': 'Used fallback suggestion due to LLM parsing error'
-                })
-                
+
+                return jsonify(
+                    {
+                        "success": False,
+                        "warning": "Used fallback suggestion due to LLM parsing error",
+                    }
+                )
+
         except Exception as llm_error:
             print(f"Error calling LLM: {llm_error}")
 
-            return jsonify({
-                'success': True,
-                'suggestion': {},
-                'warning': 'Used fallback suggestion due to LLM error'
-            })
-        
+            return jsonify(
+                {
+                    "success": True,
+                    "suggestion": {},
+                    "warning": "Used fallback suggestion due to LLM error",
+                }
+            )
+
     except Exception as e:
         logger.error(f"Error in suggest_variable: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/api/suggest-operator-config', methods=['POST'])
+
+@app.route("/api/suggest-operator-config", methods=["POST"])
 def suggest_operator_config():
     """Get LLM-powered operator configuration suggestions based on tool code analysis."""
     try:
         data = request.get_json()
-        
+
         # Extract request data
-        tool_name = data.get('tool_name', '')
-        tool_description = data.get('tool_description', '')
-        tool_code = data.get('tool_code', '')
-        document_id = data.get('document_id', 'default')
-        
+        tool_name = data.get("tool_name", "")
+        tool_description = data.get("tool_description", "")
+        tool_code = data.get("tool_code", "")
+        document_id = data.get("document_id", "default")
+
         # Validate required fields
         if not tool_code:
-            return jsonify({
-                'success': False,
-                'error': 'Tool code is required'
-            }), 400
-            
+            return jsonify({"success": False, "error": "Tool code is required"}), 400
+
         if not tool_name:
-            return jsonify({
-                'success': False,
-                'error': 'Tool name is required'
-            }), 400
-        
+            return jsonify({"success": False, "error": "Tool name is required"}), 400
+
         # Check if LLM client is available
         if client is None:
-            return jsonify({
-                'success': False,
-                'error': 'AI service not available (API key not configured)'
-            })
-        
+            return jsonify(
+                {
+                    "success": False,
+                    "error": "AI service not available (API key not configured)",
+                }
+            )
+
         # Create structured prompt for LLM
         prompt = f"""Analyze this Python tool code and suggest operator configuration:
 
 Tool Name: {tool_name}
-Tool Description: {tool_description or 'No description provided'}
+Tool Description: {tool_description or "No description provided"}
 
 Code:
 ```python
@@ -1798,16 +2011,16 @@ Guidelines:
 IMPORTANT: Respond with ONLY a JSON object in the exact format above, no additional text or explanation.
 
 JSON:"""
-        
+
         try:
             # Call LLM for suggestion
-            if hasattr(client, 'chat'):
+            if hasattr(client, "chat"):
                 # OpenAI client
                 response = client.chat.completions.create(
                     model="gpt-4.1-mini",
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.3,
-                    max_tokens=800
+                    max_tokens=800,
                 )
                 suggestion_text = response.choices[0].message.content.strip()
             else:
@@ -1816,32 +2029,34 @@ JSON:"""
                     model="Qwen/Qwen2.5-Coder-32B-Instruct",
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.3,
-                    max_tokens=800
+                    max_tokens=800,
                 )
                 suggestion_text = response.choices[0].message.content.strip()
-            
+
             print(f"Operator Config Suggestion Raw Response: {suggestion_text}")
-            
+
             # Parse LLM response with multiple fallback strategies
             try:
                 import json
                 import re
-                
+
                 suggestions = None
-                
+
                 # Try multiple approaches to extract JSON
                 try:
                     # First, try to parse the entire response as JSON
                     suggestions = json.loads(suggestion_text)
                 except json.JSONDecodeError:
                     # If that fails, try to extract JSON block
-                    json_match = re.search(r'\{[\s\S]*\}', suggestion_text)
+                    json_match = re.search(r"\{[\s\S]*\}", suggestion_text)
                     if json_match:
                         try:
                             suggestions = json.loads(json_match.group())
                         except json.JSONDecodeError:
                             # If JSON parsing still fails, try to find the largest JSON-like structure
-                            json_matches = re.findall(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', suggestion_text)
+                            json_matches = re.findall(
+                                r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}", suggestion_text
+                            )
                             if json_matches:
                                 for match in json_matches:
                                     try:
@@ -1849,351 +2064,391 @@ JSON:"""
                                         break  # Use the first valid JSON we find
                                     except json.JSONDecodeError:
                                         continue
-                
+
                 if suggestions and isinstance(suggestions, dict):
                     # Validate and clean the suggestion structure
                     validated_suggestion = {
-                        'operatorName': str(suggestions.get('operatorName', '')).strip(),
-                        'parameters': [],
-                        'outputs': []
+                        "operatorName": str(
+                            suggestions.get("operatorName", "")
+                        ).strip(),
+                        "parameters": [],
+                        "outputs": [],
                     }
-                    
+
                     # Validate parameters
-                    if 'parameters' in suggestions and isinstance(suggestions['parameters'], list):
-                        for param in suggestions['parameters']:
-                            if isinstance(param, dict) and param.get('name'):
+                    if "parameters" in suggestions and isinstance(
+                        suggestions["parameters"], list
+                    ):
+                        for param in suggestions["parameters"]:
+                            if isinstance(param, dict) and param.get("name"):
                                 # Clean parameter name to be a valid identifier
-                                param_name = re.sub(r'[^a-zA-Z0-9_]', '_', str(param['name']))
-                                if param_name and (param_name[0].isalpha() or param_name[0] == '_'):
+                                param_name = re.sub(
+                                    r"[^a-zA-Z0-9_]", "_", str(param["name"])
+                                )
+                                if param_name and (
+                                    param_name[0].isalpha() or param_name[0] == "_"
+                                ):
                                     validated_param = {
-                                        'name': param_name,
-                                        'type': param.get('type', 'literal') if param.get('type') in ['literal', 'dataset'] else 'literal',
-                                        'description': str(param.get('description', '')).strip(),
-                                        'defaultValue': str(param.get('defaultValue', '')).strip()
+                                        "name": param_name,
+                                        "type": param.get("type", "literal")
+                                        if param.get("type") in ["literal", "dataset"]
+                                        else "literal",
+                                        "description": str(
+                                            param.get("description", "")
+                                        ).strip(),
+                                        "defaultValue": str(
+                                            param.get("defaultValue", "")
+                                        ).strip(),
                                     }
-                                    validated_suggestion['parameters'].append(validated_param)
-                    
+                                    validated_suggestion["parameters"].append(
+                                        validated_param
+                                    )
+
                     # Validate outputs
-                    if 'outputs' in suggestions and isinstance(suggestions['outputs'], list):
-                        for output in suggestions['outputs']:
-                            if isinstance(output, dict) and output.get('variable'):
+                    if "outputs" in suggestions and isinstance(
+                        suggestions["outputs"], list
+                    ):
+                        for output in suggestions["outputs"]:
+                            if isinstance(output, dict) and output.get("variable"):
                                 # Clean variable name to be a valid identifier
-                                var_name = re.sub(r'[^a-zA-Z0-9_]', '_', str(output['variable']))
-                                if var_name and (var_name[0].isalpha() or var_name[0] == '_'):
+                                var_name = re.sub(
+                                    r"[^a-zA-Z0-9_]", "_", str(output["variable"])
+                                )
+                                if var_name and (
+                                    var_name[0].isalpha() or var_name[0] == "_"
+                                ):
                                     validated_output = {
-                                        'config': str(output.get('config', 'output')).strip(),
-                                        'variable': var_name,
-                                        'description': str(output.get('description', '')).strip()
+                                        "config": str(
+                                            output.get("config", "output")
+                                        ).strip(),
+                                        "variable": var_name,
+                                        "description": str(
+                                            output.get("description", "")
+                                        ).strip(),
                                     }
-                                    validated_suggestion['outputs'].append(validated_output)
-                    
-                    logger.info(f"Generated operator config suggestion for tool '{tool_name}': {validated_suggestion}")
-                    
-                    return jsonify({
-                        'success': True,
-                        'suggestion': validated_suggestion,
-                        'analysis': {
-                            'tool_name': tool_name,
-                            'code_length': len(tool_code),
-                            'parameters_count': len(validated_suggestion['parameters']),
-                            'outputs_count': len(validated_suggestion['outputs']),
-                            'document_id': document_id
+                                    validated_suggestion["outputs"].append(
+                                        validated_output
+                                    )
+
+                    logger.info(
+                        f"Generated operator config suggestion for tool '{tool_name}': {validated_suggestion}"
+                    )
+
+                    return jsonify(
+                        {
+                            "success": True,
+                            "suggestion": validated_suggestion,
+                            "analysis": {
+                                "tool_name": tool_name,
+                                "code_length": len(tool_code),
+                                "parameters_count": len(
+                                    validated_suggestion["parameters"]
+                                ),
+                                "outputs_count": len(validated_suggestion["outputs"]),
+                                "document_id": document_id,
+                            },
                         }
-                    })
+                    )
                 else:
                     raise ValueError("No valid JSON structure found in LLM response")
-                    
+
             except Exception as parse_error:
                 print(f"Error parsing LLM response: {parse_error}")
                 print(f"Raw response: {suggestion_text}")
-                
+
                 # Provide fallback suggestion based on tool name
                 fallback_suggestion = {
-                    'operatorName': f"{tool_name} Instance",
-                    'parameters': [],
-                    'outputs': [
+                    "operatorName": f"{tool_name} Instance",
+                    "parameters": [],
+                    "outputs": [
                         {
-                            'config': 'output',
-                            'variable': f"{re.sub(r'[^a-zA-Z0-9_]', '_', tool_name.lower())}_result",
-                            'description': f"Output from {tool_name}"
+                            "config": "output",
+                            "variable": f"{re.sub(r'[^a-zA-Z0-9_]', '_', tool_name.lower())}_result",
+                            "description": f"Output from {tool_name}",
                         }
-                    ]
+                    ],
                 }
-                
-                return jsonify({
-                    'success': True,
-                    'suggestion': fallback_suggestion,
-                    'warning': 'Used fallback suggestion due to LLM parsing error',
-                    'analysis': {
-                        'tool_name': tool_name,
-                        'code_length': len(tool_code),
-                        'parameters_count': 0,
-                        'outputs_count': 1,
-                        'document_id': document_id,
-                        'fallback_used': True
+
+                return jsonify(
+                    {
+                        "success": True,
+                        "suggestion": fallback_suggestion,
+                        "warning": "Used fallback suggestion due to LLM parsing error",
+                        "analysis": {
+                            "tool_name": tool_name,
+                            "code_length": len(tool_code),
+                            "parameters_count": 0,
+                            "outputs_count": 1,
+                            "document_id": document_id,
+                            "fallback_used": True,
+                        },
                     }
-                })
-                
+                )
+
         except Exception as llm_error:
             print(f"Error calling LLM: {llm_error}")
-            
+
             # Provide fallback suggestion
             fallback_suggestion = {
-                'operatorName': f"{tool_name} Instance",
-                'parameters': [],
-                'outputs': [
+                "operatorName": f"{tool_name} Instance",
+                "parameters": [],
+                "outputs": [
                     {
-                        'config': 'output',
-                        'variable': f"{re.sub(r'[^a-zA-Z0-9_]', '_', tool_name.lower())}_result",
-                        'description': f"Output from {tool_name}"
+                        "config": "output",
+                        "variable": f"{re.sub(r'[^a-zA-Z0-9_]', '_', tool_name.lower())}_result",
+                        "description": f"Output from {tool_name}",
                     }
-                ]
+                ],
             }
 
-            return jsonify({
-                'success': True,
-                'suggestion': fallback_suggestion,
-                'warning': 'Used fallback suggestion due to LLM error',
-                'analysis': {
-                    'tool_name': tool_name,
-                    'code_length': len(tool_code),
-                    'parameters_count': 0,
-                    'outputs_count': 1,
-                    'document_id': document_id,
-                    'fallback_used': True
+            return jsonify(
+                {
+                    "success": True,
+                    "suggestion": fallback_suggestion,
+                    "warning": "Used fallback suggestion due to LLM error",
+                    "analysis": {
+                        "tool_name": tool_name,
+                        "code_length": len(tool_code),
+                        "parameters_count": 0,
+                        "outputs_count": 1,
+                        "document_id": document_id,
+                        "fallback_used": True,
+                    },
                 }
-            })
-        
+            )
+
     except Exception as e:
         logger.error(f"Error in suggest_operator_config: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        return jsonify({"success": False, "error": str(e)}), 500
+
 
 # Tools API endpoints
-@app.route('/api/tools', methods=['GET'])
+@app.route("/api/tools", methods=["GET"])
 def get_tools():
     """Get tools for a specific document"""
     try:
-        document_id = request.args.get('documentId')
-        window_id = request.args.get('windowId', 'default')
-        session_id = request.args.get('session_id', 'default')
-        
+        document_id = request.args.get("documentId")
+        window_id = request.args.get("windowId", "default")
+        session_id = request.args.get("session_id", "default")
+
         if not document_id:
-            return jsonify({
-                'success': False,
-                'error': 'Missing documentId parameter'
-            }), 400
-        
+            return jsonify(
+                {"success": False, "error": "Missing documentId parameter"}
+            ), 400
+
         # Get tools for this document
         document_tools = tools_storage.get(document_id, [])
-        
-        logger.info(f"🔧 Returning {len(document_tools)} tools for document {document_id}")
-        
-        return jsonify({
-            'success': True,
-            'tools': document_tools,
-            'documentId': document_id,
-            'count': len(document_tools)
-        })
+
+        logger.info(
+            f"🔧 Returning {len(document_tools)} tools for document {document_id}"
+        )
+
+        return jsonify(
+            {
+                "success": True,
+                "tools": document_tools,
+                "documentId": document_id,
+                "count": len(document_tools),
+            }
+        )
     except Exception as e:
         logger.error(f"❌ Error getting tools: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/api/tools', methods=['POST'])
+
+@app.route("/api/tools", methods=["POST"])
 def save_tools_endpoint():
     """Save tools for a specific document"""
     try:
         data = request.get_json()
-        
-        document_id = data.get('documentId')
-        window_id = data.get('windowId', 'default')
-        session_id = data.get('session_id', 'default')
-        tools = data.get('tools', [])
-        
+
+        document_id = data.get("documentId")
+        window_id = data.get("windowId", "default")
+        session_id = data.get("session_id", "default")
+        tools = data.get("tools", [])
+
         if not document_id:
-            return jsonify({
-                'success': False,
-                'error': 'Missing documentId in request'
-            }), 400
-        
+            return jsonify(
+                {"success": False, "error": "Missing documentId in request"}
+            ), 400
+
         # Validate tools structure
         if not isinstance(tools, list):
-            return jsonify({
-                'success': False,
-                'error': 'Tools must be an array'
-            }), 400
-        
+            return jsonify({"success": False, "error": "Tools must be an array"}), 400
+
         # Validate each tool has required fields
         for tool in tools:
-            if not isinstance(tool, dict) or 'id' not in tool or 'name' not in tool:
-                return jsonify({
-                    'success': False,
-                    'error': 'Each tool must have id and name fields'
-                }), 400
-        
+            if not isinstance(tool, dict) or "id" not in tool or "name" not in tool:
+                return jsonify(
+                    {
+                        "success": False,
+                        "error": "Each tool must have id and name fields",
+                    }
+                ), 400
+
         # Store tools for this document
         tools_storage[document_id] = tools
-        
+
         # Persist to file
         save_tools(tools_storage)
-        
+
         logger.info(f"🔧 Saved {len(tools)} tools for document {document_id}")
-        
-        return jsonify({
-            'success': True,
-            'message': f'Tools saved for document {document_id}',
-            'documentId': document_id,
-            'count': len(tools)
-        })
-        
+
+        return jsonify(
+            {
+                "success": True,
+                "message": f"Tools saved for document {document_id}",
+                "documentId": document_id,
+                "count": len(tools),
+            }
+        )
+
     except Exception as e:
         logger.error(f"❌ Error saving tools: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/api/tools/<tool_id>', methods=['DELETE'])
+
+@app.route("/api/tools/<tool_id>", methods=["DELETE"])
 def delete_tool(tool_id):
     """Delete a specific tool from a document"""
     try:
-        document_id = request.args.get('documentId')
-        
+        document_id = request.args.get("documentId")
+
         if not document_id:
-            return jsonify({
-                'success': False,
-                'error': 'Missing documentId parameter'
-            }), 400
-        
+            return jsonify(
+                {"success": False, "error": "Missing documentId parameter"}
+            ), 400
+
         # Get tools for this document
         document_tools = tools_storage.get(document_id, [])
-        
+
         # Find and remove the tool
         original_count = len(document_tools)
-        updated_tools = [tool for tool in document_tools if tool.get('id') != tool_id]
-        
+        updated_tools = [tool for tool in document_tools if tool.get("id") != tool_id]
+
         if len(updated_tools) == original_count:
-            return jsonify({
-                'success': False,
-                'error': 'Tool not found'
-            }), 404
-        
+            return jsonify({"success": False, "error": "Tool not found"}), 404
+
         # Update storage for this document
         tools_storage[document_id] = updated_tools
-        
+
         # Save updated tools
         save_tools(tools_storage)
-        
+
         logger.info(f"🔧 Deleted tool {tool_id} from document {document_id}")
-        
-        return jsonify({
-            'success': True,
-            'message': f'Successfully deleted tool {tool_id} from document {document_id}',
-            'documentId': document_id
-        })
-        
+
+        return jsonify(
+            {
+                "success": True,
+                "message": f"Successfully deleted tool {tool_id} from document {document_id}",
+                "documentId": document_id,
+            }
+        )
+
     except Exception as e:
         logger.error(f"❌ Error deleting tool: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/api/tools', methods=['DELETE'])
+
+@app.route("/api/tools", methods=["DELETE"])
 def delete_tools():
     """Delete all tools for a specific document."""
     try:
-        document_id = request.args.get('documentId')
-        
+        document_id = request.args.get("documentId")
+
         if not document_id:
-            return jsonify({
-                'success': False,
-                'error': 'Missing documentId parameter'
-            }), 400
-        
+            return jsonify(
+                {"success": False, "error": "Missing documentId parameter"}
+            ), 400
+
         # Remove tools for this document
         if document_id in tools_storage:
             tools_count = len(tools_storage[document_id])
             del tools_storage[document_id]
-            
+
             # Persist changes
             save_tools(tools_storage)
-            
+
             logger.info(f"🔧 Deleted {tools_count} tools for document {document_id}")
-            
-            return jsonify({
-                'success': True,
-                'message': f'Tools deleted for document {document_id}',
-                'documentId': document_id,
-                'deleted_count': tools_count
-            })
+
+            return jsonify(
+                {
+                    "success": True,
+                    "message": f"Tools deleted for document {document_id}",
+                    "documentId": document_id,
+                    "deleted_count": tools_count,
+                }
+            )
         else:
-            return jsonify({
-                'success': True,
-                'message': f'No tools found for document {document_id}',
-                'documentId': document_id,
-                'deleted_count': 0
-            })
-        
+            return jsonify(
+                {
+                    "success": True,
+                    "message": f"No tools found for document {document_id}",
+                    "documentId": document_id,
+                    "deleted_count": 0,
+                }
+            )
+
     except Exception as e:
         logger.error(f"Error deleting tools for document: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/api/generate-variable-code', methods=['POST'])
+
+@app.route("/api/generate-variable-code", methods=["POST"])
 def generate_variable_code():
     """Generate code for a variable using LLM"""
     try:
         data = request.get_json()
-        
-        variable_name = data.get('variable_name', '')
-        variable_type = data.get('variable_type', 'text')
-        variable_description = data.get('variable_description', '')
-        data_source = data.get('data_source', '')
-        dependencies = data.get('dependencies', [])
-        dependency_values = data.get('dependency_values', {})
-        document_id = data.get('document_id', 'default')
-        
+
+        variable_name = data.get("variable_name", "")
+        variable_type = data.get("variable_type", "text")
+        variable_description = data.get("variable_description", "")
+        data_source = data.get("data_source", "")
+        dependencies = data.get("dependencies", [])
+        dependency_values = data.get("dependency_values", {})
+        document_id = data.get("document_id", "default")
+
         if not variable_name:
-            return jsonify({
-                'success': False,
-                'error': 'Variable name is required'
-            }), 400
-        
+            return jsonify(
+                {"success": False, "error": "Variable name is required"}
+            ), 400
+
         # Either data source or dependencies are required
         if not data_source and not dependencies:
-            return jsonify({
-                'success': False,
-                'error': 'Either data source or dependencies are required'
-            }), 400
-        
+            return jsonify(
+                {
+                    "success": False,
+                    "error": "Either data source or dependencies are required",
+                }
+            ), 400
+
         # Check if LLM client is available
         if client is None:
-            return jsonify({
-                'success': False,
-                'error': 'AI service not available (API key not configured)'
-            })
-        
+            return jsonify(
+                {
+                    "success": False,
+                    "error": "AI service not available (API key not configured)",
+                }
+            )
+
         # Get data source information from data sources (if provided)
         selected_data_source = None
         if data_source:
             data_sources = data_sources_storage.get(document_id, [])
-            
+
             for item in data_sources:
-                if item.get('filePath') == data_source:
+                if item.get("filePath") == data_source:
                     selected_data_source = item
                     break
-            
+
             if not selected_data_source:
-                return jsonify({
-                    'success': False,
-                    'error': f'Data source "{data_source}" not found'
-                }), 404
-        
+                return jsonify(
+                    {
+                        "success": False,
+                        "error": f'Data source "{data_source}" not found',
+                    }
+                ), 404
+
         # Create LLM prompt for code generation
         prompt_parts = [
             f"Generate Python code to extract data for a variable.",
@@ -2202,37 +2457,43 @@ def generate_variable_code():
             f"- Name: {variable_name}",
             f"- Type: {variable_type}",
             f"- Description: {variable_description}",
-            ""
+            "",
         ]
-        
+
         # Add data source information if available
         if selected_data_source:
-            prompt_parts.extend([
-                "Data Source Details:",
-                f"- Name: {selected_data_source.get('name', 'Unknown')}",
-                f"- Type: {selected_data_source.get('type', 'unknown')}",
-                f"- Reference: ${data_source}",
-                ""
-            ])
-        
+            prompt_parts.extend(
+                [
+                    "Data Source Details:",
+                    f"- Name: {selected_data_source.get('name', 'Unknown')}",
+                    f"- Type: {selected_data_source.get('type', 'unknown')}",
+                    f"- Reference: ${data_source}",
+                    "",
+                ]
+            )
+
         # Add dependencies information if available
         if dependencies and dependency_values:
-            prompt_parts.extend([
-                "Dependencies:",
-                "This variable depends on the following variables that will be passed as function parameters:",
-            ])
-            
+            prompt_parts.extend(
+                [
+                    "Dependencies:",
+                    "This variable depends on the following variables that will be passed as function parameters:",
+                ]
+            )
+
             for dep_name in dependencies:
                 dep_info = dependency_values.get(dep_name, {})
-                dep_type = dep_info.get('type', 'text')
-                dep_desc = dep_info.get('description', '')
-                
+                dep_type = dep_info.get("type", "text")
+                dep_desc = dep_info.get("description", "")
+
                 prompt_parts.append(f"- {dep_name} ({dep_type}): {dep_desc}")
-            
+
             prompt_parts.append("")
-            prompt_parts.append("IMPORTANT: Use these dependency variables as function parameters, do NOT hardcode their values!")
+            prompt_parts.append(
+                "IMPORTANT: Use these dependency variables as function parameters, do NOT hardcode their values!"
+            )
             prompt_parts.append("")
-        
+
         # Add requirements
         requirements = [
             "Requirements:",
@@ -2243,21 +2504,27 @@ def generate_variable_code():
             "5. Write a function with appropriate parameters",
             "6. Return the final result in a variable named 'output'",
             "7. CRITICAL: Do NOT hardcode any values - use parameters and variables only",
-            "8. The generated code should be reusable and work with different input values"
+            "8. The generated code should be reusable and work with different input values",
         ]
-        
+
         if selected_data_source:
-            requirements.append("9. The data source will be available as parameters['data_source']")
-        
+            requirements.append(
+                "9. The data source will be available as parameters['data_source']"
+            )
+
         if dependencies:
-            requirements.append("10. Dependencies will be passed as function arguments in this exact order:")
+            requirements.append(
+                "10. Dependencies will be passed as function arguments in this exact order:"
+            )
             for dep_name in dependencies:
                 requirements.append(f"    - {dep_name}")
-            requirements.append("11. Use these dependency parameters as variables in your calculations")
-        
+            requirements.append(
+                "11. Use these dependency parameters as variables in your calculations"
+            )
+
         prompt_parts.extend(requirements)
         prompt_parts.append("")
-        
+
         # Add example structure
         if dependencies and selected_data_source:
             # Both dependencies and data source
@@ -2292,14 +2559,12 @@ import numpy as np
 def extract_{variable_name}({function_params}):
     try:
         # Use dependency variables directly in calculations
-        # For example: result = {dependencies[0]} * 1.2 + {dependencies[1] if len(dependencies) > 1 else 'other_calculation'}
+        # For example: result = {dependencies[0]} * 1.2 + {dependencies[1] if len(dependencies) > 1 else "other_calculation"}
         # DO NOT substitute actual values - keep as variables
         result = your_calculation_using_dependencies
     except Exception as e:
         result = f"Error: {{e}}"
     return result
-
-output = extract_{variable_name}({function_params})
 ```"""
         else:
             # Only data source
@@ -2320,357 +2585,351 @@ def extract_{variable_name}(data_source):
 
 output = extract_{variable_name}(parameters['data_source'])
 ```"""
-        
+
         prompt_parts.append(example)
         prompt_parts.append("")
-        prompt_parts.append("Generate ONLY the Python code, no explanations or markdown formatting.")
-        
+        prompt_parts.append(
+            "Generate ONLY the Python code, no explanations or markdown formatting."
+        )
+
         prompt = "\n".join(prompt_parts)
-        
+
         # Call LLM
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are a helpful Python code generator. Generate clean, efficient Python code based on the requirements."},
-                {"role": "user", "content": prompt}
+                {
+                    "role": "system",
+                    "content": "You are a helpful Python code generator. Generate clean, efficient Python code based on the requirements.",
+                },
+                {"role": "user", "content": prompt},
             ],
             temperature=0.1,
-            max_tokens=5000
+            max_tokens=5000,
         )
-        
+
         generated_code = response.choices[0].message.content.strip()
-        
+
         # Clean up code (remove markdown formatting if present)
-        if generated_code.startswith('```python'):
+        if generated_code.startswith("```python"):
             generated_code = generated_code[9:]
-        elif generated_code.startswith('```'):
+        elif generated_code.startswith("```"):
             generated_code = generated_code[3:]
-        
-        if generated_code.endswith('```'):
+
+        if generated_code.endswith("```"):
             generated_code = generated_code[:-3]
-        
+
         generated_code = generated_code.strip()
-        
+
         logger.info(f"✅ Generated code for variable {variable_name}")
-        
-        return jsonify({
-            'success': True,
-            'code': generated_code,
-            'variable_name': variable_name,
-            'data_source': data_source
-        })
-        
+
+        return jsonify(
+            {
+                "success": True,
+                "code": generated_code,
+                "variable_name": variable_name,
+                "data_source": data_source,
+            }
+        )
+
     except Exception as e:
         logger.error(f"❌ Error generating variable code: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/api/execute-code', methods=['POST'])
+
+@app.route("/api/execute-code", methods=["POST"])
 def execute_code_endpoint():
     """Execute generated code in a safe environment"""
     try:
         data = request.get_json()
-        code = data.get('code', '')
-        parameters = data.get('parameters', {})
-        
+        code = data.get("code", "")
+        parameters = data.get("parameters", {})
+
         if not code:
-            return jsonify({
-                'success': False,
-                'error': 'Code is required'
-            }), 400
-        
+            return jsonify({"success": False, "error": "Code is required"}), 400
+
         result = execute_code_locally(code, parameters)
         print("================================================")
         print(result)
         print("================================================")
-        if result.get('status') and result.get('status') == "success": 
-            return jsonify({
-                'success': True,
-                'output': result.get('result').get('output')
-            })
+        if result.get("status") and result.get("status") == "success":
+            return jsonify(
+                {"success": True, "output": result.get("result").get("output")}
+            )
         else:
-            return jsonify({
-                'success': False,
-                'error': result
-            })
+            return jsonify({"success": False, "error": result})
 
     except Exception as e:
         logger.error(f"❌ Error generating variable code: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
-@app.route('/api/download_midrc_file', methods=['POST'])
+@app.route("/api/download_midrc_file", methods=["POST"])
 def download_midrc_file():
     """Download MIDRC file using object ID and return file path"""
     try:
         data = request.get_json()
-        object_id = data.get('object_id', '')
-        document_id = data.get('document_id', 'default')
+        object_id = data.get("object_id", "")
+        document_id = data.get("document_id", "default")
         if not object_id:
-            return jsonify({
-                'success': False,
-                'error': 'Object ID is required'
-            }), 400
-        
+            return jsonify({"success": False, "error": "Object ID is required"}), 400
+
         # Load MIDRC configuration
-        config_path = os.path.join(os.path.dirname(__file__), 'data-sources-config.json')
+        config_path = os.path.join(
+            os.path.dirname(__file__), "data-sources-config.json"
+        )
         try:
-            with open(config_path, 'r') as f:
+            with open(config_path, "r") as f:
                 config = json.load(f)
-            midrc_config = config.get('dataSources', {}).get('midrc', {})
+            midrc_config = config.get("dataSources", {}).get("midrc", {})
         except FileNotFoundError:
-            return jsonify({
-                'success': False,
-                'error': 'MIDRC configuration file not found'
-            }), 500
-        
+            return jsonify(
+                {"success": False, "error": "MIDRC configuration file not found"}
+            ), 500
+
         # Create output directory
-        output_dir = os.path.join(os.path.dirname(__file__), 'database', 'midrc', document_id)
+        output_dir = os.path.join(
+            os.path.dirname(__file__), "database", "midrc", document_id
+        )
         os.makedirs(output_dir, exist_ok=True)
-        
+
         # Prepare command arguments with proper placeholder replacement
         args = []
-        cred_path = os.environ.get('MIDRC_CREDENTIALS_PATH')
+        cred_path = os.environ.get("MIDRC_CREDENTIALS_PATH")
 
         # Check if credentials file exists
         if not os.path.exists(cred_path):
             logger.error(f"❌ Credentials file not found: {cred_path}")
-            return jsonify({
-                'success': False,
-                'error': f'Credentials file not found at: {cred_path}. Please ensure MIDRC credentials are properly configured.'
-            }), 500
+            return jsonify(
+                {
+                    "success": False,
+                    "error": f"Credentials file not found at: {cred_path}. Please ensure MIDRC credentials are properly configured.",
+                }
+            ), 500
 
-        for arg in midrc_config.get('args', []):
+        for arg in midrc_config.get("args", []):
             # Replace placeholders within each argument string
             processed_arg = arg
-            processed_arg = processed_arg.replace('{object_id}', object_id)
-            processed_arg = processed_arg.replace('{doc_id}', document_id)
-            processed_arg = processed_arg.replace('{cred}', cred_path)
+            processed_arg = processed_arg.replace("{object_id}", object_id)
+            processed_arg = processed_arg.replace("{doc_id}", document_id)
+            processed_arg = processed_arg.replace("{cred}", cred_path)
             args.append(processed_arg)
-        
-        download_id = download_midrc_file_implementation(object_id, document_id, app, cred_path, output_dir)
+
+        download_id = download_midrc_file_implementation(
+            object_id, document_id, app, cred_path, output_dir
+        )
         # Return immediately with download ID for status checking
-        return jsonify({
-            'success': True,
-            'message': 'Download started in background',
-            'download_id': download_id,
-            'object_id': object_id,
-            'status_check_url': f'/api/download_status/{download_id}'
-        })
-            
+        return jsonify(
+            {
+                "success": True,
+                "message": "Download started in background",
+                "download_id": download_id,
+                "object_id": object_id,
+                "status_check_url": f"/api/download_status/{download_id}",
+            }
+        )
+
     except Exception as e:
         logger.error(f"❌ Error downloading MIDRC file: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
-@app.route('/api/download_status/<download_id>', methods=['GET'])
+@app.route("/api/download_status/<download_id>", methods=["GET"])
 def get_download_status(download_id):
     """Get the status of a background download"""
     try:
-        if not hasattr(app, 'download_statuses'):
-            return jsonify({
-                'success': False,
-                'error': 'No downloads found'
-            }), 404
+        if not hasattr(app, "download_statuses"):
+            return jsonify({"success": False, "error": "No downloads found"}), 404
 
         status = app.download_statuses.get(download_id)
         if not status:
-            return jsonify({
-                'success': False,
-                'error': 'Download not found'
-            }), 404
-        
-        return jsonify({
-            'success': True,
-            'download_status': status
-        })
-        
+            return jsonify({"success": False, "error": "Download not found"}), 404
+
+        return jsonify({"success": True, "download_status": status})
+
     except Exception as e:
         logger.error(f"❌ Error getting download status: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 # Coding Agent Integration
-@app.route('/api/agents/coding', methods=['POST'])
+@app.route("/api/agents/coding", methods=["POST"])
 def execute_coding_agent():
     """Execute coding agent with user prompt and context"""
     try:
         data = request.get_json()
-        prompt = data.get('prompt', '')
-        context = data.get('context', {})
-        agent_type = data.get('agent_type', 'coding_agent')
-        
+        prompt = data.get("prompt", "")
+        context = data.get("context", {})
+        agent_type = data.get("agent_type", "coding_agent")
+
         if not prompt:
-            return jsonify({
-                "success": False, 
-                "error": "Prompt is required"
-            })
-        
+            return jsonify({"success": False, "error": "Prompt is required"})
+
         logger.info(f"🤖 Executing {agent_type} with prompt: {prompt[:100]}...")
-        
+
         # Import and call the coding agent
         try:
             import sys
             import os
             from pathlib import Path
-            
+
             # Add the coding agent directory to Python path
-            coding_agent_dir = Path(__file__).parent / 'agents' / 'code_agent'
+            coding_agent_dir = Path(__file__).parent / "agents" / "code_agent"
             sys.path.insert(0, str(coding_agent_dir))
-            
+
             from coding_agent import run_coding_agent_for_chat
-            
+
             # Build enhanced prompt with context
             enhanced_prompt = build_enhanced_prompt(prompt, context)
-            
+
             # Execute the agent
             import asyncio
-            if hasattr(asyncio, 'run'):
+
+            if hasattr(asyncio, "run"):
                 # Python 3.7+
-                result = asyncio.run(run_coding_agent_for_chat(enhanced_prompt, context, agent_type))
+                result = asyncio.run(
+                    run_coding_agent_for_chat(enhanced_prompt, context, agent_type)
+                )
             else:
                 # Fallback for older Python versions
                 loop = asyncio.get_event_loop()
-                result = loop.run_until_complete(run_coding_agent_for_chat(enhanced_prompt, context, agent_type))
-            
+                result = loop.run_until_complete(
+                    run_coding_agent_for_chat(enhanced_prompt, context, agent_type)
+                )
+
             return jsonify(result)
-            
+
         except ImportError as e:
             logger.error(f"❌ Failed to import coding agent: {e}")
-            return jsonify({
-                "success": False,
-                "error": f"Coding agent not available: {str(e)}"
-            })
-            
+            return jsonify(
+                {"success": False, "error": f"Coding agent not available: {str(e)}"}
+            )
+
     except Exception as e:
         logger.error(f"❌ Error executing coding agent: {e}")
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        })
+        return jsonify({"success": False, "error": str(e)})
 
 
 def build_enhanced_prompt(user_prompt, context):
     """Build an enhanced prompt with context information"""
     enhanced_parts = [user_prompt]
-    
+
     if context:
-        if context.get('current_source_code'):
-            enhanced_parts.append(f"\nCurrent source code in editor:\n```python\n{context['current_source_code']}\n```")
-        
-        if context.get('variables'):
+        if context.get("current_source_code"):
+            enhanced_parts.append(
+                f"\nCurrent source code in editor:\n```python\n{context['current_source_code']}\n```"
+            )
+
+        if context.get("variables"):
             enhanced_parts.append(f"\nAvailable variables: {context['variables']}")
-        
-        if context.get('available_datasets'):
-            datasets = ', '.join(context['available_datasets'])
+
+        if context.get("available_datasets"):
+            datasets = ", ".join(context["available_datasets"])
             enhanced_parts.append(f"\nAvailable datasets: {datasets}")
-        
-        if context.get('document_type'):
+
+        if context.get("document_type"):
             enhanced_parts.append(f"\nDocument type: {context['document_type']}")
-    
-    return '\n'.join(enhanced_parts)
+
+    return "\n".join(enhanced_parts)
 
 
 # File serving endpoint for PDF images and other files
-@app.route('/api/serve-file/<path:file_path>')
+@app.route("/api/serve-file/<path:file_path>")
 def serve_file(file_path):
     """Serve files from the database directory (for PDF images, etc.)"""
     try:
         # Security check: ensure the path is within the database directory
         safe_path = os.path.normpath(file_path)
-        if '..' in safe_path or safe_path.startswith('/'):
+        if ".." in safe_path or safe_path.startswith("/"):
             logger.warning(f"🚫 Blocked potentially unsafe file path: {file_path}")
-            return jsonify({'error': 'Invalid file path'}), 400
-        
+            return jsonify({"error": "Invalid file path"}), 400
+
         # Construct full file path - note: file_path should start with 'database/'
         full_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), safe_path)
-        
+
         # Check if file exists
         if not os.path.exists(full_path):
             logger.warning(f"📄 File not found: {full_path}")
-            return jsonify({'error': 'File not found'}), 404
-        
+            return jsonify({"error": "File not found"}), 404
+
         # Check if it's actually a file (not a directory)
         if not os.path.isfile(full_path):
             logger.warning(f"🚫 Not a file: {full_path}")
-            return jsonify({'error': 'Not a file'}), 400
-        
+            return jsonify({"error": "Not a file"}), 400
+
         logger.info(f"📎 Serving file: {safe_path}")
-        
+
         # Send file with proper headers for images
         response = send_file(full_path)
-        
+
         # Add CORS headers to allow cross-origin requests
-        response.headers.add('Access-Control-Allow-Origin', '*')
-        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-        response.headers.add('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
-        
+        response.headers.add("Access-Control-Allow-Origin", "*")
+        response.headers.add(
+            "Access-Control-Allow-Headers", "Content-Type,Authorization"
+        )
+        response.headers.add("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+
         return response
-        
+
     except Exception as e:
         logger.error(f"❌ Error serving file {file_path}: {e}")
-        return jsonify({'error': 'Internal server error'}), 500
+        return jsonify({"error": "Internal server error"}), 500
 
-@app.route('/api/test-file-access/<document_id>')
+
+@app.route("/api/test-file-access/<document_id>")
 def test_file_access(document_id):
     """Test endpoint to check what files exist for a document"""
     try:
-        doc_dir = os.path.join(DATABASE_DIR, 'files', document_id, 'images')
+        doc_dir = os.path.join(DATABASE_DIR, "files", document_id, "images")
         backend_dir = os.path.dirname(os.path.abspath(__file__))
-        
+
         result = {
-            'document_id': document_id,
-            'backend_directory': backend_dir,
-            'images_directory': doc_dir,
-            'images_directory_exists': os.path.exists(doc_dir),
-            'files': []
+            "document_id": document_id,
+            "backend_directory": backend_dir,
+            "images_directory": doc_dir,
+            "images_directory_exists": os.path.exists(doc_dir),
+            "files": [],
         }
-        
+
         if os.path.exists(doc_dir):
             files = os.listdir(doc_dir)
             for file in files:
                 file_path = os.path.join(doc_dir, file)
                 relative_path = f"database/files/{document_id}/images/{file}"
-                result['files'].append({
-                    'filename': file,
-                    'full_path': file_path,
-                    'relative_path': relative_path,
-                    'file_url': f"http://127.0.0.1:5000/api/serve-file/{relative_path}",
-                    'file_exists': os.path.exists(file_path),
-                    'file_size': os.path.getsize(file_path) if os.path.exists(file_path) else 0
-                })
-        
+                result["files"].append(
+                    {
+                        "filename": file,
+                        "full_path": file_path,
+                        "relative_path": relative_path,
+                        "file_url": f"http://127.0.0.1:5000/api/serve-file/{relative_path}",
+                        "file_exists": os.path.exists(file_path),
+                        "file_size": os.path.getsize(file_path)
+                        if os.path.exists(file_path)
+                        else 0,
+                    }
+                )
+
         return jsonify(result)
-        
+
     except Exception as e:
         logger.error(f"❌ Error in test file access: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"error": str(e)}), 500
 
 
 # ============================================================================
 # TASK MANAGEMENT API ENDPOINTS
 # ============================================================================
 
-@app.route('/api/tasks', methods=['GET'])
+
+@app.route("/api/tasks", methods=["GET"])
 def get_tasks():
     """Get all tasks with optional filtering"""
     try:
-        document_id = request.args.get('document_id')
-        assignee = request.args.get('assignee')
-        status = request.args.get('status')
-        search = request.args.get('search')
-        
+        document_id = request.args.get("document_id")
+        assignee = request.args.get("assignee")
+        status = request.args.get("status")
+        search = request.args.get("search")
+
         if document_id:
             tasks = task_manager.get_tasks_by_document(document_id)
         elif assignee:
@@ -2681,48 +2940,43 @@ def get_tasks():
             tasks = task_manager.search_tasks(search, document_id)
         else:
             tasks = list(task_manager.tasks.values())
-        
+
         # Convert tasks to dictionaries for JSON serialization
         tasks_data = [task.to_dict() for task in tasks]
-        
-        return jsonify({
-            'success': True,
-            'tasks': tasks_data,
-            'count': len(tasks_data)
-        })
-        
+
+        return jsonify({"success": True, "tasks": tasks_data, "count": len(tasks_data)})
+
     except Exception as e:
         logger.error(f"❌ Error getting tasks: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
-@app.route('/api/tasks', methods=['POST'])
+@app.route("/api/tasks", methods=["POST"])
 def create_task():
     """Create a new task"""
     try:
         data = request.get_json()
-        
+
         # Required fields
-        document_id = data.get('document_id')
-        title = data.get('title')
-        description = data.get('description')
-        created_by = data.get('created_by', 'default_user')
-        
+        document_id = data.get("document_id")
+        title = data.get("title")
+        description = data.get("description")
+        created_by = data.get("created_by", "default_user")
+
         if not all([document_id, title, description]):
-            return jsonify({
-                'success': False,
-                'error': 'document_id, title, and description are required'
-            }), 400
-        
+            return jsonify(
+                {
+                    "success": False,
+                    "error": "document_id, title, and description are required",
+                }
+            ), 400
+
         # Optional fields
-        priority = data.get('priority', 'medium')
-        assignee = data.get('assignee')
-        tags = data.get('tags', [])
-        due_date = data.get('due_date')
-        
+        priority = data.get("priority", "medium")
+        assignee = data.get("assignee")
+        tags = data.get("tags", [])
+        due_date = data.get("due_date")
+
         task = task_manager.create_task(
             document_id=document_id,
             title=title,
@@ -2731,486 +2985,398 @@ def create_task():
             priority=priority,
             assignee=assignee,
             tags=tags,
-            due_date=due_date
+            due_date=due_date,
         )
-        
-        return jsonify({
-            'success': True,
-            'task': task.to_dict()
-        }), 201
-        
+
+        return jsonify({"success": True, "task": task.to_dict()}), 201
+
     except ValueError as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 400
+        return jsonify({"success": False, "error": str(e)}), 400
     except Exception as e:
         logger.error(f"❌ Error creating task: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
-@app.route('/api/tasks/<task_id>', methods=['GET'])
+@app.route("/api/tasks/<task_id>", methods=["GET"])
 def get_task(task_id):
     """Get a specific task by ID"""
     try:
         task = task_manager.get_task(task_id)
-        
+
         if not task:
-            return jsonify({
-                'success': False,
-                'error': 'Task not found'
-            }), 404
-        
-        return jsonify({
-            'success': True,
-            'task': task.to_dict()
-        })
-        
+            return jsonify({"success": False, "error": "Task not found"}), 404
+
+        return jsonify({"success": True, "task": task.to_dict()})
+
     except Exception as e:
         logger.error(f"❌ Error getting task {task_id}: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
-@app.route('/api/tasks/<task_id>', methods=['PUT'])
+@app.route("/api/tasks/<task_id>", methods=["PUT"])
 def update_task(task_id):
     """Update a task"""
     try:
         data = request.get_json()
-        
+
         if not data:
-            return jsonify({
-                'success': False,
-                'error': 'No update data provided'
-            }), 400
-        
+            return jsonify({"success": False, "error": "No update data provided"}), 400
+
         task = task_manager.update_task(task_id, data)
-        
+
         if not task:
-            return jsonify({
-                'success': False,
-                'error': 'Task not found'
-            }), 404
-        
-        return jsonify({
-            'success': True,
-            'task': task.to_dict()
-        })
-        
+            return jsonify({"success": False, "error": "Task not found"}), 404
+
+        return jsonify({"success": True, "task": task.to_dict()})
+
     except ValueError as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 400
+        return jsonify({"success": False, "error": str(e)}), 400
     except Exception as e:
         logger.error(f"❌ Error updating task {task_id}: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
-@app.route('/api/tasks/<task_id>', methods=['DELETE'])
+@app.route("/api/tasks/<task_id>", methods=["DELETE"])
 def delete_task(task_id):
     """Delete a task"""
     try:
         success = task_manager.delete_task(task_id)
-        
+
         if not success:
-            return jsonify({
-                'success': False,
-                'error': 'Task not found'
-            }), 404
-        
-        return jsonify({
-            'success': True,
-            'message': 'Task deleted successfully'
-        })
-        
+            return jsonify({"success": False, "error": "Task not found"}), 404
+
+        return jsonify({"success": True, "message": "Task deleted successfully"})
+
     except Exception as e:
         logger.error(f"❌ Error deleting task {task_id}: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
-@app.route('/api/tasks/<task_id>/subtasks', methods=['POST'])
+@app.route("/api/tasks/<task_id>/subtasks", methods=["POST"])
 def add_subtask(task_id):
     """Add a subtask to a task"""
     try:
         data = request.get_json()
-        title = data.get('title')
-        
+        title = data.get("title")
+
         if not title:
-            return jsonify({
-                'success': False,
-                'error': 'Subtask title is required'
-            }), 400
-        
+            return jsonify(
+                {"success": False, "error": "Subtask title is required"}
+            ), 400
+
         subtask = task_manager.add_subtask(task_id, title)
-        
+
         if not subtask:
-            return jsonify({
-                'success': False,
-                'error': 'Task not found'
-            }), 404
-        
-        return jsonify({
-            'success': True,
-            'subtask': {
-                'id': subtask.id,
-                'title': subtask.title,
-                'completed': subtask.completed,
-                'created_at': subtask.created_at
+            return jsonify({"success": False, "error": "Task not found"}), 404
+
+        return jsonify(
+            {
+                "success": True,
+                "subtask": {
+                    "id": subtask.id,
+                    "title": subtask.title,
+                    "completed": subtask.completed,
+                    "created_at": subtask.created_at,
+                },
             }
-        }), 201
-        
+        ), 201
+
     except Exception as e:
         logger.error(f"❌ Error adding subtask to task {task_id}: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
-@app.route('/api/tasks/<task_id>/subtasks/<subtask_id>', methods=['PUT'])
+@app.route("/api/tasks/<task_id>/subtasks/<subtask_id>", methods=["PUT"])
 def update_subtask(task_id, subtask_id):
     """Update a subtask"""
     try:
         data = request.get_json()
-        completed = data.get('completed')
-        
+        completed = data.get("completed")
+
         if completed is None:
-            return jsonify({
-                'success': False,
-                'error': 'completed status is required'
-            }), 400
-        
+            return jsonify(
+                {"success": False, "error": "completed status is required"}
+            ), 400
+
         subtask = task_manager.update_subtask(task_id, subtask_id, completed)
-        
+
         if not subtask:
-            return jsonify({
-                'success': False,
-                'error': 'Task or subtask not found'
-            }), 404
-        
-        return jsonify({
-            'success': True,
-            'subtask': {
-                'id': subtask.id,
-                'title': subtask.title,
-                'completed': subtask.completed,
-                'created_at': subtask.created_at
+            return jsonify(
+                {"success": False, "error": "Task or subtask not found"}
+            ), 404
+
+        return jsonify(
+            {
+                "success": True,
+                "subtask": {
+                    "id": subtask.id,
+                    "title": subtask.title,
+                    "completed": subtask.completed,
+                    "created_at": subtask.created_at,
+                },
             }
-        })
-        
+        )
+
     except Exception as e:
         logger.error(f"❌ Error updating subtask {subtask_id} in task {task_id}: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
-@app.route('/api/tasks/<task_id>/subtasks/<subtask_id>', methods=['DELETE'])
+@app.route("/api/tasks/<task_id>/subtasks/<subtask_id>", methods=["DELETE"])
 def delete_subtask(task_id, subtask_id):
     """Delete a subtask"""
     try:
         success = task_manager.delete_subtask(task_id, subtask_id)
-        
+
         if not success:
-            return jsonify({
-                'success': False,
-                'error': 'Task or subtask not found'
-            }), 404
-        
-        return jsonify({
-            'success': True,
-            'message': 'Subtask deleted successfully'
-        })
-        
+            return jsonify(
+                {"success": False, "error": "Task or subtask not found"}
+            ), 404
+
+        return jsonify({"success": True, "message": "Subtask deleted successfully"})
+
     except Exception as e:
         logger.error(f"❌ Error deleting subtask {subtask_id} from task {task_id}: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
-@app.route('/api/tasks/<task_id>/comments', methods=['POST'])
+@app.route("/api/tasks/<task_id>/comments", methods=["POST"])
 def add_task_comment(task_id):
     """Add a comment to a task"""
     try:
         data = request.get_json()
-        content = data.get('content')
-        author = data.get('author', 'default_user')
-        
+        content = data.get("content")
+        author = data.get("author", "default_user")
+
         if not content:
-            return jsonify({
-                'success': False,
-                'error': 'Comment content is required'
-            }), 400
-        
+            return jsonify(
+                {"success": False, "error": "Comment content is required"}
+            ), 400
+
         comment = task_manager.add_comment(task_id, content, author)
-        
+
         if not comment:
-            return jsonify({
-                'success': False,
-                'error': 'Task not found'
-            }), 404
-        
-        return jsonify({
-            'success': True,
-            'comment': {
-                'id': comment.id,
-                'content': comment.content,
-                'author': comment.author,
-                'created_at': comment.created_at,
-                'attachments': comment.attachments or []
+            return jsonify({"success": False, "error": "Task not found"}), 404
+
+        return jsonify(
+            {
+                "success": True,
+                "comment": {
+                    "id": comment.id,
+                    "content": comment.content,
+                    "author": comment.author,
+                    "created_at": comment.created_at,
+                    "attachments": comment.attachments or [],
+                },
             }
-        }), 201
-        
+        ), 201
+
     except Exception as e:
         logger.error(f"❌ Error adding comment to task {task_id}: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
-@app.route('/api/tasks/<task_id>/comments/<comment_id>', methods=['DELETE'])
+@app.route("/api/tasks/<task_id>/comments/<comment_id>", methods=["DELETE"])
 def delete_task_comment(task_id, comment_id):
     """Delete a comment from a task"""
     try:
         success = task_manager.delete_comment(task_id, comment_id)
-        
+
         if not success:
-            return jsonify({
-                'success': False,
-                'error': 'Task or comment not found'
-            }), 404
-        
-        return jsonify({
-            'success': True,
-            'message': 'Comment deleted successfully'
-        })
-        
+            return jsonify(
+                {"success": False, "error": "Task or comment not found"}
+            ), 404
+
+        return jsonify({"success": True, "message": "Comment deleted successfully"})
+
     except Exception as e:
         logger.error(f"❌ Error deleting comment {comment_id} from task {task_id}: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
-@app.route('/api/tasks/search', methods=['POST'])
+@app.route("/api/tasks/search", methods=["POST"])
 def search_tasks():
     """Search tasks by query"""
     try:
         data = request.get_json()
-        query = data.get('query', '')
-        document_id = data.get('document_id')
-        
+        query = data.get("query", "")
+        document_id = data.get("document_id")
+
         if not query:
-            return jsonify({
-                'success': False,
-                'error': 'Search query is required'
-            }), 400
-        
+            return jsonify({"success": False, "error": "Search query is required"}), 400
+
         tasks = task_manager.search_tasks(query, document_id)
         tasks_data = [task.to_dict() for task in tasks]
-        
-        return jsonify({
-            'success': True,
-            'tasks': tasks_data,
-            'count': len(tasks_data),
-            'query': query
-        })
-        
+
+        return jsonify(
+            {
+                "success": True,
+                "tasks": tasks_data,
+                "count": len(tasks_data),
+                "query": query,
+            }
+        )
+
     except Exception as e:
         logger.error(f"❌ Error searching tasks: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
-@app.route('/api/tasks/statistics', methods=['GET'])
+@app.route("/api/tasks/statistics", methods=["GET"])
 def get_task_statistics():
     """Get task statistics"""
     try:
-        document_id = request.args.get('document_id')
-        
+        document_id = request.args.get("document_id")
+
         stats = task_manager.get_task_statistics(document_id)
-        
-        return jsonify({
-            'success': True,
-            'statistics': stats
-        })
-        
+
+        return jsonify({"success": True, "statistics": stats})
+
     except Exception as e:
         logger.error(f"❌ Error getting task statistics: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        return jsonify({"success": False, "error": str(e)}), 500
+
 
 # =============================================================================
 # MCP Service Integration - REST API Endpoints
 # =============================================================================
 
-@app.route('/api/mcp/status', methods=['GET'])
+
+@app.route("/api/mcp/status", methods=["GET"])
 def get_mcp_status():
     """Get MCP service status and available servers"""
     try:
         from simple_mcp_service import get_mcp_status, is_mcp_available
-        
-        return jsonify({
-            'success': True,
-            'available': is_mcp_available(),
-            'servers': get_mcp_status()
-        })
+
+        return jsonify(
+            {
+                "success": True,
+                "available": is_mcp_available(),
+                "servers": get_mcp_status(),
+            }
+        )
     except Exception as e:
         logger.error(f"❌ Error getting MCP status: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/api/mcp/tools', methods=['GET'])
+
+@app.route("/api/mcp/tools", methods=["GET"])
 def get_mcp_tools():
     """Get all available MCP tools"""
     try:
         from simple_mcp_service import is_mcp_ready, initialize_mcp
-        
+
         # Use the simple service - initialize if needed
         if not is_mcp_ready():
             logger.info("🔄 MCP not ready, initializing...")
             # Initialize synchronously in a new event loop
             import asyncio
+
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             try:
                 loop.run_until_complete(initialize_mcp())
             finally:
                 loop.close()
-        
+
         # Get tools from service (no async needed in sync context)
         from simple_mcp_service import get_mcp_service
+
         tools = get_mcp_service().all_tools
-        
+
         # Convert tools to dict format for JSON response
         tools_data = [tool.to_dict() for tool in tools]
-        
-        return jsonify({
-            'success': True,
-            'tools': tools_data,
-            'count': len(tools_data)
-        })
-    
+
+        return jsonify({"success": True, "tools": tools_data, "count": len(tools_data)})
+
     except Exception as e:
         logger.error(f"❌ Error getting MCP tools: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/api/mcp/execute', methods=['POST'])
+
+@app.route("/api/mcp/execute", methods=["POST"])
 def execute_mcp_tool_endpoint():
     """Execute an MCP tool (simple approach like test_mcp.py)"""
     try:
         from simple_mcp_service import execute_mcp_tool
         import asyncio
-        
+
         data = request.get_json()
-        tool_name = data.get('tool_name')
-        arguments = data.get('arguments', {})
-        server_name = data.get('server_name')  # Optional
-        
+        tool_name = data.get("tool_name")
+        arguments = data.get("arguments", {})
+        server_name = data.get("server_name")  # Optional
+
         if not tool_name:
-            return jsonify({
-                'success': False,
-                'error': 'tool_name is required'
-            }), 400
-        
+            return jsonify({"success": False, "error": "tool_name is required"}), 400
+
         async def run_tool():
             return await execute_mcp_tool(tool_name, arguments, server_name)
-        
+
         # Execute the tool (simple approach like test_mcp.py)
         logger.info(f"🔧 Executing MCP tool: {tool_name}")
-        
+
         # Simple asyncio.run approach like test_mcp.py
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
             result = loop.run_until_complete(run_tool())
             logger.info(f"✅ MCP tool '{tool_name}' executed successfully")
-            
-            return jsonify({
-                'success': True,
-                'result': result,
-                'tool_name': tool_name
-            })
+
+            return jsonify({"success": True, "result": result, "tool_name": tool_name})
         finally:
             loop.close()
-    
+
     except Exception as e:
         logger.error(f"❌ Error executing MCP tool '{tool_name}': {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/api/mcp/servers/<server_name>/restart', methods=['POST'])
+
+@app.route("/api/mcp/servers/<server_name>/restart", methods=["POST"])
 def restart_mcp_server(server_name):
     """Restart a specific MCP server"""
     try:
         import asyncio
-        
+
         async def restart():
             # Simple service doesn't support restart - we'll need to reinitialize
-            logger.warning("Server restart not supported in simple service, reinitializing instead")
+            logger.warning(
+                "Server restart not supported in simple service, reinitializing instead"
+            )
             return await initialize_mcp()
-        
-        if hasattr(asyncio, 'run'):
+
+        if hasattr(asyncio, "run"):
             success = asyncio.run(restart())
         else:
             loop = asyncio.get_event_loop()
             success = loop.run_until_complete(restart())
-        
+
         if success:
             logger.info(f"✅ MCP server '{server_name}' restarted successfully")
-            return jsonify({
-                'success': True,
-                'message': f"Server '{server_name}' restarted successfully"
-            })
+            return jsonify(
+                {
+                    "success": True,
+                    "message": f"Server '{server_name}' restarted successfully",
+                }
+            )
         else:
-            return jsonify({
-                'success': False,
-                'error': f"Failed to restart server '{server_name}'"
-            }), 500
-    
+            return jsonify(
+                {"success": False, "error": f"Failed to restart server '{server_name}'"}
+            ), 500
+
     except Exception as e:
         logger.error(f"❌ Error restarting MCP server '{server_name}': {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/api/mcp/initialize', methods=['POST'])
+
+@app.route("/api/mcp/initialize", methods=["POST"])
 def initialize_mcp_endpoint():
     """Initialize MCP service"""
     try:
         from simple_mcp_service import initialize_mcp
-        
+
         # Use async initialization in a new event loop
         import asyncio
+
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
@@ -3220,50 +3386,39 @@ def initialize_mcp_endpoint():
             success = False
         finally:
             loop.close()
-        
+
         if success:
             logger.info("✅ MCP service initialized via API")
-            return jsonify({
-                'success': True,
-                'message': 'MCP service initialized successfully'
-            })
+            return jsonify(
+                {"success": True, "message": "MCP service initialized successfully"}
+            )
         else:
-            return jsonify({
-                'success': False,
-                'error': 'Failed to initialize MCP service'
-            }), 500
-    
+            return jsonify(
+                {"success": False, "error": "Failed to initialize MCP service"}
+            ), 500
+
     except Exception as e:
         logger.error(f"❌ Error initializing MCP service: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/api/mcp/chat-status', methods=['GET'])
+
+@app.route("/api/mcp/chat-status", methods=["GET"])
 def get_chat_mcp_status():
     """Get MCP status from chat manager"""
     try:
         if chat_manager:
             status = chat_manager.get_mcp_status()
-            return jsonify({
-                'success': True,
-                'chat_mcp_status': status
-            })
+            return jsonify({"success": True, "chat_mcp_status": status})
         else:
-            return jsonify({
-                'success': False,
-                'error': 'Chat manager not available'
-            }), 500
-    
+            return jsonify(
+                {"success": False, "error": "Chat manager not available"}
+            ), 500
+
     except Exception as e:
         logger.error(f"❌ Error getting chat MCP status: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-      
-      
-if __name__ == '__main__':
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+if __name__ == "__main__":
     print("Starting Python backend server...")
-    app.run(host='127.0.0.1', port=5000, debug=True) 
+    app.run(host="127.0.0.1", port=5000, debug=True)

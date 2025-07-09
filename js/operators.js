@@ -229,14 +229,14 @@ class OperatorManager {
                 
                 const variable = variablesManager.variables.get(output.variable);
                 if (variable) {
-                  variable.value = valueToStore;
+                  // Update metadata directly
                   variable.lastUpdated = new Date().toISOString();
                   variable.extractedBy = instance.name;
                   variable.dataSource = dataSource;
                   
-                  // Save the updated variables
-                  await variablesManager.saveVariables();
-                  console.log(`[${windowId}] Stored output in variable: ${output.variable} = ${valueToStore}`);
+                  // Use setVariableValue to trigger dependency propagation
+                  await variablesManager.setVariableValue(output.variable, valueToStore);
+                  console.log(`[${windowId}] Stored output in variable with dependency propagation: ${output.variable} = ${valueToStore}`);
                   addMessageToUI('system', `📊 Output stored in variable: \${${output.variable}} = ${JSON.stringify(valueToStore)}`);
                 } else {
                   console.warn(`[${windowId}] Variable not found: ${output.variable}`);

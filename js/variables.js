@@ -194,17 +194,25 @@ class VariablesManager {
    * @param {string} changedVariableName - The variable that changed
    */
   async propagateUpdatesToDependents(changedVariableName) {
-    console.log(`🔄 Propagating updates from variable: ${changedVariableName}`);
+    console.log(`🔄 PROPAGATION START: Propagating updates from variable: ${changedVariableName}`);
+    
+    // Debug: Log current variable state
+    console.log(`📋 All variables:`, Array.from(this.variables.keys()));
+    this.variables.forEach((variable, name) => {
+      if (variable.dependencies && variable.dependencies.length > 0) {
+        console.log(`  📎 ${name} depends on:`, variable.dependencies);
+      }
+    });
     
     // Get dependent variables in execution order
     const dependentVariables = this.getDependentVariablesInOrder(changedVariableName);
     
     if (dependentVariables.length === 0) {
-      console.log(`No dependent variables found for: ${changedVariableName}`);
+      console.log(`ℹ️ No dependent variables found for: ${changedVariableName}`);
       return;
     }
     
-    console.log(`Found ${dependentVariables.length} dependent variables:`, dependentVariables);
+    console.log(`📋 Found ${dependentVariables.length} dependent variables:`, dependentVariables);
     
     // Re-execute each dependent variable in order
     for (const dependentVariableName of dependentVariables) {
@@ -214,24 +222,30 @@ class VariablesManager {
         // Get the variable data
         const variableData = this.variables.get(dependentVariableName);
         if (!variableData) {
-          console.warn(`Variable ${dependentVariableName} not found, skipping`);
+          console.warn(`❌ Variable ${dependentVariableName} not found, skipping`);
           continue;
         }
+        
+        console.log(`📋 Variable ${dependentVariableName} data:`, {
+          dependencies: variableData.dependencies,
+          hasValue: variableData.value !== undefined,
+          currentValue: variableData.value
+        });
         
         // Check if the variable has a tool/operator that can be executed
         if (window.variableToolGenerator) {
           await this.executeVariableOperator(dependentVariableName, variableData);
         } else {
-          console.warn(`Variable tool generator not available for: ${dependentVariableName}`);
+          console.warn(`⚠️ Variable tool generator not available for: ${dependentVariableName}`);
         }
         
       } catch (error) {
-        console.error(`Error re-executing variable ${dependentVariableName}:`, error);
+        console.error(`❌ Error re-executing variable ${dependentVariableName}:`, error);
         // Continue with other variables even if one fails
       }
     }
     
-    console.log(`✅ Finished propagating updates from: ${changedVariableName}`);
+    console.log(`✅ PROPAGATION END: Finished propagating updates from: ${changedVariableName}`);
   }
 
   /**
@@ -241,36 +255,104 @@ class VariablesManager {
    */
   async executeVariableOperator(variableName, variableData) {
     try {
-      // Check if variable has dependencies and a tool/operator
+      console.log(`🔧 EXECUTE OPERATOR: Starting execution for variable ${variableName}`);
+      
+      // Check if variable has dependencies
       if (!variableData.dependencies || variableData.dependencies.length === 0) {
-        console.log(`Variable ${variableName} has no dependencies, skipping execution`);
+        console.log(`ℹ️ Variable ${variableName} has no dependencies, skipping execution`);
         return;
       }
       
-      // Get dependency values
+      console.log(`📋 Variable ${variableName} dependencies:`, variableData.dependencies);
+      
+      // Get dependency values (structure must match getDependencyValues format)
       const dependencyValues = {};
+      let hasAllDependencyValues = true;
+      
       for (const depName of variableData.dependencies) {
         const depVariable = this.variables.get(depName);
         if (depVariable && depVariable.value !== undefined) {
-          dependencyValues[depName] = depVariable.value;
+          // Structure dependency values the same way as getDependencyValues method
+          dependencyValues[depName] = {
+            name: depVariable.name,
+            type: depVariable.type || 'text',
+            description: depVariable.description || '',
+            value: depVariable.value,
+            format: depVariable.format || ''
+          };
+          console.log(`✅ Dependency ${depName} = ${JSON.stringify(depVariable.value)}`);
+        } else {
+          console.warn(`❌ Dependency ${depName} for variable ${variableName} has no value`);
+          hasAllDependencyValues = false;
         }
       }
       
-      console.log(`Executing variable ${variableName} with dependencies:`, dependencyValues);
+      if (!hasAllDependencyValues) {
+        console.log(`⚠️ Variable ${variableName} cannot be executed - missing dependency values`);
+        return;
+      }
+      
+      console.log(`🔄 Executing variable ${variableName} with dependencies:`, dependencyValues);
       
       // Check if variable has generated code/operator
       if (window.variableToolGenerator && window.variableToolGenerator.variableExecutionResults) {
+        console.log(`📋 Checking variableExecutionResults for ${variableName}...`);
         const result = window.variableToolGenerator.variableExecutionResults.get(variableName);
+        
+        console.log(`📋 Found result for ${variableName}:`, result);
+        
         if (result && result.generatedCode) {
+          console.log(`✅ Found generated code for ${variableName}, executing...`);
+          console.log(`📝 Generated code:`, result.generatedCode.substring(0, 200) + '...');
+          console.log(`📝 Dependencies for execution:`, result.dependencies);
+          
           // Re-execute the variable's generated code with new dependency values
           await this.executeVariableCode(variableName, result.generatedCode, dependencyValues);
+          return;
         } else {
-          console.warn(`No generated code found for variable: ${variableName}`);
+          console.log(`⚠️ No generated code found for ${variableName} in variableExecutionResults`);
+          if (result) {
+            console.log(`📋 Result structure:`, {
+              hasGeneratedCode: !!result.generatedCode,
+              hasExecutionResult: !!result.executionResult,
+              dependencies: result.dependencies
+            });
+          }
+          if (window.variableToolGenerator.variableExecutionResults) {
+            console.log(`📋 Available execution results:`, Array.from(window.variableToolGenerator.variableExecutionResults.keys()));
+            // Show structure of each result
+            window.variableToolGenerator.variableExecutionResults.forEach((value, key) => {
+              console.log(`📋 ${key}:`, {
+                hasGeneratedCode: !!value.generatedCode,
+                hasExecutionResult: !!value.executionResult,
+                dependencies: value.dependencies
+              });
+            });
+          }
         }
+      } else {
+        console.log(`⚠️ window.variableToolGenerator or variableExecutionResults not available`);
       }
       
+      // If no generated code found, check if there's an operator/tool defined for this variable
+      if (window.operatorsModule && window.operatorsModule.getOperatorForVariable) {
+        console.log(`📋 Checking for operator for variable ${variableName}...`);
+        const operator = window.operatorsModule.getOperatorForVariable(variableName);
+        if (operator) {
+          console.log(`✅ Found operator ${operator.name} for variable ${variableName}, executing...`);
+          await window.operatorsModule.executeOperator(operator.id);
+          return;
+        } else {
+          console.log(`⚠️ No operator found for variable ${variableName}`);
+        }
+      } else {
+        console.log(`⚠️ window.operatorsModule not available`);
+      }
+      
+      console.log(`❌ Variable ${variableName} has dependencies but no executable code - this may be a simple dependent variable that should be updated manually`);
+      
     } catch (error) {
-      console.error(`Error executing variable operator for ${variableName}:`, error);
+      console.error(`❌ Error executing variable operator for ${variableName}:`, error);
       throw error;
     }
   }
@@ -283,33 +365,39 @@ class VariablesManager {
    */
   async executeVariableCode(variableName, code, dependencyValues) {
     try {
-      // Import required modules
-      const { executeCodeIsolatedWithDependencies } = await import('./variable-operator-generator.js');
+      console.log(`🔧 EXECUTE CODE: Starting code execution for variable ${variableName}`);
+      console.log(`📋 Dependency values:`, dependencyValues);
       
-      // Execute the code with dependency values
-      const result = await executeCodeIsolatedWithDependencies(code, dependencyValues);
+      // Get the variable data source information
+      const variableData = this.variables.get(variableName);
+      const dataSource = variableData?.dataSource || null;
       
-      if (result.success) {
-        // Update the variable's value
-        const variable = this.variables.get(variableName);
-        if (variable) {
-          variable.value = result.result;
-          this.variables.set(variableName, variable);
-          
-          // Update UI
-          this.updateVariablesUI();
-          
-          // Save to backend
-          await this.saveVariables();
-          
-          console.log(`✅ Variable ${variableName} updated with new value:`, result.result);
+      // Use the variable tool generator to execute the code
+      if (window.variableToolGenerator) {
+        console.log(`⚡ Executing code for ${variableName} using variableToolGenerator...`);
+        const result = await window.variableToolGenerator.executeCodeIsolatedWithDependencies(
+          code, 
+          dataSource, 
+          dependencyValues, 
+          variableName
+        );
+        
+        console.log(`📊 Code execution result for ${variableName}:`, result);
+        
+        if (result !== null && result !== undefined) {
+          // Update the variable's value using setVariableValue but skip propagation to avoid infinite loops
+          // (since this is already part of a propagation chain)
+          console.log(`✅ Variable ${variableName} code executed successfully, new value:`, result);
+          await this.setVariableValue(variableName, result, true); // Skip propagation
+        } else {
+          console.error(`❌ Failed to execute code for variable ${variableName}: null/undefined result`);
         }
       } else {
-        console.error(`Failed to execute code for variable ${variableName}:`, result.error);
+        console.error(`❌ window.variableToolGenerator not available`);
       }
       
     } catch (error) {
-      console.error(`Error executing variable code for ${variableName}:`, error);
+      console.error(`❌ Error executing variable code for ${variableName}:`, error);
       throw error;
     }
   }
@@ -704,10 +792,10 @@ class VariablesManager {
       if (action === 'close' || action === 'cancel') {
         this.clearSelectionAndHideDialog();
       } else if (action === 'add-variable') {
-        this.createVariable();
+        await this.createVariable();
       } else if (action === 'update-variable') {
         const variableName = e.target.getAttribute('data-variable-name');
-        this.updateVariable(variableName);
+        await this.updateVariable(variableName);
       } else if (action === 'open-tool-generator') {
         await this.openToolGenerator();
       }
@@ -1145,8 +1233,23 @@ class VariablesManager {
     this.selectedText = null;
     this.selectedRange = null;
     
+    // Clear editing state
+    this.clearEditingState();
+    
     // Hide the dialog
     this.hideVariableDialog();
+  }
+  
+  /**
+   * Clear all editing state variables
+   */
+  clearEditingState() {
+    this._editingVariable = null;
+    this._editingVariableName = null;
+    this._temporaryValue = undefined;
+    this.currentSuggestion = null;
+    
+    console.log('🧹 Editing state cleared');
   }
 
   async showVariablesPanel() {
@@ -1197,7 +1300,7 @@ class VariablesManager {
   /**
    * Create variable from dialog form
    */
-  createVariable() {
+  async createVariable() {
     if (!this.variableDialog) return;
     
     const formData = this.getVariableFormData();
@@ -1222,14 +1325,22 @@ class VariablesManager {
       static_suffix: formData.static_suffix || ''
     };
     
-    // Add value if set in dialog
-    if (this._temporaryValue) {
-      variable.value = this._temporaryValue;
-    }
-    
+    // First add the variable to the map without a value
     this.variables.set(variable.name, variable);
     this.replaceSelectedTextWithPlaceholder(variable);
-    this.saveVariables();
+    
+    // If there's an initial value, use setVariableValue to trigger propagation
+    // (this handles cases where a variable is recreated and needs to update dependents)
+    if (this._temporaryValue) {
+      await this.setVariableValue(variable.name, this._temporaryValue);
+    } else {
+      // No initial value, just save normally
+      await this.saveVariables();
+    }
+    
+    // Clear temporary value
+    this._temporaryValue = undefined;
+    
     this.updateVariablesUI();
     this.clearSelectionAndHideDialog(); // Clear selection to prevent button re-showing
     
@@ -1610,7 +1721,7 @@ class VariablesManager {
     * Update an existing variable
     */
    async updateVariable(variableName) {
-     console.log('Updating variable:', variableName);
+     console.log('🔄 UPDATE VARIABLE: Updating variable:', variableName);
      
      // Validate form data with update context
      const formData = this.getVariableFormData();
@@ -1629,6 +1740,11 @@ class VariablesManager {
      
      // Store original value for comparison
      const originalValue = originalVariable.value;
+     const newValue = this._temporaryValue !== undefined ? 
+       (this._temporaryValue === '' ? undefined : this._temporaryValue) : 
+       originalValue;
+     
+     console.log(`📊 Variable ${variableName}: originalValue = ${JSON.stringify(originalValue)}, newValue = ${JSON.stringify(newValue)}`);
      
      // Create updated variable object, preserving original text and other properties
      const updatedVariable = {
@@ -1642,46 +1758,41 @@ class VariablesManager {
        placeholder: `{{${formData.name}}}`
      };
      
-     // Update value if set in dialog
-     if (this._temporaryValue !== undefined) {
-       if (this._temporaryValue === '') {
-         delete updatedVariable.value;
-       } else {
-         updatedVariable.value = this._temporaryValue;
-       }
-     }
-     
-     // If name changed, remove old entry and add new one
-     if (formData.name !== variableName) {
+     // Handle variable name change
+     const nameChanged = formData.name !== variableName;
+     if (nameChanged) {
+       console.log(`📝 Variable name changed from "${variableName}" to "${formData.name}"`);
+       // Remove old entry and add new one (without value first)
        this.variables.delete(variableName);
        this.variables.set(formData.name, updatedVariable);
      } else {
-       // Just update the existing entry
+       // Just update the existing entry (without value first)
        this.variables.set(variableName, updatedVariable);
      }
      
-     // Update UI
-     this.updateVariablesList();
-     this.updateVariablesUI();
-     
-     // Save to backend
+     // Save metadata changes to backend first
      await this.saveVariables();
      
-     // Close dialog and reset to create mode
-     this.clearSelectionAndHideDialog(); // Clear selection to prevent button re-showing
-     this.resetDialogToCreateMode();
-     
-     console.log(`Variable "${variableName}" updated successfully`);
-     
-     // Check if value changed and trigger update propagation
-     const newValue = updatedVariable.value;
-     const updatedVariableName = formData.name; // Use the new name in case it changed
+     // Now handle value update using setVariableValue for proper propagation
+     const finalVariableName = formData.name; // Use the new name if it changed
      
      if (originalValue !== newValue) {
-       console.log(`Variable value changed from "${originalValue}" to "${newValue}"`);
-       // Trigger automatic update propagation to dependent variables
-       await this.propagateUpdatesToDependents(updatedVariableName);
+       console.log(`✅ Value changed, using setVariableValue for proper propagation`);
+       await this.setVariableValue(finalVariableName, newValue);
+     } else {
+       console.log(`ℹ️ Value unchanged, no propagation needed`);
+       // Update UI anyway since metadata might have changed
+       this.updateVariablesUI();
      }
+     
+     // Clear temporary value
+     this._temporaryValue = undefined;
+     
+     // Close dialog and reset to create mode
+     this.clearSelectionAndHideDialog();
+     this.resetDialogToCreateMode();
+     
+     console.log(`✅ Variable "${finalVariableName}" updated successfully`);
    }
 
      /**
@@ -1808,9 +1919,7 @@ class VariablesManager {
     }
     
     // Clear editing state
-    this._editingVariable = null;
-    this._editingVariableName = null;
-    this._temporaryValue = undefined;
+    this.clearEditingState();
   }
 
   /**
@@ -1936,7 +2045,9 @@ class VariablesManager {
   /**
    * Set a variable value programmatically (for operator outputs)
    */
-  async setVariableValue(variableName, value) {
+  async setVariableValue(variableName, value, skipPropagation = false) {
+    console.log(`🔧 setVariableValue called: ${variableName} = ${JSON.stringify(value)}, skipPropagation = ${skipPropagation}`);
+    
     if (!variableName || !variableName.trim()) {
       throw new Error('Variable name is required');
     }
@@ -1948,28 +2059,42 @@ class VariablesManager {
 
     // If variable is not in vars manager, skip it.
     if (!this.variables.has(variableName)) {
-      console.warn(`Variable ${variableName} not found in variables manager, skipping`);
+      console.warn(`❌ Variable ${variableName} not found in variables manager, skipping`);
+      console.log('Available variables:', Array.from(this.variables.keys()));
       return;
     }
 
     const existingVariable = this.variables.get(variableName);
     const oldValue = existingVariable.value;
     
+    console.log(`📊 Variable ${variableName}: oldValue = ${JSON.stringify(oldValue)}, newValue = ${JSON.stringify(value)}`);
+    
     // Only trigger updates if the value actually changed
     if (oldValue !== value) {
+      console.log(`✅ Value changed for ${variableName}, updating and ${skipPropagation ? 'skipping' : 'triggering'} propagation...`);
+      
       existingVariable.value = value;
+      existingVariable.lastUpdated = new Date().toISOString();
       this.variables.set(variableName, existingVariable);
+      
+      // Update UI first
       this.updateVariablesUI();
 
-      // Save to vars.json for persistence (operator outputs are also saved via document auto-save)
+      // Save to backend
       await this.saveVariables();
 
-      console.log(`Variable ${variableName} set to:`, value);
+      console.log(`💾 Variable ${variableName} saved to backend with new value:`, value);
       
       // Trigger automatic update propagation to dependent variables
-      await this.propagateUpdatesToDependents(variableName);
+      if (!skipPropagation) {
+        console.log(`🔄 Starting dependency propagation for ${variableName}...`);
+        await this.propagateUpdatesToDependents(variableName);
+        console.log(`✅ Dependency propagation completed for ${variableName}`);
+      } else {
+        console.log(`⏭️ Skipping dependency propagation for ${variableName}`);
+      }
     } else {
-      console.log(`Variable ${variableName} value unchanged, skipping update propagation`);
+      console.log(`ℹ️ Variable ${variableName} value unchanged (${JSON.stringify(oldValue)}), skipping update propagation`);
     }
   }
 
@@ -2255,7 +2380,7 @@ class VariablesManager {
   }
 
   async saveVariableValueInDialog() {
-    console.log('Saving value in dialog');
+    console.log('💾 MANUAL SAVE: Saving value in dialog');
     
     const valueInput = getDocumentElement('variable-value-input');
     const valueDisplay = getDocumentElement('variable-value-display');
@@ -2263,6 +2388,7 @@ class VariablesManager {
     
     if (valueInput && valueDisplay && valueInputContainer) {
       const newValue = valueInput.value.trim();
+      console.log(`📝 User entered value: "${newValue}"`);
       
       // Update display
       valueDisplay.textContent = newValue || 'Click to set value';
@@ -2277,26 +2403,20 @@ class VariablesManager {
       
       // If we're editing an existing variable, save the value to backend immediately
       if (this._editingVariableName) {
-        const variable = this.variables.get(this._editingVariableName);
-        if (variable) {
-          // Update the variable value
-          if (newValue) {
-            variable.value = newValue;
-          } else {
-            delete variable.value;
-          }
-          this.variables.set(this._editingVariableName, variable);
-          
-          // Save to backend immediately
-          await this.saveVariables();
-          console.log(`Variable "${this._editingVariableName}" value saved to backend:`, newValue);
-          
-          // Show success notification
-          this.showVariableUpdateNotification();
-        }
+        console.log(`🔧 Editing existing variable: ${this._editingVariableName}`);
+        
+        // Use setVariableValue to ensure proper propagation
+        await this.setVariableValue(this._editingVariableName, newValue || undefined);
+        
+        // Show success notification
+        this.showVariableUpdateNotification();
+      } else {
+        console.log(`ℹ️ Not editing existing variable, value will be used when variable is created`);
       }
       
-      console.log('Value set in dialog:', newValue);
+      console.log('✅ Value processing completed in dialog:', newValue);
+    } else {
+      console.error('❌ Required dialog elements not found for saving value');
     }
   }
 
@@ -2585,9 +2705,10 @@ class VariablesManager {
   }
 
   async handleDataSourceChange(selectedValue) {
-    console.log('Handling data source change:', selectedValue);
+    console.log('📊 DATA SOURCE CHANGE: Handling data source change:', selectedValue);
     
     if (selectedValue === 'manual') {
+      console.log('📝 Switching to manual input mode');
       // Switch to manual input mode
       this.startValueEditingInDialog();
       // Reset the select back to default
@@ -2596,6 +2717,8 @@ class VariablesManager {
         select.value = '';
       }
     } else if (selectedValue && selectedValue !== '') {
+      console.log('📊 Setting value from data source:', selectedValue);
+      
       // Set value from data source
       const valueDisplay = getDocumentElement('variable-value-display');
       const valueInput = getDocumentElement('variable-value-input');
@@ -2612,8 +2735,10 @@ class VariablesManager {
       if (selectedOption) {
         const referenceName = selectedOption.getAttribute('data-source-name');
         displayValue = `$${referenceName}`;
+        console.log(`📊 Formatted data source value: ${displayValue} (from ${referenceName})`);
       } else {
         displayValue = `[${selectedValue}]`;
+        console.log(`📊 Fallback data source value: ${displayValue}`);
       }
       
       if (valueDisplay) {
@@ -2629,22 +2754,18 @@ class VariablesManager {
       
       // If we're editing an existing variable, save the value to backend immediately
       if (this._editingVariableName) {
-        const variable = this.variables.get(this._editingVariableName);
-        if (variable) {
-          variable.value = displayValue;
-          this.variables.set(this._editingVariableName, variable);
-          
-          // Save to backend immediately
-          this.saveVariables().then(() => {
-            console.log(`Variable "${this._editingVariableName}" value saved to backend from data source:`, displayValue);
-            this.showVariableUpdateNotification();
-          }).catch(error => {
-            console.error('Error saving variable value to backend:', error);
-          });
-        }
+        console.log(`🔧 Editing existing variable with data source: ${this._editingVariableName}`);
+        
+        // Use setVariableValue to ensure proper propagation
+        await this.setVariableValue(this._editingVariableName, displayValue);
+        
+        // Show success notification
+        this.showVariableUpdateNotification();
+      } else {
+        console.log(`ℹ️ Not editing existing variable, data source value will be used when variable is created`);
       }
       
-      console.log('Value set from data source:', displayValue);
+      console.log('✅ Data source value processing completed:', displayValue);
     }
   }
 

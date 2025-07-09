@@ -999,8 +999,15 @@ class VariableOperatorGenerator {
         this.currentVariable.name
       );
       
-      // Store the execution result for this specific variable
-      this.variableExecutionResults.set(this.currentVariable.name, output);
+      // Store both the generated code and execution result for this specific variable
+      this.variableExecutionResults.set(this.currentVariable.name, {
+        generatedCode: currentCode,
+        executionResult: output,
+        htmlCode: htmlCode,
+        dataSource: this.selectedDataSource,
+        dependencies: dependencies,
+        lastExecuted: new Date().toISOString()
+      });
       
       // Display the result in this specific dialog instance
       this.showExecutionResult(output);
@@ -1173,8 +1180,12 @@ class VariableOperatorGenerator {
           const dependencies = this.currentVariable.dependencies || [];
           
           for (const depName of dependencies) {
-            if (dependencyValues[depName] && dependencyValues[depName].value !== null) {
+            console.log(`🔍 Processing dependency ${depName}:`, dependencyValues[depName]);
+            
+            if (dependencyValues[depName] && dependencyValues[depName].value !== null && dependencyValues[depName].value !== undefined) {
               const value = dependencyValues[depName].value;
+              console.log(`✅ Found value for ${depName}:`, value, typeof value);
+              
               // Format the value based on type
               if (typeof value === 'string') {
                 args.push(`'${value.replace(/'/g, "\\'")}'`);
@@ -1184,6 +1195,7 @@ class VariableOperatorGenerator {
                 args.push(`'${String(value).replace(/'/g, "\\'")}'`);
               }
             } else {
+              console.warn(`❌ No valid value for dependency ${depName}, using None`);
               args.push('None');
             }
           }
@@ -1212,7 +1224,8 @@ class VariableOperatorGenerator {
         executionCode, 
         dataSource, 
         variableName, 
-        window.documentManager?.activeDocumentId || 'default'
+        window.documentManager?.activeDocumentId || 'default',
+        true // Skip propagation to avoid infinite loops during dependency execution
       );
       
       console.log(`[${this.instanceId}] Isolated execution with dependencies completed for ${variableName}: ${result}`);
@@ -1597,9 +1610,16 @@ class VariableOperatorGenerator {
     );
     console.log('Direct execution result:', executionResult);
     
-    // Store the execution result for this specific variable
+    // Store both the generated code and execution result for this specific variable
     if (executionResult !== null && executionResult !== undefined) {
-      this.variableExecutionResults.set(this.currentVariable.name, executionResult);
+      this.variableExecutionResults.set(this.currentVariable.name, {
+        generatedCode: currentCode,
+        executionResult: executionResult,
+        htmlCode: htmlCode,
+        dataSource: this.selectedDataSource,
+        dependencies: dependencies,
+        lastExecuted: new Date().toISOString()
+      });
     }
     
     if (executionResult !== null && executionResult !== undefined && window.variablesManager) {
@@ -1610,7 +1630,7 @@ class VariableOperatorGenerator {
       
       const variable = window.variablesManager.variables.get(this.currentVariable.name);
       if (variable) {
-        variable.value = executionResult;
+        // Update metadata directly
         variable.lastUpdated = new Date().toISOString();
         variable.extractedBy = operatorName;
         variable.dataSource = this.selectedDataSource;
@@ -1618,9 +1638,9 @@ class VariableOperatorGenerator {
         variable.executedWithDependencies = hasDependencies;
         
         console.log('Saving updated variables...');
-        // Save the updated variables
-        await window.variablesManager.saveVariables();
-        console.log('✓ Variable value saved:', this.currentVariable.name, '=', executionResult);
+        // Use setVariableValue to trigger dependency propagation
+        await window.variablesManager.setVariableValue(this.currentVariable.name, executionResult);
+        console.log('✓ Variable value saved with dependency propagation:', this.currentVariable.name, '=', executionResult);
       } else {
         console.warn('❌ Variable not found in variables manager:', this.currentVariable.name);
         console.log('Available variables:', Array.from(window.variablesManager.variables.keys()));
@@ -1986,8 +2006,23 @@ class VariableOperatorGenerator {
         const variable = window.variablesManager.variables.get(this.currentVariable.name);
         
         if (variable && variable.value !== null && variable.value !== undefined) {
-          // Store as execution result for this variable
-          this.variableExecutionResults.set(this.currentVariable.name, variable.value);
+          // Store the current value - check if there's existing generated code
+          const existingResult = this.variableExecutionResults.get(this.currentVariable.name);
+          if (existingResult && existingResult.generatedCode) {
+            // Update the execution result but keep the generated code
+            existingResult.executionResult = variable.value;
+            existingResult.lastExecuted = new Date().toISOString();
+          } else {
+            // Store as execution result for this variable (no generated code available)
+            this.variableExecutionResults.set(this.currentVariable.name, {
+              generatedCode: null,
+              executionResult: variable.value,
+              htmlCode: null,
+              dataSource: null,
+              dependencies: [],
+              lastExecuted: new Date().toISOString()
+            });
+          }
         }
       }
     } catch (error) {

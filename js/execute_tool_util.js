@@ -281,7 +281,7 @@ export async function executeOperatorWithData(tool, datasets, parameters, window
     }
   }
 
-  export async function executeCodeForAuthorLocal(code, datasets, variableName, windowId='default') {
+  export async function executeCodeForAuthorLocal(code, datasets, variableName, windowId='default', skipPropagation = false) {
     try {
       // Process parameters to separate datasets from literal values
       const plainTextCode = convertHtmlCodeToPlainText(code);
@@ -315,7 +315,7 @@ export async function executeOperatorWithData(tool, datasets, parameters, window
           // If execution was successful and returned a value, offer to populate the variable
           if (result.output) {
             if (window.variablesManager) {
-              await window.variablesManager.setVariableValue(variableName, result.output);
+              await window.variablesManager.setVariableValue(variableName, result.output, skipPropagation);
             }
           }
           
