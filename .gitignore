@@ -7,3 +7,4 @@ venv/
 .env
 *.env
 backend/test.db
+credentials.json
