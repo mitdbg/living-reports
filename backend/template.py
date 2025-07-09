@@ -123,9 +123,7 @@ class Template:
         # If type is unknown, try to detect from file extension or URL
         if item_type == 'unknown' and content:
             item_type = self._detect_content_type(content, name)
-        
-        print(f"++++++++++++ Rendering data source: {reference_name} with content: {content} and type: {item_type}")
-
+            
         # Handle different content types
         if item_type.startswith('image/'):
             # For images, create an HTML img tag
