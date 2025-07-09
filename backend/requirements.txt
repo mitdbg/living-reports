@@ -12,3 +12,11 @@ python-dotenv
 mcp
 httpx 
 gen3
+pydicom
+Pillow
+numpy
+requests
+python-gdcm
+pylibjpeg
+pylibjpeg-libjpeg
+pylibjpeg-openjpeg
