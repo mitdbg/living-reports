@@ -21,129 +21,6 @@ if (!window[FILE_OPS_KEY]) {
 
 const fileOpsData = window[FILE_OPS_KEY];
 
-// Context Files Management
-function addContextFileToDisplay(file, backendSaved = false) {
-  const contextFile = {
-    id: Date.now() + Math.random(), // Unique ID
-    name: file.name,
-    path: file.path,
-    content: file.content,
-    backendSaved: backendSaved,
-    loadedAt: new Date().toISOString()
-  };
-  
-  // Add to state
-  state.loadedContextFiles.push(contextFile);
-  
-  // Update display
-  updateContextFilesDisplay();
-}
-
-function removeContextFileFromDisplay(fileId) {
-  const originalLength = state.loadedContextFiles.length;
-  
-  // Remove from state
-  state.loadedContextFiles = state.loadedContextFiles.filter(file => file.id !== fileId);
-  
-  // Update display
-  updateContextFilesDisplay();
-}
-
-function updateContextFilesDisplay() {
-  if (!elements.contextFilesSection || !elements.contextFilesList) {
-    console.error('Context files elements not found');
-    return;
-  }
-  
-  if (state.loadedContextFiles.length === 0) {
-    // Hide section if no files
-    elements.contextFilesSection.style.display = 'none';
-    elements.contextFilesList.innerHTML = '';
-    return;
-  }
-  
-  // Show section
-  elements.contextFilesSection.style.display = 'block';
-  
-  // Generate HTML for each file
-  const filesHTML = state.loadedContextFiles.map(file => {
-    const fileExt = file.name.split('.').pop().toLowerCase();
-    const fileIcon = getFileIcon(fileExt);
-    
-    return `
-      <div class="context-file-item" data-file-id="${file.id}">
-        <div class="context-file-info">
-          <span class="context-file-icon">${fileIcon}</span>
-          <span class="context-file-name" title="${file.name}">${file.name}</span>
-          <span class="context-file-type">${fileExt.toUpperCase()}</span>
-        </div>
-        <div class="context-file-actions">
-          <button class="context-file-btn view-btn" title="View in preview" data-action="view" data-file-id="${file.id}">
-            👁️
-          </button>
-          <button class="context-file-btn remove-btn" title="Remove from context" data-action="remove" data-file-id="${file.id}">
-            ✕
-          </button>
-        </div>
-      </div>
-    `;
-  }).join('');
-  
-  elements.contextFilesList.innerHTML = filesHTML;
-  
-  // Add event listeners to the buttons
-  const viewButtons = elements.contextFilesList.querySelectorAll('[data-action="view"]');
-  const removeButtons = elements.contextFilesList.querySelectorAll('[data-action="remove"]');
-  
-  viewButtons.forEach(button => {
-    button.addEventListener('click', (e) => {
-      const fileId = parseFloat(e.target.getAttribute('data-file-id'));
-      const file = state.loadedContextFiles.find(f => f.id === fileId);
-      if (file) {
-        displayContextInPreview(file);
-      }
-    });
-  });
-  
-  removeButtons.forEach(button => {
-    button.addEventListener('click', (e) => {
-      const fileId = parseFloat(e.target.getAttribute('data-file-id'));
-      const file = state.loadedContextFiles.find(f => f.id === fileId);
-      if (file && confirm(`Remove "${file.name}" from context?`)) {
-        removeContextFileFromDisplay(fileId);
-        addMessageToUI('system', `Removed "${file.name}" from context display.`);
-        
-        // If this was the last file, also clear backend context
-        if (state.loadedContextFiles.length === 0) {
-          clearFileContext();
-        }
-      }
-    });
-  });
-}
-
-function getFileIcon(fileExt) {
-  const iconMap = {
-    'md': '📝',
-    'markdown': '📝',
-    'txt': '📄',
-    'json': '📋',
-    'csv': '📊',
-    'html': '🌐',
-    'htm': '🌐',
-    'js': '📜',
-    'css': '🎨',
-    'pdf': '📄',
-    'xml': '📄',
-    'xlsx': '📊',
-    'xls': '📊',
-    'pptx': '📽️',
-    'ppt': '📽️'
-  };
-  
-  return iconMap[fileExt] || '📄';
-}
-
 // File opening functionality
 export function initFileOperations() {
   // Check if context files elements exist
@@ -529,13 +406,22 @@ function renderCSV(content) {
 
 function renderPDF(content) {
   const containerId = `pdf-container-${Date.now()}`;
-  
-  // Create actual DOM element instead of just HTML string
   const container = document.createElement("div");
   container.id = containerId;
   container.className = "pdf-container";
+  
+  // Global mousedown handler for PDF page shift+click functionality
+  const pdfMouseDownHandler = (e) => {
+    if (e.target.closest('.pdf-page') && e.shiftKey) {
+      const pageDiv = e.target.closest('.pdf-page');
+      if (pageDiv) {
+        const newDiv = createEditableTextDiv("New Text", e.offsetX, e.offsetY, "16px", "Arial", "#000000", true);
+        pageDiv.appendChild(newDiv);
+      }
+    }
+  };
+  document.addEventListener('mousedown', pdfMouseDownHandler, true);
 
-  // Parse content if it's a string
   let pages = content;
   if (typeof content === 'string') {
     try {
@@ -548,70 +434,138 @@ function renderPDF(content) {
   }
 
   pages.forEach(page => {
-    // Create page container with background image
     const pageDiv = document.createElement("div");
     pageDiv.className = "pdf-page";
     pageDiv.style.width = page.width + "px";
     pageDiv.style.height = page.height + "px";
-    
-    // Convert file path to HTTP URL for serving through backend
-    const backgroundUrl = page.background.startsWith('database/') 
-      ? `http://127.0.0.1:5000/api/serve-file/${page.background}`
-      : `http://127.0.0.1:5000/api/serve-file/${page.background}`;
-    
-    pageDiv.style.backgroundImage = `url(${backgroundUrl})`;
+    pageDiv.style.backgroundImage = `url(http://127.0.0.1:5000/api/serve-file/${page.background})`;
     pageDiv.style.backgroundSize = "cover";
     pageDiv.style.position = "relative";
+    
+    // Ensure the element can receive mouse events
+    pageDiv.style.pointerEvents = "auto";
+    pageDiv.style.cursor = "default";
+    pageDiv.style.zIndex = "1";
 
-    // Loop over all elements on the page
+    // Add mousedown event listener for shift+click functionality
+    pageDiv.addEventListener("mousedown", function(e) {
+      if (e.shiftKey) {
+        const newDiv = createEditableTextDiv("New Text", e.offsetX, e.offsetY, "16px", "Arial", "#000000", true);
+        pageDiv.appendChild(newDiv);
+      }
+    });
+
     page.elements.forEach(el => {
       if (el.type === "text") {
-        // Measure actual rendered width using a hidden span
-        const measure = document.createElement("span");
-        measure.style.position = "absolute";
-        measure.style.visibility = "hidden";
-        measure.style.whiteSpace = "nowrap";
-        measure.style.fontSize = el.font_size + "px";
-        measure.style.fontFamily = el.font;
-        measure.textContent = el.text;
-        document.body.appendChild(measure);
-        const measuredWidth = measure.offsetWidth;
-        document.body.removeChild(measure);
-
-        // Choose the larger of original width or measured width
-        const finalWidth = Math.max(el.width, measuredWidth);
-
-        // Create editable text element
-        const textDiv = document.createElement("div");
-        textDiv.className = "text-box";
-        textDiv.contentEditable = true;
-        textDiv.textContent = el.text;
-
-        Object.assign(textDiv.style, {
+        const textDiv = createEditableTextDiv(
+          el.text,
+          el.x,
+          el.y,
+          el.font_size + "px",
+          el.font,
+          el.color,
+          false // keep existing PDF text single-line
+        );
+        pageDiv.appendChild(textDiv);
+      }
+      if (el.type === "image") {
+        const img = document.createElement("img");
+        img.src = `http://127.0.0.1:5000/api/serve-file/${el.src}`;
+        Object.assign(img.style, {
           position: "absolute",
           left: el.x + "px",
           top: el.y + "px",
-          width: finalWidth + "px",
+          width: el.width + "px",
           height: el.height + "px",
-          fontSize: el.font_size + "px",
-          fontFamily: el.font,
-          color: el.color,
-          whiteSpace: "nowrap",      // Prevent line breaks
-          overflow: "visible",       // Allow overflow if needed
-          backgroundColor: "transparent",
-          lineHeight: "1",           // Match PDF more closely
+          cursor: "pointer"
         });
-
-        pageDiv.appendChild(textDiv);
+        img.addEventListener("click", () => {
+          alert("Replace image functionality here.");
+        });
+        pageDiv.appendChild(img);
       }
     });
 
     container.appendChild(pageDiv);
   });
-  
-  // Return the HTML string wrapped in pdf-content div
+
   return `<div class="pdf-content">${container.outerHTML}</div>`;
 }
+
+// Helper to create a multi-line editable text div
+function createEditableTextDiv(text, x, y, fontSize, fontFamily, color, multiLine = false) {
+  const textDiv = document.createElement("div");
+  textDiv.className = "text-box";
+  textDiv.contentEditable = true;
+  textDiv.textContent = text;
+
+  if (multiLine) {
+    Object.assign(textDiv.style, {
+      whiteSpace: "pre-wrap",
+      wordBreak: "break-word",
+      lineHeight: "1.2",
+      minWidth: "20px",
+      minHeight: "20px"
+    });
+  } else {
+    Object.assign(textDiv.style, {
+      whiteSpace: "nowrap",
+      overflow: "visible"
+    });
+  }
+
+  Object.assign(textDiv.style, {
+    position: "absolute",
+    left: x + "px",
+    top: y + "px",
+    fontSize: fontSize,
+    fontFamily: fontFamily,
+    color: color,
+    backgroundColor: "transparent",
+    cursor: "text",
+    zIndex: "10"
+  });
+
+  autoResizeText(textDiv, multiLine);
+  return textDiv;
+}
+
+
+// Resize width + height based on multi-line text content
+function autoResizeText(textDiv, multiLine) {
+  function resize() {
+    const measure = document.createElement(multiLine ? "div" : "span");
+    measure.style.position = "absolute";
+    measure.style.visibility = "hidden";
+    measure.style.fontSize = textDiv.style.fontSize;
+    measure.style.fontFamily = textDiv.style.fontFamily;
+    if (multiLine) {
+      measure.style.whiteSpace = "pre-wrap";
+      measure.style.wordBreak = "break-word";
+      measure.style.lineHeight = textDiv.style.lineHeight;
+    } else {
+      measure.style.whiteSpace = "nowrap";
+    }
+    measure.textContent = textDiv.textContent;
+
+    document.body.appendChild(measure);
+    
+    // Add padding to account for the border width (1px on each side = 2px total)
+    const borderWidth = 2; // 1px border on each side
+    const padding = 4; // Add some padding for better visual appearance
+    
+    textDiv.style.width = (measure.offsetWidth + borderWidth + padding) + "px";
+    textDiv.style.height = (measure.offsetHeight + borderWidth + padding) + "px";
+    
+    document.body.removeChild(measure);
+  }
+
+  resize();
+  textDiv.addEventListener("input", resize);
+}
+
+
+
 
 function renderJSON(content) {
   try {
