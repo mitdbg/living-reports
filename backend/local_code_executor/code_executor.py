@@ -2,6 +2,12 @@ import sys
 import json
 import types
 from io import StringIO
+import os
+
+# Add the backend directory to the Python path for importing tools
+backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if backend_dir not in sys.path:
+    sys.path.insert(0, backend_dir)
 
 def execute_code_locally(code, parameters):
     print(f"{code}")
@@ -20,6 +26,43 @@ def execute_code_locally(code, parameters):
         "__doc__": None,
         "__package__": None
     }
+    
+    # Pre-import common tools and libraries for convenience
+    try:
+        import pandas as pd
+        import numpy as np
+        from tools import GetPatientData
+        
+        # Make these available in the execution environment
+        restricted_globals.update({
+            'pd': pd,
+            'np': np,
+            'GetPatientData': GetPatientData
+        })
+    except ImportError as e:
+        # Log import errors but don't fail - tools may not be needed
+        print(f"Warning: Could not import some tools: {e}", file=sys.stderr)
+    
+    # Also try to import other commonly used libraries
+    try:
+        import pydicom
+        from PIL import Image
+        import requests
+        import json
+        import os
+        import tempfile
+        
+        restricted_globals.update({
+            'pydicom': pydicom,
+            'Image': Image,
+            'requests': requests,
+            'json': json,
+            'os': os,
+            'tempfile': tempfile
+        })
+    except ImportError as e:
+        # These are optional for basic functionality
+        print(f"Info: Some optional libraries not available: {e}", file=sys.stderr)
     
     # Initialize execution environment with parameters
     # CRITICAL: Use the same dict for globals and locals to fix import scoping

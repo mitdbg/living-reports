@@ -39,6 +39,7 @@ from pdf_processor import process_pdf_file
 from local_code_executor.code_executor import execute_code_locally
 from task_manager import TaskManager
 from pathlib import Path
+from tools import GetPatientData
 
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -2394,6 +2395,42 @@ def delete_tools():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+def get_available_tools():
+    """
+    Get list of available tools for LLM code generation.
+    
+    Returns:
+        List of dictionaries containing tool information including name, description, 
+        function signature, and usage examples.
+    """
+    tools = [
+        {
+            "name": "GetPatientData",
+            "description": "Download MIDRC data for a case ID and extract patient demographics and X-ray images",
+            "function_signature": "GetPatientData(case_id: str) -> Dict[str, Any]",
+            "parameters": [
+                {
+                    "name": "case_id",
+                    "type": "str", 
+                    "description": "The MIDRC case ID to download data for"
+                }
+            ],
+            "returns": {
+                "type": "Dict[str, Any]",
+                "description": "Dictionary containing age (int or None), sex (str or None), and x_ray (list of X-ray image file paths in JPEG format)"
+            },
+            "usage_example": """# Example usage:
+patient_data = GetPatientData("MIDRC-RICORD-1A-419635-000025")
+age = patient_data['age']
+sex = patient_data['sex'] 
+x_ray_images = patient_data['x_ray']  # List of JPEG file paths""",
+            "import_statement": "from tools import GetPatientData"
+        }
+    ]
+    
+    return tools
+
+
 @app.route("/api/generate-variable-code", methods=["POST"])
 def generate_variable_code():
     """Generate code for a variable using LLM"""
@@ -2460,6 +2497,35 @@ def generate_variable_code():
             "",
         ]
 
+        # Add available tools information
+        available_tools = get_available_tools()
+        if available_tools:
+            prompt_parts.extend([
+                "Available Tools:",
+                "You have access to the following tools/functions that you can use in your code:",
+                ""
+            ])
+            
+            for tool in available_tools:
+                prompt_parts.extend([
+                    f"Tool: {tool['name']}",
+                    f"Description: {tool['description']}",
+                    f"Function Signature: {tool['function_signature']}",
+                    f"Import: {tool['import_statement']}",
+                    "",
+                    "Usage Example:",
+                    tool['usage_example'],
+                    "",
+                    "---",
+                    ""
+                ])
+            
+            prompt_parts.extend([
+                "IMPORTANT: You can use these tools by importing them and calling them in your generated code.",
+                "Make sure to include the appropriate import statements at the top of your code.",
+                ""
+            ])
+
         # Add data source information if available
         if selected_data_source:
             prompt_parts.extend(
@@ -2505,21 +2571,23 @@ def generate_variable_code():
             "6. Return the final result in a variable named 'output'",
             "7. CRITICAL: Do NOT hardcode any values - use parameters and variables only",
             "8. The generated code should be reusable and work with different input values",
+            "9. You can use any of the available tools listed above - they are pre-imported and ready to use",
+            "10. For MIDRC data, use GetPatientData tool instead of manual API calls",
         ]
 
         if selected_data_source:
             requirements.append(
-                "9. The data source will be available as parameters['data_source']"
+                "11. The data source will be available as parameters['data_source']"
             )
 
         if dependencies:
             requirements.append(
-                "10. Dependencies will be passed as function arguments in this exact order:"
+                "12. Dependencies will be passed as function arguments in this exact order:"
             )
             for dep_name in dependencies:
                 requirements.append(f"    - {dep_name}")
             requirements.append(
-                "11. Use these dependency parameters as variables in your calculations"
+                "13. Use these dependency parameters as variables in your calculations"
             )
 
         prompt_parts.extend(requirements)
