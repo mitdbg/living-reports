@@ -67,6 +67,9 @@ class VariableOperatorGenerator {
     
     // Restore previous execution result if available
     this.restorePreviousExecutionResult();
+    
+    // Update generate button state after showing dialog
+    this.updateGenerateButtonState();
   }
 
   /**
@@ -98,13 +101,29 @@ class VariableOperatorGenerator {
             <div class="variable-info-details">
               <div><strong>Type:</strong> <span id="generator-variable-type"></span></div>
               <div><strong>Description:</strong> <span id="generator-variable-description"></span></div>
+              <div id="generator-variable-dependencies-section" style="display: none;">
+                <strong>Dependencies:</strong> <span id="generator-variable-dependencies"></span>
+              </div>
+            </div>
+          </div>
+          
+          <div class="dependencies-section" id="generator-dependencies-section" style="display: none;">
+            <h4>🔗 Variable Dependencies</h4>
+            <div class="dependencies-info">
+              <p>This variable depends on the following variables:</p>
+              <div class="dependencies-list" id="generator-dependencies-list">
+                <!-- Dependencies will be shown here -->
+              </div>
             </div>
           </div>
           
           <div class="datasource-section">
-            <h4>📊 Select Data Source</h4>
+            <h4>📊 Select Data Source (Optional)</h4>
+            <div class="datasource-note" id="datasource-note" style="display: none;">
+              <small>💡 Data source is optional when variable has dependencies</small>
+            </div>
             <select class="datasource-dropdown" id="generator-datasource-dropdown">
-              <option value="">-- Select a data source --</option>
+              <option value="">-- Select a data source (optional) --</option>
             </select>
             <div class="datasource-parameters" id="datasource-parameters" style="display: none;">
               <h5>Parameters</h5>
@@ -406,6 +425,44 @@ class VariableOperatorGenerator {
       .btn-icon {
         margin-right: 6px;
       }
+      
+      .dependencies-section {
+        background: #f0f8ff;
+        padding: 12px;
+        border-radius: 6px;
+        margin-bottom: 16px;
+        border-left: 4px solid #007bff;
+      }
+      
+      .dependencies-info p {
+        margin: 0 0 8px 0;
+        font-size: 14px;
+        color: #495057;
+      }
+      
+      .dependencies-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      
+      .dependency-tag {
+        background: #007bff;
+        color: white;
+        padding: 4px 8px;
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: 500;
+      }
+      
+      .datasource-note {
+        margin-bottom: 8px;
+      }
+      
+      .datasource-note small {
+        color: #28a745;
+        font-weight: 500;
+      }
     `;
     
     // Add to head if not already added
@@ -545,10 +602,157 @@ class VariableOperatorGenerator {
     const nameEl = this.generatorDialog?.querySelector('[id$="generator-variable-name"]');
     const typeEl = this.generatorDialog?.querySelector('[id$="generator-variable-type"]');
     const descEl = this.generatorDialog?.querySelector('[id$="generator-variable-description"]');
+    const dependenciesEl = this.generatorDialog?.querySelector('[id$="generator-variable-dependencies"]');
+    const dependenciesSection = this.generatorDialog?.querySelector('[id$="generator-variable-dependencies-section"]');
     
     if (nameEl) nameEl.textContent = this.currentVariable.name || 'Unknown';
     if (typeEl) typeEl.textContent = this.currentVariable.type || 'text';
     if (descEl) descEl.textContent = this.currentVariable.description || 'No description';
+    
+    // Show dependencies if they exist (in variable info section)
+    const dependencies = this.currentVariable.dependencies || [];
+    if (dependencies.length > 0 && dependenciesEl && dependenciesSection) {
+      dependenciesEl.textContent = dependencies.join(', ');
+      dependenciesSection.style.display = 'block';
+    } else if (dependenciesSection) {
+      dependenciesSection.style.display = 'none';
+    }
+    
+    // Update dependencies section in tool generator
+    this.updateDependenciesSection();
+    
+    // Update generate button state
+    this.updateGenerateButtonState();
+  }
+  
+  /**
+   * Update the dependencies section in the tool generator
+   */
+  updateDependenciesSection() {
+    if (!this.currentVariable) return;
+    
+    const dependenciesSection = this.generatorDialog?.querySelector('#generator-dependencies-section');
+    const dependenciesList = this.generatorDialog?.querySelector('#generator-dependencies-list');
+    const datasourceNote = this.generatorDialog?.querySelector('#datasource-note');
+    
+    const dependencies = this.currentVariable.dependencies || [];
+    
+    if (dependencies.length > 0) {
+      // Show dependencies section
+      if (dependenciesSection) {
+        dependenciesSection.style.display = 'block';
+      }
+      
+      // Show datasource note
+      if (datasourceNote) {
+        datasourceNote.style.display = 'block';
+      }
+      
+      // Populate dependencies list
+      if (dependenciesList) {
+        dependenciesList.innerHTML = '';
+        dependencies.forEach(depName => {
+          const tag = document.createElement('span');
+          tag.className = 'dependency-tag';
+          tag.textContent = depName;
+          dependenciesList.appendChild(tag);
+        });
+      }
+    } else {
+      // Hide dependencies section
+      if (dependenciesSection) {
+        dependenciesSection.style.display = 'none';
+      }
+      
+      // Hide datasource note
+      if (datasourceNote) {
+        datasourceNote.style.display = 'none';
+      }
+    }
+  }
+  
+  /**
+   * Update the generate button enable/disable state
+   */
+  updateGenerateButtonState() {
+    const genBtn = this.generatorDialog?.querySelector('[data-action="generate-code"]');
+    if (!genBtn) return;
+    
+    const dependencies = this.currentVariable?.dependencies || [];
+    const hasDataSource = this.selectedDataSource && this.selectedDataSource.trim() !== '';
+    const hasDependencies = dependencies.length > 0;
+    
+    // Enable button if either has data source OR has dependencies
+    const shouldEnable = hasDataSource || hasDependencies;
+    
+    genBtn.disabled = !shouldEnable;
+    
+    if (shouldEnable) {
+      if (hasDependencies && !hasDataSource) {
+        genBtn.innerHTML = 'Generate Code (Using Dependencies)';
+      } else if (hasDataSource && !hasDependencies) {
+        genBtn.innerHTML = 'Generate Code (Using Data Source)';
+      } else {
+        genBtn.innerHTML = 'Generate Code (Using Dependencies + Data Source)';
+      }
+    } else {
+      genBtn.innerHTML = 'Generate Code';
+    }
+  }
+  
+  /**
+   * Get current values of dependency variables
+   */
+  async getDependencyValues(dependencies) {
+    const dependencyValues = {};
+    
+    if (!dependencies || dependencies.length === 0) {
+      return dependencyValues;
+    }
+    
+    try {
+      // Load variables manager to get current values
+      const { variablesManager } = await import('./variables.js');
+      
+      if (!variablesManager) {
+        console.warn('Variables manager not available for getting dependency values');
+        return dependencyValues;
+      }
+      
+      // Load latest variables
+      await variablesManager.loadVariables();
+      
+      // Get values for each dependency
+      for (const depName of dependencies) {
+        const variable = variablesManager.variables.get(depName);
+        if (variable) {
+          // Include variable info and current value
+          dependencyValues[depName] = {
+            name: variable.name,
+            type: variable.type || 'text',
+            description: variable.description || '',
+            value: variable.value !== undefined ? variable.value : null,
+            format: variable.format || ''
+          };
+          
+          console.log(`Dependency ${depName}:`, dependencyValues[depName]);
+        } else {
+          console.warn(`Dependency variable ${depName} not found`);
+          dependencyValues[depName] = {
+            name: depName,
+            type: 'text',
+            description: 'Variable not found',
+            value: null,
+            format: ''
+          };
+        }
+      }
+      
+    } catch (error) {
+      console.error('Error getting dependency values:', error);
+    }
+    
+    return dependencyValues;
   }
 
   /**
@@ -565,7 +769,7 @@ class VariableOperatorGenerator {
     }
 
     // Clear existing options (keep the default option)
-    dropdown.innerHTML = '<option value="">-- Select a data source --</option>';
+    dropdown.innerHTML = '<option value="">-- Select a data source (optional) --</option>';
     
     if (dataSources.length === 0) {
       const noDataOption = document.createElement('option');
@@ -573,6 +777,7 @@ class VariableOperatorGenerator {
       noDataOption.textContent = 'No data sources available. Use "Load Context" to add files.';
       noDataOption.disabled = true;
       dropdown.appendChild(noDataOption);
+      this.updateGenerateButtonState(); // Update button state when no data sources
       return;
     }
     
@@ -588,6 +793,9 @@ class VariableOperatorGenerator {
       option.setAttribute('data-type', source.type);
       dropdown.appendChild(option);
     });
+    
+    // Update generate button state after populating data sources
+    this.updateGenerateButtonState();
   }
 
   /**
@@ -625,43 +833,46 @@ class VariableOperatorGenerator {
   }
 
   /**
-   * Update generate button state based on data source selection and parameter validity
+   * Update generate button state based on data source selection and parameter validity (REPLACED)
    */
-  updateGenerateButtonState() {
-    const genBtn = this.generatorDialog.querySelector('[data-action="generate-code"]') ||
-                   this.generatorDialog.querySelector('[id$="gen-code-btn"]') ||
-                   this.generatorDialog.querySelector('button.btn-primary');
-    
-    if (genBtn) {
-      const hasDataSource = !!this.selectedDataSource;
-      genBtn.disabled = !hasDataSource;
-    }
+  updateGenerateButtonStateOld() {
+    // This method is replaced by the new updateGenerateButtonState method above
   }
 
   /**
    * Generate code using LLM
    */
   async generateCode() {
-    if (!this.selectedDataSource) {
-      alert('Please select a data source first');
+    const dependencies = this.currentVariable.dependencies || [];
+    const hasDataSource = this.selectedDataSource && this.selectedDataSource.trim() !== '';
+    const hasDependencies = dependencies.length > 0;
+    
+    if (!hasDataSource && !hasDependencies) {
+      alert('Please select a data source or ensure the variable has dependencies');
       return;
     }
     
-    const sourceName = this.selectedDataSource;
-    console.log('Generating code for variable:', this.currentVariable.name, 'with source:', sourceName);
+    console.log('Generating code for variable:', this.currentVariable.name);
+    if (hasDataSource) console.log('  - Using data source:', this.selectedDataSource);
+    if (hasDependencies) console.log('  - Using dependencies:', dependencies);
     
     // Show loading state
     this.showGenerationLoading(true);
     
-          try {
-        // Prepare request payload
-        const payload = {
-          variable_name: this.currentVariable.name,
-          variable_type: this.currentVariable.type,
-          variable_description: this.currentVariable.description,
-          data_source: sourceName,
-          document_id: window.documentManager?.activeDocumentId || 'default'
-        };
+    try {
+      // Get current dependency values
+      const dependencyValues = await this.getDependencyValues(dependencies);
+      
+      // Prepare request payload
+      const payload = {
+        variable_name: this.currentVariable.name,
+        variable_type: this.currentVariable.type,
+        variable_description: this.currentVariable.description,
+        dependencies: dependencies,
+        dependency_values: dependencyValues,
+        data_source: hasDataSource ? this.selectedDataSource : null,
+        document_id: window.documentManager?.activeDocumentId || 'default'
+      };
       
       let response = null;
       let result = null;
@@ -761,8 +972,12 @@ class VariableOperatorGenerator {
       return;
     }
     
-    if (!this.selectedDataSource) {
-      alert('Please select a data source first.');
+    const dependencies = this.currentVariable.dependencies || [];
+    const hasDataSource = this.selectedDataSource && this.selectedDataSource.trim() !== '';
+    const hasDependencies = dependencies.length > 0;
+    
+    if (!hasDataSource && !hasDependencies) {
+      alert('Please select a data source or ensure the variable has dependencies to run the code.');
       return;
     }
     
@@ -773,8 +988,16 @@ class VariableOperatorGenerator {
     this.showExecutionStatus('Running code...');
     
     try {
-      // Execute code with isolated result handling
-      const output = await this.executeCodeIsolated(currentCode, this.selectedDataSource, this.currentVariable.name);
+      // Get current dependency values for execution
+      const dependencyValues = await this.getDependencyValues(dependencies);
+      
+      // Execute code with isolated result handling, passing both data source and dependencies
+      const output = await this.executeCodeIsolatedWithDependencies(
+        currentCode, 
+        this.selectedDataSource, 
+        dependencyValues,
+        this.currentVariable.name
+      );
       
       // Store the execution result for this specific variable
       this.variableExecutionResults.set(this.currentVariable.name, output);
@@ -808,8 +1031,12 @@ class VariableOperatorGenerator {
       return;
     }
     
-    if (!this.selectedDataSource) {
-      alert('Please select a data source first.');
+    const dependencies = this.currentVariable.dependencies || [];
+    const hasDataSource = this.selectedDataSource && this.selectedDataSource.trim() !== '';
+    const hasDependencies = dependencies.length > 0;
+    
+    if (!hasDataSource && !hasDependencies) {
+      alert('Please select a data source or ensure the variable has dependencies.');
       return;
     }
     
@@ -921,6 +1148,80 @@ class VariableOperatorGenerator {
     
     console.log(`[${this.instanceId}] Isolated execution completed for ${variableName}: ${result}`);
     return result;
+  }
+  
+  /**
+   * Execute code with dependency values as function arguments
+   */
+  async executeCodeIsolatedWithDependencies(code, dataSource, dependencyValues, variableName) {
+    console.log(`[${this.instanceId}] Executing code with dependencies for variable: ${variableName}`);
+    console.log(`[${this.instanceId}] Dependencies:`, Object.keys(dependencyValues));
+    
+    try {
+      // Prepare the execution context with dependencies
+      let executionCode = code;
+      
+      // If there are dependencies, we need to call the function with dependency values
+      if (dependencyValues && Object.keys(dependencyValues).length > 0) {
+        // Extract the function name from the generated code (assuming it follows pattern: def function_name(...))
+        const functionMatch = code.match(/def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/);
+        if (functionMatch) {
+          const functionName = functionMatch[1];
+          
+          // Prepare arguments for function call
+          const args = [];
+          const dependencies = this.currentVariable.dependencies || [];
+          
+          for (const depName of dependencies) {
+            if (dependencyValues[depName] && dependencyValues[depName].value !== null) {
+              const value = dependencyValues[depName].value;
+              // Format the value based on type
+              if (typeof value === 'string') {
+                args.push(`'${value.replace(/'/g, "\\'")}'`);
+              } else if (typeof value === 'number') {
+                args.push(value.toString());
+              } else {
+                args.push(`'${String(value).replace(/'/g, "\\'")}'`);
+              }
+            } else {
+              args.push('None');
+            }
+          }
+          
+          // Check if function expects data_source parameter
+          const functionSignature = code.match(new RegExp(`def\\s+${functionName}\\s*\\(([^)]+)\\)`))?.[1] || '';
+          const hasDataSourceParam = functionSignature.includes('data_source');
+          
+          // Build function call with proper arguments
+          let functionCall;
+          if (hasDataSourceParam && dataSource) {
+            functionCall = `${functionName}(${args.join(', ')}, parameters['data_source'])`;
+          } else {
+            functionCall = `${functionName}(${args.join(', ')})`;
+          }
+          
+          // Append function call to the code
+          executionCode += `\n\n# Execute function with dependency values\noutput = ${functionCall}`;
+          
+          console.log(`[${this.instanceId}] Enhanced code with function call:`, executionCode);
+        }
+      }
+      
+      // Use the same execution method but with enhanced code
+      const result = await executeCodeForAuthorLocal(
+        executionCode, 
+        dataSource, 
+        variableName, 
+        window.documentManager?.activeDocumentId || 'default'
+      );
+      
+      console.log(`[${this.instanceId}] Isolated execution with dependencies completed for ${variableName}: ${result}`);
+      return result;
+      
+    } catch (error) {
+      console.error(`[${this.instanceId}] Error in executeCodeIsolatedWithDependencies:`, error);
+      throw error;
+    }
   }
 
   /**
@@ -1127,20 +1428,40 @@ class VariableOperatorGenerator {
       (op.outputs && op.outputs.some(output => output.variable === this.currentVariable.name))
     );
     
+    const dependencies = this.currentVariable.dependencies || [];
+    const hasDataSource = this.selectedDataSource && this.selectedDataSource.trim() !== '';
+    
+    // Build parameters based on available inputs
+    const parameters = {};
+    
+    if (hasDataSource) {
+      parameters.data_source = {
+        type: 'dataset',
+        value: this.selectedDataSource
+      };
+    }
+    
+    // Add dependency parameters
+    if (dependencies.length > 0) {
+      dependencies.forEach(depName => {
+        parameters[depName] = {
+          type: 'variable',
+          value: depName,
+          description: `Dependency variable: ${depName}`
+        };
+      });
+    }
+    
     const operatorData = {
       name: operatorName,
       toolId: tool.id,
       toolName: tool.name,
-      parameters: {
-        data_source: {
-          type: 'dataset',
-          value: this.selectedDataSource
-        }
-      },
+      parameters: parameters,
       outputs: [{
         config: 'output',
         variable: this.currentVariable.name
       }],
+      dependencies: dependencies,
       documentId: documentId
     };
     
@@ -1187,20 +1508,40 @@ class VariableOperatorGenerator {
       throw new Error('Operator manager not available after initialization. Please ensure operators module is loaded.');
     }
     
+    const dependencies = this.currentVariable.dependencies || [];
+    const hasDataSource = this.selectedDataSource && this.selectedDataSource.trim() !== '';
+    
+    // Build parameters based on available inputs
+    const parameters = {};
+    
+    if (hasDataSource) {
+      parameters.data_source = {
+        type: 'dataset',
+        value: this.selectedDataSource
+      };
+    }
+    
+    // Add dependency parameters
+    if (dependencies.length > 0) {
+      dependencies.forEach(depName => {
+        parameters[depName] = {
+          type: 'variable',
+          value: depName,
+          description: `Dependency variable: ${depName}`
+        };
+      });
+    }
+    
     const operatorData = {
       name: operatorName,
       toolId: tool.id,
       toolName: tool.name,
-      parameters: {
-        data_source: {
-          type: 'dataset',
-          value: this.selectedDataSource
-        }
-      },
+      parameters: parameters,
       outputs: [{
         config: 'output',
         variable: this.currentVariable.name
       }],
+      dependencies: dependencies,
       documentId: documentId
     };
     
@@ -1231,13 +1572,29 @@ class VariableOperatorGenerator {
       throw new Error('No code available for execution');
     }
     
-    if (!this.selectedDataSource) {
-      throw new Error('No data source selected');
+    const dependencies = this.currentVariable.dependencies || [];
+    const hasDataSource = this.selectedDataSource && this.selectedDataSource.trim() !== '';
+    const hasDependencies = dependencies.length > 0;
+    
+    if (!hasDataSource && !hasDependencies) {
+      throw new Error('No data source selected and no dependencies available');
     }
     
-    // Execute the code directly using isolated execution
-    console.log(`[${this.instanceId}] Executing code with data source:`, this.selectedDataSource);
-    const executionResult = await this.executeCodeIsolated(currentCode, this.selectedDataSource, this.currentVariable.name);
+    // Get dependency values for execution
+    const dependencyValues = await this.getDependencyValues(dependencies);
+    
+    // Execute the code directly using isolated execution with dependencies
+    console.log(`[${this.instanceId}] Executing code with:`, {
+      dataSource: this.selectedDataSource,
+      dependencies: Object.keys(dependencyValues)
+    });
+    
+    const executionResult = await this.executeCodeIsolatedWithDependencies(
+      currentCode, 
+      this.selectedDataSource, 
+      dependencyValues, 
+      this.currentVariable.name
+    );
     console.log('Direct execution result:', executionResult);
     
     // Store the execution result for this specific variable
@@ -1257,6 +1614,8 @@ class VariableOperatorGenerator {
         variable.lastUpdated = new Date().toISOString();
         variable.extractedBy = operatorName;
         variable.dataSource = this.selectedDataSource;
+        variable.dependencies = dependencies;
+        variable.executedWithDependencies = hasDependencies;
         
         console.log('Saving updated variables...');
         // Save the updated variables

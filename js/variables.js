@@ -6,7 +6,7 @@ import { hideFloatingComment } from './comments.js';
 
 /**
  * Variables Management System
- * Handles text selection, variable creation, and persistence
+ * Handles text selection, variable creation, and persistence with dependency tracking
  */
 class VariablesManager {
   constructor() {
@@ -20,6 +20,320 @@ class VariablesManager {
     this.variableCounter = 0;
     this.currentSuggestion = null;
     this.initialized = false;
+  }
+
+  /**
+   * Dependency Management Methods
+   */
+  
+  /**
+   * Check if adding a dependency would create a cycle
+   * @param {string} variableName - The variable that will depend on dependencies
+   * @param {Array<string>} dependencies - List of variables to depend on
+   * @returns {boolean} - True if adding these dependencies would create a cycle
+   */
+  wouldCreateCycle(variableName, dependencies) {
+    // Create a temporary graph with the new dependencies
+    const tempGraph = new Map();
+    
+    // Add existing dependencies to the graph
+    this.variables.forEach((variable, name) => {
+      tempGraph.set(name, variable.dependencies || []);
+    });
+    
+    // Add the new dependencies
+    tempGraph.set(variableName, dependencies);
+    
+    // Check for cycles using DFS
+    const visited = new Set();
+    const recursionStack = new Set();
+    
+    const hasCycle = (node) => {
+      if (recursionStack.has(node)) {
+        return true; // Back edge found, cycle detected
+      }
+      
+      if (visited.has(node)) {
+        return false; // Already processed
+      }
+      
+      visited.add(node);
+      recursionStack.add(node);
+      
+      const nodeDependencies = tempGraph.get(node) || [];
+      for (const dependency of nodeDependencies) {
+        if (hasCycle(dependency)) {
+          return true;
+        }
+      }
+      
+      recursionStack.delete(node);
+      return false;
+    };
+    
+    // Check all variables for cycles
+    for (const [name] of tempGraph) {
+      if (!visited.has(name)) {
+        if (hasCycle(name)) {
+          return true;
+        }
+      }
+    }
+    
+    return false;
+  }
+  
+  /**
+   * Get variables in dependency order (topological sort)
+   * @returns {Array<string>} - Variable names in execution order
+   */
+  getVariablesInDependencyOrder() {
+    const graph = new Map();
+    const inDegree = new Map();
+    
+    // Build the graph and calculate in-degrees
+    this.variables.forEach((variable, name) => {
+      graph.set(name, variable.dependencies || []);
+      inDegree.set(name, 0);
+    });
+    
+    // Calculate in-degrees
+    graph.forEach((dependencies, name) => {
+      dependencies.forEach(dep => {
+        if (inDegree.has(dep)) {
+          inDegree.set(dep, inDegree.get(dep) + 1);
+        }
+      });
+    });
+    
+    // Topological sort using Kahn's algorithm
+    const queue = [];
+    const result = [];
+    
+    // Start with variables that have no dependencies
+    inDegree.forEach((degree, name) => {
+      if (degree === 0) {
+        queue.push(name);
+      }
+    });
+    
+    while (queue.length > 0) {
+      const current = queue.shift();
+      result.push(current);
+      
+      const dependencies = graph.get(current) || [];
+      dependencies.forEach(dep => {
+        inDegree.set(dep, inDegree.get(dep) - 1);
+        if (inDegree.get(dep) === 0) {
+          queue.push(dep);
+        }
+      });
+    }
+    
+    // If result doesn't include all variables, there's a cycle
+    if (result.length !== this.variables.size) {
+      console.warn('Cycle detected in variable dependencies');
+      return Array.from(this.variables.keys()); // Return all variables as fallback
+    }
+    
+    return result;
+  }
+
+  /**
+   * Find all variables that depend on a given variable
+   * @param {string} variableName - The variable to find dependents for
+   * @returns {Array<string>} - Array of variable names that depend on the given variable
+   */
+  findDependentVariables(variableName) {
+    const dependents = [];
+    
+    this.variables.forEach((variable, name) => {
+      const dependencies = variable.dependencies || [];
+      if (dependencies.includes(variableName)) {
+        dependents.push(name);
+      }
+    });
+    
+    return dependents;
+  }
+
+  /**
+   * Get dependent variables in execution order (topological sort)
+   * @param {string} changedVariableName - The variable that changed
+   * @returns {Array<string>} - Dependent variable names in execution order
+   */
+  getDependentVariablesInOrder(changedVariableName) {
+    // Get all variables that transitively depend on the changed variable
+    const allDependents = new Set();
+    const queue = [changedVariableName];
+    
+    while (queue.length > 0) {
+      const current = queue.shift();
+      const directDependents = this.findDependentVariables(current);
+      
+      directDependents.forEach(dependent => {
+        if (!allDependents.has(dependent)) {
+          allDependents.add(dependent);
+          queue.push(dependent);
+        }
+      });
+    }
+    
+    // If no dependents, return empty array
+    if (allDependents.size === 0) {
+      return [];
+    }
+    
+    // Get all variables in dependency order and filter to only include dependents
+    const allVariablesInOrder = this.getVariablesInDependencyOrder();
+    return allVariablesInOrder.filter(name => allDependents.has(name));
+  }
+
+  /**
+   * Re-execute dependent variables when a variable value changes
+   * @param {string} changedVariableName - The variable that changed
+   */
+  async propagateUpdatesToDependents(changedVariableName) {
+    console.log(`🔄 Propagating updates from variable: ${changedVariableName}`);
+    
+    // Get dependent variables in execution order
+    const dependentVariables = this.getDependentVariablesInOrder(changedVariableName);
+    
+    if (dependentVariables.length === 0) {
+      console.log(`No dependent variables found for: ${changedVariableName}`);
+      return;
+    }
+    
+    console.log(`Found ${dependentVariables.length} dependent variables:`, dependentVariables);
+    
+    // Re-execute each dependent variable in order
+    for (const dependentVariableName of dependentVariables) {
+      try {
+        console.log(`🔄 Re-executing dependent variable: ${dependentVariableName}`);
+        
+        // Get the variable data
+        const variableData = this.variables.get(dependentVariableName);
+        if (!variableData) {
+          console.warn(`Variable ${dependentVariableName} not found, skipping`);
+          continue;
+        }
+        
+        // Check if the variable has a tool/operator that can be executed
+        if (window.variableToolGenerator) {
+          await this.executeVariableOperator(dependentVariableName, variableData);
+        } else {
+          console.warn(`Variable tool generator not available for: ${dependentVariableName}`);
+        }
+        
+      } catch (error) {
+        console.error(`Error re-executing variable ${dependentVariableName}:`, error);
+        // Continue with other variables even if one fails
+      }
+    }
+    
+    console.log(`✅ Finished propagating updates from: ${changedVariableName}`);
+  }
+
+  /**
+   * Execute a variable's operator to update its value
+   * @param {string} variableName - The variable to execute
+   * @param {Object} variableData - The variable data
+   */
+  async executeVariableOperator(variableName, variableData) {
+    try {
+      // Check if variable has dependencies and a tool/operator
+      if (!variableData.dependencies || variableData.dependencies.length === 0) {
+        console.log(`Variable ${variableName} has no dependencies, skipping execution`);
+        return;
+      }
+      
+      // Get dependency values
+      const dependencyValues = {};
+      for (const depName of variableData.dependencies) {
+        const depVariable = this.variables.get(depName);
+        if (depVariable && depVariable.value !== undefined) {
+          dependencyValues[depName] = depVariable.value;
+        }
+      }
+      
+      console.log(`Executing variable ${variableName} with dependencies:`, dependencyValues);
+      
+      // Check if variable has generated code/operator
+      if (window.variableToolGenerator && window.variableToolGenerator.variableExecutionResults) {
+        const result = window.variableToolGenerator.variableExecutionResults.get(variableName);
+        if (result && result.generatedCode) {
+          // Re-execute the variable's generated code with new dependency values
+          await this.executeVariableCode(variableName, result.generatedCode, dependencyValues);
+        } else {
+          console.warn(`No generated code found for variable: ${variableName}`);
+        }
+      }
+      
+    } catch (error) {
+      console.error(`Error executing variable operator for ${variableName}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Execute variable code with dependency values
+   * @param {string} variableName - The variable name
+   * @param {string} code - The generated code
+   * @param {Object} dependencyValues - The dependency values
+   */
+  async executeVariableCode(variableName, code, dependencyValues) {
+    try {
+      // Import required modules
+      const { executeCodeIsolatedWithDependencies } = await import('./variable-operator-generator.js');
+      
+      // Execute the code with dependency values
+      const result = await executeCodeIsolatedWithDependencies(code, dependencyValues);
+      
+      if (result.success) {
+        // Update the variable's value
+        const variable = this.variables.get(variableName);
+        if (variable) {
+          variable.value = result.result;
+          this.variables.set(variableName, variable);
+          
+          // Update UI
+          this.updateVariablesUI();
+          
+          // Save to backend
+          await this.saveVariables();
+          
+          console.log(`✅ Variable ${variableName} updated with new value:`, result.result);
+        }
+      } else {
+        console.error(`Failed to execute code for variable ${variableName}:`, result.error);
+      }
+      
+    } catch (error) {
+      console.error(`Error executing variable code for ${variableName}:`, error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Get available variables for dependency selection (excluding the variable itself)
+   * @param {string} currentVariableName - The variable being edited (to exclude from list)
+   * @returns {Array<Object>} - Array of variable objects with name and description
+   */
+  getAvailableVariablesForDependency(currentVariableName) {
+    const availableVariables = [];
+    
+    this.variables.forEach((variable, name) => {
+      if (name !== currentVariableName) {
+        availableVariables.push({
+          name: name,
+          description: variable.description || '',
+          type: variable.type || 'text',
+          placeholder: variable.placeholder || `{{${name}}}`
+        });
+      }
+    });
+    
+    return availableVariables.sort((a, b) => a.name.localeCompare(b.name));
   }
 
   /**
@@ -321,6 +635,23 @@ class VariablesManager {
                 Required Variable
               </label>
             </div>
+            
+            <div class="form-group">
+              <label for="variable-dependencies">Dependencies:</label>
+              <div class="dependencies-section">
+                <div class="dependencies-list" id="variable-dependencies-list">
+                  <div class="no-dependencies-message">No dependencies selected</div>
+                </div>
+                <button type="button" class="add-dependency-btn" id="add-dependency-btn">+ Add Dependency</button>
+                <div class="dependency-selector" id="dependency-selector" style="display: none;">
+                  <select id="dependency-select">
+                    <option value="">Select a variable...</option>
+                  </select>
+                  <button type="button" class="confirm-dependency-btn" id="confirm-dependency-btn">Add</button>
+                  <button type="button" class="cancel-dependency-btn" id="cancel-dependency-btn">Cancel</button>
+                </div>
+              </div>
+            </div>
           </div>
           
           <div class="variable-value-section">
@@ -381,24 +712,32 @@ class VariablesManager {
         await this.openToolGenerator();
       }
       
-             // Handle value setting in dialog (using document-specific element IDs)
-       const elementId = e.target.id;
-       const activeDocId = window.documentManager?.activeDocumentId;
-       
-       if (elementId && activeDocId) {
-         if (elementId.includes('variable-value-display')) {
-           console.log('Variable value display clicked');
-           this.startValueEditingInDialog();
-         } else if (elementId.includes('save-variable-value')) {
-           console.log('Save variable value clicked');
-           await this.saveVariableValueInDialog();
-         } else if (elementId.includes('cancel-variable-value')) {
-           console.log('Cancel variable value clicked');
-           this.cancelValueEditingInDialog();
-
-                  }
-       }
-     });
+      // Handle dependency management
+      const elementId = e.target.id;
+      const activeDocId = window.documentManager?.activeDocumentId;
+      
+      if (elementId && activeDocId) {
+        if (elementId.includes('add-dependency-btn')) {
+          this.showDependencySelector();
+        } else if (elementId.includes('confirm-dependency-btn')) {
+          this.addSelectedDependency();
+        } else if (elementId.includes('cancel-dependency-btn')) {
+          this.hideDependencySelector();
+        } else if (e.target.classList.contains('remove-dependency-btn')) {
+          const dependencyName = e.target.getAttribute('data-dependency-name');
+          this.removeDependency(dependencyName);
+        } else if (elementId.includes('variable-value-display')) {
+          console.log('Variable value display clicked');
+          this.startValueEditingInDialog();
+        } else if (elementId.includes('save-variable-value')) {
+          console.log('Save variable value clicked');
+          await this.saveVariableValueInDialog();
+        } else if (elementId.includes('cancel-variable-value')) {
+          console.log('Cancel variable value clicked');
+          this.cancelValueEditingInDialog();
+        }
+      }
+    });
 
      // Add change event listener for data source select
      this.variableDialog.addEventListener('change', async (e) => {
@@ -873,6 +1212,7 @@ class VariablesManager {
       type: formData.type,
       format: formData.format,
       required: formData.required,
+      dependencies: formData.dependencies || [],
       originalText: this.selectedText,
       placeholder: `{{${formData.name}}}`,
       createdAt: new Date().toISOString(),
@@ -909,12 +1249,16 @@ class VariablesManager {
     const formatInput = getDocumentElement('variable-format');
     const requiredCheckbox = getDocumentElement('variable-required');
     
+    // Get dependencies from the UI
+    const dependencies = this.getCurrentDependencies();
+    
     return {
       name: nameInput?.value?.trim() || '',
       description: descInput?.value?.trim() || '',
       type: typeSelect?.value || 'text',
       format: formatInput?.value?.trim() || '',
       required: requiredCheckbox?.checked || false,
+      dependencies: dependencies,
       // Include smart replacement fields from current LLM suggestion
       value_to_replace: this.currentSuggestion?.value_to_replace || this.selectedText,
       static_prefix: this.currentSuggestion?.static_prefix || '',
@@ -1059,6 +1403,13 @@ class VariablesManager {
       const variableItem = document.createElement('div');
       variableItem.className = 'variable-item';
       
+      const dependencies = variable.dependencies || [];
+      const dependenciesHtml = dependencies.length > 0 
+        ? `<div class="variable-dependencies">
+             <strong>Dependencies:</strong> ${dependencies.map(dep => `<span class="dependency-tag">${dep}</span>`).join(', ')}
+           </div>`
+        : '';
+      
       variableItem.innerHTML = `
         <div class="variable-header">
           <span class="variable-name">${variable.name}</span>
@@ -1070,7 +1421,7 @@ class VariablesManager {
           </div>
         </div>
         <div class="variable-description">${variable.description}</div>
-
+        ${dependenciesHtml}
         <div class="variable-details">
           <span class="variable-placeholder">${variable.placeholder}</span>
           <span class="variable-original">Original: "${variable.originalText}"</span>
@@ -1258,7 +1609,7 @@ class VariablesManager {
    /**
     * Update an existing variable
     */
-   updateVariable(variableName) {
+   async updateVariable(variableName) {
      console.log('Updating variable:', variableName);
      
      // Validate form data with update context
@@ -1276,6 +1627,9 @@ class VariablesManager {
        return;
      }
      
+     // Store original value for comparison
+     const originalValue = originalVariable.value;
+     
      // Create updated variable object, preserving original text and other properties
      const updatedVariable = {
        ...originalVariable,
@@ -1284,6 +1638,7 @@ class VariablesManager {
        type: formData.type,
        format: formData.format,
        required: formData.required,
+       dependencies: formData.dependencies || [],
        placeholder: `{{${formData.name}}}`
      };
      
@@ -1310,13 +1665,23 @@ class VariablesManager {
      this.updateVariablesUI();
      
      // Save to backend
-     this.saveVariables();
+     await this.saveVariables();
      
      // Close dialog and reset to create mode
      this.clearSelectionAndHideDialog(); // Clear selection to prevent button re-showing
      this.resetDialogToCreateMode();
      
      console.log(`Variable "${variableName}" updated successfully`);
+     
+     // Check if value changed and trigger update propagation
+     const newValue = updatedVariable.value;
+     const updatedVariableName = formData.name; // Use the new name in case it changed
+     
+     if (originalValue !== newValue) {
+       console.log(`Variable value changed from "${originalValue}" to "${newValue}"`);
+       // Trigger automatic update propagation to dependent variables
+       await this.propagateUpdatesToDependents(updatedVariableName);
+     }
    }
 
      /**
@@ -1367,6 +1732,9 @@ class VariablesManager {
       if (valueInput) {
         valueInput.value = currentValue;
       }
+      
+      // Populate dependencies
+      this.populateDependenciesInEditForm(variable);
       
       // Change dialog title and button text for editing
       const dialogTitle = this.variableDialog.querySelector('h3');
@@ -1428,6 +1796,15 @@ class VariablesManager {
       if (valueInput) valueInput.value = '';
       if (valueInputContainer) valueInputContainer.style.display = 'none';
       if (dataSourceSelect) dataSourceSelect.value = '';
+      
+      // Reset dependencies
+      const dependenciesList = getDocumentElement('variable-dependencies-list');
+      if (dependenciesList) {
+        dependenciesList.innerHTML = '<div class="no-dependencies-message">No dependencies selected</div>';
+      }
+      
+      // Hide dependency selector if visible
+      this.hideDependencySelector();
     }
     
     // Clear editing state
@@ -1456,6 +1833,7 @@ class VariablesManager {
       type: variable.type || 'text',
       format: variable.format || '',
       required: variable.required || false,
+      dependencies: variable.dependencies || [],
       originalText: variable.originalText || ''
     };
     
@@ -1533,6 +1911,7 @@ class VariablesManager {
         type: formData.type || 'text',
         format: formData.format || '',
         required: formData.required || false,
+        dependencies: formData.dependencies || [],
         originalText: this.selectedText || ''
       };
       
@@ -1574,14 +1953,24 @@ class VariablesManager {
     }
 
     const existingVariable = this.variables.get(variableName);
-    existingVariable.value = value;
-    this.variables.set(variableName, existingVariable);
-    this.updateVariablesUI();
+    const oldValue = existingVariable.value;
+    
+    // Only trigger updates if the value actually changed
+    if (oldValue !== value) {
+      existingVariable.value = value;
+      this.variables.set(variableName, existingVariable);
+      this.updateVariablesUI();
 
-    // Save to vars.json for persistence (operator outputs are also saved via document auto-save)
-    await this.saveVariables();
+      // Save to vars.json for persistence (operator outputs are also saved via document auto-save)
+      await this.saveVariables();
 
-    console.log(`Variable ${variableName} set to:`, value);
+      console.log(`Variable ${variableName} set to:`, value);
+      
+      // Trigger automatic update propagation to dependent variables
+      await this.propagateUpdatesToDependents(variableName);
+    } else {
+      console.log(`Variable ${variableName} value unchanged, skipping update propagation`);
+    }
   }
 
   /**
@@ -1926,6 +2315,215 @@ class VariablesManager {
       valueDisplay.style.display = 'block';
       valueInputContainer.style.display = 'none';
     }
+  }
+
+  /**
+   * Dependency Management UI Methods
+   */
+  
+  showDependencySelector() {
+    console.log('Showing dependency selector');
+    
+    const selector = getDocumentElement('dependency-selector');
+    const addBtn = getDocumentElement('add-dependency-btn');
+    
+    if (selector && addBtn) {
+      // Populate the selector with available variables
+      this.populateDependencySelector();
+      
+      // Show selector, hide add button
+      selector.style.display = 'block';
+      addBtn.style.display = 'none';
+    }
+  }
+  
+  hideDependencySelector() {
+    console.log('Hiding dependency selector');
+    
+    const selector = getDocumentElement('dependency-selector');
+    const addBtn = getDocumentElement('add-dependency-btn');
+    
+    if (selector && addBtn) {
+      selector.style.display = 'none';
+      addBtn.style.display = 'block';
+      
+      // Clear selection
+      const select = getDocumentElement('dependency-select');
+      if (select) {
+        select.value = '';
+      }
+    }
+  }
+  
+  populateDependencySelector() {
+    console.log('Populating dependency selector');
+    
+    const select = getDocumentElement('dependency-select');
+    if (!select) return;
+    
+    // Clear existing options except the default one
+    const existingOptions = select.querySelectorAll('option[data-variable]');
+    existingOptions.forEach(option => option.remove());
+    
+    // Get current variable name (for editing) or empty string (for creation)
+    const currentVariableName = this._editingVariableName || '';
+    
+    // Get current dependencies to exclude already selected ones
+    const currentDependencies = this.getCurrentDependencies();
+    
+    // Get available variables
+    const availableVariables = this.getAvailableVariablesForDependency(currentVariableName);
+    
+    if (availableVariables.length === 0) {
+      const noVarOption = document.createElement('option');
+      noVarOption.value = '';
+      noVarOption.textContent = 'No other variables available';
+      noVarOption.disabled = true;
+      select.appendChild(noVarOption);
+      return;
+    }
+    
+    // Add each available variable as an option
+    availableVariables.forEach(variable => {
+      // Skip if already selected as dependency
+      if (currentDependencies.includes(variable.name)) {
+        return;
+      }
+      
+      const option = document.createElement('option');
+      option.value = variable.name;
+      option.textContent = `${variable.name} (${variable.type}) - ${variable.description}`;
+      option.setAttribute('data-variable', 'true');
+      option.setAttribute('data-variable-name', variable.name);
+      option.setAttribute('data-variable-type', variable.type);
+      select.appendChild(option);
+    });
+  }
+  
+  addSelectedDependency() {
+    console.log('Adding selected dependency');
+    
+    const select = getDocumentElement('dependency-select');
+    if (!select) return;
+    
+    const selectedVariableName = select.value;
+    if (!selectedVariableName) {
+      alert('Please select a variable to add as dependency');
+      return;
+    }
+    
+    // Get current dependencies
+    const currentDependencies = this.getCurrentDependencies();
+    
+    // Check if already exists
+    if (currentDependencies.includes(selectedVariableName)) {
+      alert('This variable is already a dependency');
+      return;
+    }
+    
+    // Get current variable name for cycle detection
+    const currentVariableName = this._editingVariableName || 
+                               getDocumentElement('variable-name')?.value?.trim() || '';
+    
+    if (!currentVariableName) {
+      alert('Please enter a variable name first');
+      return;
+    }
+    
+    // Check for cycles
+    const newDependencies = [...currentDependencies, selectedVariableName];
+    if (this.wouldCreateCycle(currentVariableName, newDependencies)) {
+      alert('Adding this dependency would create a circular dependency. Please choose a different variable.');
+      return;
+    }
+    
+    // Add dependency to the list
+    this.addDependencyToList(selectedVariableName);
+    
+    // Hide selector
+    this.hideDependencySelector();
+  }
+  
+  removeDependency(dependencyName) {
+    console.log('Removing dependency:', dependencyName);
+    
+    const dependenciesList = getDocumentElement('variable-dependencies-list');
+    if (!dependenciesList) return;
+    
+    // Remove the dependency item
+    const dependencyItem = dependenciesList.querySelector(`[data-dependency-name="${dependencyName}"]`);
+    if (dependencyItem) {
+      dependencyItem.remove();
+    }
+    
+    // Check if no dependencies left
+    const remainingDependencies = dependenciesList.querySelectorAll('.dependency-item');
+    if (remainingDependencies.length === 0) {
+      dependenciesList.innerHTML = '<div class="no-dependencies-message">No dependencies selected</div>';
+    }
+  }
+  
+  addDependencyToList(dependencyName) {
+    console.log('Adding dependency to list:', dependencyName);
+    
+    const dependenciesList = getDocumentElement('variable-dependencies-list');
+    if (!dependenciesList) return;
+    
+    // Remove "no dependencies" message
+    const noDepMessage = dependenciesList.querySelector('.no-dependencies-message');
+    if (noDepMessage) {
+      noDepMessage.remove();
+    }
+    
+    // Get variable info
+    const variable = this.variables.get(dependencyName);
+    const variableInfo = variable || { name: dependencyName, description: '', type: 'text' };
+    
+    // Create dependency item
+    const dependencyItem = document.createElement('div');
+    dependencyItem.className = 'dependency-item';
+    dependencyItem.setAttribute('data-dependency-name', dependencyName);
+    
+    dependencyItem.innerHTML = `
+      <span class="dependency-name">${variableInfo.name}</span>
+      <span class="dependency-type">(${variableInfo.type})</span>
+      <span class="dependency-description">${variableInfo.description}</span>
+      <button type="button" class="remove-dependency-btn" data-dependency-name="${dependencyName}">×</button>
+    `;
+    
+    dependenciesList.appendChild(dependencyItem);
+  }
+  
+  getCurrentDependencies() {
+    const dependenciesList = getDocumentElement('variable-dependencies-list');
+    if (!dependenciesList) return [];
+    
+    const dependencyItems = dependenciesList.querySelectorAll('.dependency-item');
+    return Array.from(dependencyItems).map(item => 
+      item.getAttribute('data-dependency-name')
+    );
+  }
+  
+  populateDependenciesInEditForm(variable) {
+    console.log('Populating dependencies in edit form for variable:', variable.name);
+    
+    const dependenciesList = getDocumentElement('variable-dependencies-list');
+    if (!dependenciesList) return;
+    
+    // Clear existing dependencies
+    dependenciesList.innerHTML = '';
+    
+    const dependencies = variable.dependencies || [];
+    
+    if (dependencies.length === 0) {
+      dependenciesList.innerHTML = '<div class="no-dependencies-message">No dependencies selected</div>';
+      return;
+    }
+    
+    // Add each dependency to the list
+    dependencies.forEach(dependencyName => {
+      this.addDependencyToList(dependencyName);
+    });
   }
 
   populateDataSourceSelect() {

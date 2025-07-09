@@ -11,3 +11,4 @@ python-pptx
 python-dotenv
 mcp
 httpx 
+gen3

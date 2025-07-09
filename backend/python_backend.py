@@ -2154,6 +2154,8 @@ def generate_variable_code():
         variable_type = data.get('variable_type', 'text')
         variable_description = data.get('variable_description', '')
         data_source = data.get('data_source', '')
+        dependencies = data.get('dependencies', [])
+        dependency_values = data.get('dependency_values', {})
         document_id = data.get('document_id', 'default')
         
         if not variable_name:
@@ -2162,10 +2164,11 @@ def generate_variable_code():
                 'error': 'Variable name is required'
             }), 400
         
-        if not data_source:
+        # Either data source or dependencies are required
+        if not data_source and not dependencies:
             return jsonify({
                 'success': False,
-                'error': 'Data source is required'
+                'error': 'Either data source or dependencies are required'
             }), 400
         
         # Check if LLM client is available
@@ -2175,65 +2178,154 @@ def generate_variable_code():
                 'error': 'AI service not available (API key not configured)'
             })
         
-        # Get data source information from data sources
-        data_sources = data_sources_storage.get(document_id, [])
+        # Get data source information from data sources (if provided)
         selected_data_source = None
-        
-        for item in data_sources:
-            if item.get('filePath') == data_source:
-                selected_data_source = item
-                break
-        
-        if not selected_data_source:
-            return jsonify({
-                'success': False,
-                'error': f'Data source "{data_source}" not found'
-            }), 404
+        if data_source:
+            data_sources = data_sources_storage.get(document_id, [])
+            
+            for item in data_sources:
+                if item.get('filePath') == data_source:
+                    selected_data_source = item
+                    break
+            
+            if not selected_data_source:
+                return jsonify({
+                    'success': False,
+                    'error': f'Data source "{data_source}" not found'
+                }), 404
         
         # Create LLM prompt for code generation
-        prompt = f"""
-Generate Python code to extract data for a variable from a data source.
-
-Variable Details:
-- Name: {variable_name}
-- Type: {variable_type}
-- Description: {variable_description}
-
-Data Source Details:
-- Name: {selected_data_source.get('name', 'Unknown')}
-- Type: {selected_data_source.get('type', 'unknown')}
-- Reference: ${data_source}
-
-Requirements:
-1. Generate Python code that processes the data source to extract the value for this variable
-2. The code should return a single value of the appropriate type ({variable_type})
-3. Use appropriate data processing libraries (pandas, numpy, etc.)
-4. Handle common data formats (CSV, Excel, JSON, etc.)
-5. Include error handling
-6. The data source will be available as a variable named 'data_source'
-7. Please write functions, and call the function at the end. You can assume you get the parameters from parameters dict like parameters['data_source'].
-7. Return the final result in a variable named 'output'
-
+        prompt_parts = [
+            f"Generate Python code to extract data for a variable.",
+            "",
+            "Variable Details:",
+            f"- Name: {variable_name}",
+            f"- Type: {variable_type}",
+            f"- Description: {variable_description}",
+            ""
+        ]
+        
+        # Add data source information if available
+        if selected_data_source:
+            prompt_parts.extend([
+                "Data Source Details:",
+                f"- Name: {selected_data_source.get('name', 'Unknown')}",
+                f"- Type: {selected_data_source.get('type', 'unknown')}",
+                f"- Reference: ${data_source}",
+                ""
+            ])
+        
+        # Add dependencies information if available
+        if dependencies and dependency_values:
+            prompt_parts.extend([
+                "Dependencies:",
+                "This variable depends on the following variables that will be passed as function parameters:",
+            ])
+            
+            for dep_name in dependencies:
+                dep_info = dependency_values.get(dep_name, {})
+                dep_type = dep_info.get('type', 'text')
+                dep_desc = dep_info.get('description', '')
+                
+                prompt_parts.append(f"- {dep_name} ({dep_type}): {dep_desc}")
+            
+            prompt_parts.append("")
+            prompt_parts.append("IMPORTANT: Use these dependency variables as function parameters, do NOT hardcode their values!")
+            prompt_parts.append("")
+        
+        # Add requirements
+        requirements = [
+            "Requirements:",
+            f"1. Generate Python code that calculates the value for this variable ({variable_type})",
+            "2. Use appropriate data processing libraries (pandas, numpy, etc.)",
+            "3. Handle common data formats (CSV, Excel, JSON, etc.)",
+            "4. Include error handling",
+            "5. Write a function with appropriate parameters",
+            "6. Return the final result in a variable named 'output'",
+            "7. CRITICAL: Do NOT hardcode any values - use parameters and variables only",
+            "8. The generated code should be reusable and work with different input values"
+        ]
+        
+        if selected_data_source:
+            requirements.append("9. The data source will be available as parameters['data_source']")
+        
+        if dependencies:
+            requirements.append("10. Dependencies will be passed as function arguments in this exact order:")
+            for dep_name in dependencies:
+                requirements.append(f"    - {dep_name}")
+            requirements.append("11. Use these dependency parameters as variables in your calculations")
+        
+        prompt_parts.extend(requirements)
+        prompt_parts.append("")
+        
+        # Add example structure
+        if dependencies and selected_data_source:
+            # Both dependencies and data source
+            function_params = ", ".join(dependencies)
+            example = f"""
 Example structure:
 ```python
 import pandas as pd
 import numpy as np
 
-# Process the data source
-# data_source contains the loaded data
-function extract_metrics(data_source)
+def extract_{variable_name}({function_params}, data_source):
     try:
-        # Your processing code here
-        result = processed_value
+        # Use dependency variables directly in calculations
+        # For example: result = {dependencies[0]} * 1.2 + data_processing(data_source)
+        # DO NOT substitute actual values - keep as variables
+        result = your_calculation_using_dependencies_and_data_source
     except Exception as e:
         result = f"Error: {{e}}"
     return result
 
-output = extract_metrics(parameters['data_source'])
-```
+output = extract_{variable_name}({function_params}, parameters['data_source'])
+```"""
+        elif dependencies:
+            # Only dependencies
+            function_params = ", ".join(dependencies)
+            example = f"""
+Example structure:
+```python
+import pandas as pd
+import numpy as np
 
-Generate ONLY the Python code, no explanations or markdown formatting.
-"""
+def extract_{variable_name}({function_params}):
+    try:
+        # Use dependency variables directly in calculations
+        # For example: result = {dependencies[0]} * 1.2 + {dependencies[1] if len(dependencies) > 1 else 'other_calculation'}
+        # DO NOT substitute actual values - keep as variables
+        result = your_calculation_using_dependencies
+    except Exception as e:
+        result = f"Error: {{e}}"
+    return result
+
+output = extract_{variable_name}({function_params})
+```"""
+        else:
+            # Only data source
+            example = f"""
+Example structure:
+```python
+import pandas as pd
+import numpy as np
+
+def extract_{variable_name}(data_source):
+    try:
+        # Process the data source
+        # For example: result = data_source.sum() or data_source['column'].mean()
+        result = your_data_processing_logic
+    except Exception as e:
+        result = f"Error: {{e}}"
+    return result
+
+output = extract_{variable_name}(parameters['data_source'])
+```"""
+        
+        prompt_parts.append(example)
+        prompt_parts.append("")
+        prompt_parts.append("Generate ONLY the Python code, no explanations or markdown formatting.")
+        
+        prompt = "\n".join(prompt_parts)
         
         # Call LLM
         response = client.chat.completions.create(

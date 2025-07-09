@@ -2674,12 +2674,18 @@ async function executeOperatorsSequence(operators) {
     // Show progress message
     addMessageToUI('system', `🔄 Executing ${operators.length} required operators for template...`);
     
-    for (const operator of operators) {
+    // Execute operators in dependency order
+    const orderedOperators = await getOperatorsInDependencyOrder(operators);
+    
+    for (const operator of orderedOperators) {
       try {
         console.log(`[${windowId}] Executing operator: ${operator.name}`);
         addMessageToUI('system', `⚙️ Executing operator: ${operator.name}...`);
         
-        const result = await operatorManager.executeInstance(operator.id);
+        // Substitute dependency values in operator parameters before execution
+        const substitutedOperator = await substituteOperatorDependencies(operator);
+        
+        const result = await operatorManager.executeInstance(substitutedOperator.id);
         
         results.push({
           operatorId: operator.id,
@@ -2721,6 +2727,154 @@ async function executeOperatorsSequence(operators) {
   }
   
   return results;
+}
+
+/**
+ * Order operators based on variable dependencies
+ */
+async function getOperatorsInDependencyOrder(operators) {
+  try {
+    // Load variables manager to get dependency information
+    const { variablesManager } = await import('./variables.js');
+    
+    if (!variablesManager) {
+      console.warn('Variables manager not available, executing operators in original order');
+      return operators;
+    }
+    
+    // Load latest variables
+    await variablesManager.loadVariables();
+    
+    // Create a map of variable to operator for easy lookup
+    const variableToOperator = new Map();
+    
+    // Map each operator to its output variables
+    operators.forEach(operator => {
+      const outputVars = getOperatorOutputVariables(operator);
+      outputVars.forEach(varName => {
+        variableToOperator.set(varName, operator);
+      });
+    });
+    
+    // Get variables in dependency order from variables manager
+    const orderedVariableNames = variablesManager.getVariablesInDependencyOrder();
+    
+    // Create ordered operators list based on variable dependencies
+    const orderedOperators = [];
+    const processedOperators = new Set();
+    
+    // Add operators in dependency order
+    for (const varName of orderedVariableNames) {
+      const operator = variableToOperator.get(varName);
+      if (operator && !processedOperators.has(operator.id)) {
+        orderedOperators.push(operator);
+        processedOperators.add(operator.id);
+      }
+    }
+    
+    // Add any remaining operators that weren't mapped to variables
+    operators.forEach(operator => {
+      if (!processedOperators.has(operator.id)) {
+        orderedOperators.push(operator);
+      }
+    });
+    
+    console.log(`[${windowId}] Ordered operators by dependencies:`, orderedOperators.map(op => op.name));
+    
+    return orderedOperators;
+    
+  } catch (error) {
+    console.error('Error ordering operators by dependencies:', error);
+    console.warn('Falling back to original order');
+    return operators;
+  }
+}
+
+/**
+ * Prepare operator for execution with dependency values
+ */
+async function substituteOperatorDependencies(operator) {
+  try {
+    // Load variables manager to get variable values
+    const { variablesManager } = await import('./variables.js');
+    
+    if (!variablesManager) {
+      console.warn('Variables manager not available for dependency substitution');
+      return operator;
+    }
+    
+    // Load latest variables
+    await variablesManager.loadVariables();
+    
+    // Get the output variables for this operator
+    const outputVars = getOperatorOutputVariables(operator);
+    
+    // For each output variable, check if it has dependencies
+    for (const varName of outputVars) {
+      const variable = variablesManager.variables.get(varName);
+      if (variable && variable.dependencies && variable.dependencies.length > 0) {
+        console.log(`[${windowId}] Preparing dependencies for variable: ${varName}`, variable.dependencies);
+        
+        // Get the generated code for this operator (from parameters or stored code)
+        let code = operator.parameters?.code || operator.code || '';
+        
+        // Extract function name from code
+        const functionMatch = code.match(/def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/);
+        if (functionMatch) {
+          const functionName = functionMatch[1];
+          
+          // Prepare arguments for function call
+          const args = [];
+          for (const depName of variable.dependencies) {
+            const depVariable = variablesManager.variables.get(depName);
+            if (depVariable && depVariable.value !== undefined) {
+              const depValue = depVariable.value;
+              // Format the value based on type
+              if (typeof depValue === 'string') {
+                args.push(`'${depValue.replace(/'/g, "\\'")}'`);
+              } else if (typeof depValue === 'number') {
+                args.push(depValue.toString());
+              } else {
+                args.push(`'${String(depValue).replace(/'/g, "\\'")}'`);
+              }
+              console.log(`[${windowId}] Prepared dependency ${depName} with value:`, depValue);
+            } else {
+              args.push('None');
+              console.warn(`[${windowId}] Dependency ${depName} not found or has no value`);
+            }
+          }
+          
+          // Check if function expects data_source parameter
+          const functionSignature = code.match(new RegExp(`def\\s+${functionName}\\s*\\(([^)]+)\\)`))?.[1] || '';
+          const hasDataSourceParam = functionSignature.includes('data_source');
+          
+          // Build function call with proper arguments
+          let functionCall;
+          if (hasDataSourceParam && operator.parameters?.data_source) {
+            functionCall = `${functionName}(${args.join(', ')}, parameters['data_source'])`;
+          } else {
+            functionCall = `${functionName}(${args.join(', ')})`;
+          }
+          
+          // Append function call to the code
+          const executionCode = code + `\n\n# Execute function with dependency values\noutput = ${functionCall}`;
+          
+          // Update the operator with execution code
+          if (operator.parameters) {
+            operator.parameters.code = executionCode;
+          }
+          
+          console.log(`[${windowId}] Updated operator with dependency execution code for ${varName}`);
+        }
+      }
+    }
+    
+    return operator;
+    
+  } catch (error) {
+    console.error('Error preparing operator dependencies:', error);
+    return operator;
+  }
 }
 
 // Tools Sidebar Integration Functions for Operators Dialog
