@@ -8482,3 +8482,27 @@ p {
     font-size: 16px; /* Prevent zoom on iOS */
   }
 }
+
+
+.pdf-container {
+  position: relative;
+  user-select: none;
+}
+
+.pdf-page {
+  border: 1px solid #ccc;
+  margin: 10px auto;
+}
+
+.text-box {
+  border: 1px dashed transparent !important;
+  outline: none !important;
+  transition: border-color 0.2s ease;
+}
+.text-box:focus {
+  border: 1px dashed #666 !important;
+  outline: none !important;
+}
+.text-box:hover {
+  border: 1px dashed #ccc !important;
+}
