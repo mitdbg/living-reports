@@ -18,6 +18,8 @@ class VariableOperatorGenerator {
     this.initialized = false;
     this.variableExecutionResults = new Map(); // Store results per variable
     this.instanceId = 'var_gen_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    this.selectedDataSource = null;
+    this.parameterValues = {};
   }
 
   /**
@@ -104,6 +106,12 @@ class VariableOperatorGenerator {
             <select class="datasource-dropdown" id="generator-datasource-dropdown">
               <option value="">-- Select a data source --</option>
             </select>
+            <div class="datasource-parameters" id="datasource-parameters" style="display: none;">
+              <h5>Parameters</h5>
+              <div class="parameters-container" id="parameters-container">
+                <!-- Parameters will be dynamically added here -->
+              </div>
+            </div>
           </div>
           
           <div class="generation-section">
@@ -196,6 +204,54 @@ class VariableOperatorGenerator {
       .variable-info-details {
         font-size: 14px;
         color: #666;
+      }
+      
+      .datasource-parameters {
+        margin-top: 16px;
+        padding: 12px;
+        background: #f8f9fa;
+        border-radius: 6px;
+        border: 1px solid #e9ecef;
+      }
+      
+      .datasource-parameters h5 {
+        margin: 0 0 8px 0;
+        color: #495057;
+        font-size: 14px;
+        font-weight: 600;
+      }
+      
+      .parameter-field {
+        margin-bottom: 12px;
+      }
+      
+      .parameter-field label {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 13px;
+        color: #495057;
+        font-weight: 500;
+      }
+      
+      .parameter-field input {
+        width: 100%;
+        padding: 8px 12px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        font-size: 14px;
+        transition: border-color 0.2s ease;
+      }
+      
+      .parameter-field input:focus {
+        outline: none;
+        border-color: #80bdff;
+        box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+      }
+      
+      .param-description {
+        font-size: 12px;
+        color: #6c757d;
+        margin-top: 4px;
       }
       
       .variable-info-details > div {
@@ -546,7 +602,8 @@ class VariableOperatorGenerator {
       'text/plain': '📝',
       'application/json': '🔧',
       'text/javascript': '⚡',
-      'text/html': '🌐'
+      'text/html': '🌐',
+      'midrc': '🔗'
     };
     
     return iconMap[type] || '📁';
@@ -559,13 +616,25 @@ class VariableOperatorGenerator {
     // Store the selected data source
     this.selectedDataSource = selectedValue;
     
-    // Enable generate code button if a source is selected
+    // Get the selected option to check data source type
+    const dropdown = this.generatorDialog.querySelector('[id$="generator-datasource-dropdown"]');
+    const selectedOption = dropdown?.options[dropdown.selectedIndex];
+    const dataSourceType = selectedOption?.getAttribute('data-type');
+    // Enable generate code button if a source is selected and parameters are valid
+    this.updateGenerateButtonState();
+  }
+
+  /**
+   * Update generate button state based on data source selection and parameter validity
+   */
+  updateGenerateButtonState() {
     const genBtn = this.generatorDialog.querySelector('[data-action="generate-code"]') ||
                    this.generatorDialog.querySelector('[id$="gen-code-btn"]') ||
                    this.generatorDialog.querySelector('button.btn-primary');
     
     if (genBtn) {
-      genBtn.disabled = !selectedValue;
+      const hasDataSource = !!this.selectedDataSource;
+      genBtn.disabled = !hasDataSource;
     }
   }
 
@@ -584,34 +653,37 @@ class VariableOperatorGenerator {
     // Show loading state
     this.showGenerationLoading(true);
     
-    try {
-      // Call backend API to generate code
-      const response = await fetch('http://127.0.0.1:5000/api/generate-variable-code', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
+          try {
+        // Prepare request payload
+        const payload = {
           variable_name: this.currentVariable.name,
           variable_type: this.currentVariable.type,
           variable_description: this.currentVariable.description,
           data_source: sourceName,
           document_id: window.documentManager?.activeDocumentId || 'default'
-        })
-      });
+        };
       
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
+      let response = null;
+      let result = null;
       
-      const result = await response.json();
-      
-      if (result.success && result.code) {
-        this.generatedCode = result.code;
-        this.showGeneratedCode(result.code, true); // Clear previous results for newly generated code
-      } else {
-        throw new Error(result.error || 'Failed to generate code');
-      }
+      // Try primary endpoint first
+      try {
+        response = await fetch('http://127.0.0.1:5000/api/generate-variable-code', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        });
+        
+        if (response.ok) {
+          result = await response.json();
+          this.generatedCode = result.code;
+          this.showGeneratedCode(result.code, true); // Clear previous results for newly generated code
+        }
+      } catch (primaryError) {
+        console.warn('Generate code failed:', primaryError);
+      } 
       
     } catch (error) {
       console.error('Error generating code:', error);

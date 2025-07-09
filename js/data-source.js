@@ -25,6 +25,9 @@ async function loadDataSourcesForCurrentDocument() {
     return;
   }
   
+  console.log(`[${windowId}] 🔍 DEBUG: loadDataSourcesForCurrentDocument called`);
+  console.log(`[${windowId}] Loading Data Sources from backend for document: ${currentDocumentId}`);
+  
   try {
     const response = await fetch(`http://127.0.0.1:5000/api/data-sources?documentId=${currentDocumentId}&windowId=${windowId}&session_id=${state.sessionId || windowId}`);
     
@@ -33,20 +36,25 @@ async function loadDataSourcesForCurrentDocument() {
     }
     
     const result = await response.json();
+    console.log(`[${windowId}] 🔍 DEBUG: Backend response:`, result);
     
     if (result.success && result.dataSources) {
       dataSources = result.dataSources;
       console.log(`[${windowId}] ✅ Loaded ${dataSources.length} items from backend for document ${currentDocumentId}`);
+      console.log(`[${windowId}] 🔍 DEBUG: Loaded dataSources:`, dataSources);
     } else {
       dataSources = [];
       console.log(`[${windowId}] No data sources found in backend for document ${currentDocumentId}, starting fresh`);
     }
     
   } catch (error) {
+    console.error(`[${windowId}] ❌ Error loading data sources from backend:`, error);
     dataSources = [];
     console.log(`[${windowId}] Starting with empty data sources due to backend error`);
   }
-
+  
+  console.log(`[${windowId}] 🔍 DEBUG: Final dataSources array:`, dataSources);
+  console.log(`[${windowId}] 🔍 DEBUG: Final dataSources length:`, dataSources.length);
 }
 
 // Save data sources for current document to backend
@@ -57,6 +65,9 @@ async function saveDataSources() {
     console.warn(`[${windowId}] Cannot save data sources: no current document set`);
     return;
   }
+  
+  console.log(`[${windowId}] 🔍 DEBUG: saveDataSources - saving to backend for document: ${currentDocumentId}`);
+  console.log(`[${windowId}] 🔍 DEBUG: saveDataSources - saving dataSources:`, dataSources);
   
   try {
     const response = await fetch('http://127.0.0.1:5000/api/data-sources', {
@@ -136,6 +147,9 @@ function initDataSourcesUI() {
 export async function addToDataSources(file) {
   const currentDocumentId = getCurrentDocumentId();
   
+  console.log(`[${windowId}] 🔍 DEBUG: addToDataSources called with file:`, file);
+  console.log(`[${windowId}] 🔍 DEBUG: currentDocumentId:`, currentDocumentId);
+  
   if (!currentDocumentId) {
     console.warn(`[${windowId}] Cannot add to data sources: no current document set`);
     return false;
@@ -158,6 +172,8 @@ export async function addToDataSources(file) {
     documentId: currentDocumentId
   };
   
+  console.log(`[${windowId}] 🔍 DEBUG: Created dataItem:`, dataItem);
+  
   // Check if item already exists
   const existingIndex = dataSources.findIndex(item => item.name === dataItem.name);
   if (existingIndex !== -1) {
@@ -167,6 +183,9 @@ export async function addToDataSources(file) {
     dataSources.push(dataItem);
     console.log(`[${windowId}] Added new item to Data Sources: ${dataItem.name}`);
   }
+  
+  console.log(`[${windowId}] 🔍 DEBUG: dataSources array after adding:`, dataSources);
+  console.log(`[${windowId}] 🔍 DEBUG: dataSources length:`, dataSources.length);
   
   await saveDataSources(); // Save to backend
   return true;
@@ -229,10 +248,16 @@ function setupDataSourcesDialogEventListeners(dialog) {
 function showDataSourcesDialog() {
   const currentDocumentId = getCurrentDocumentId();
   
+  console.log(`[${windowId}] 🔍 DEBUG: showDataSourcesDialog called`);
+  console.log(`[${windowId}] 🔍 DEBUG: currentDocumentId:`, currentDocumentId);
+  
   if (!currentDocumentId) {
     alert('Please select a document first');
     return;
   }
+  
+  console.log(`[${windowId}] 🔍 DEBUG: dataSources array at dialog open:`, dataSources);
+  console.log(`[${windowId}] 🔍 DEBUG: dataSources length:`, dataSources.length);
   
   const dialog = getOrCreateDataSourcesDialog();
   if (dialog) {
@@ -252,9 +277,16 @@ function hideDataSourcesDialog() {
 }
 
 // Refresh Data Sources dialog content
-function refreshDataSourcesDialog() {  
+function refreshDataSourcesDialog() {
+  console.log(`[${windowId}] 🔍 DEBUG: refreshDataSourcesDialog called`);
+  
   const itemsContainer = getDocumentElement('data-sources-items');
   const noDataMessage = getDocumentElement('no-data-message');
+  
+  console.log(`[${windowId}] 🔍 DEBUG: itemsContainer found:`, !!itemsContainer);
+  console.log(`[${windowId}] 🔍 DEBUG: noDataMessage found:`, !!noDataMessage);
+  console.log(`[${windowId}] 🔍 DEBUG: dataSources array in refresh:`, dataSources);
+  console.log(`[${windowId}] 🔍 DEBUG: dataSources length in refresh:`, dataSources.length);
   
   if (!itemsContainer) {
     console.error(`[${windowId}] 🔍 DEBUG: data-sources-items container not found!`);
@@ -263,18 +295,22 @@ function refreshDataSourcesDialog() {
   
   // Clear existing items
   const existingItems = itemsContainer.querySelectorAll('.data-sources-item');
+  console.log(`[${windowId}] 🔍 DEBUG: Found ${existingItems.length} existing items to remove`);
   existingItems.forEach(item => item.remove());
   
   if (dataSources.length === 0) {
+    console.log(`[${windowId}] 🔍 DEBUG: No data in lake, showing no-data message`);
     if (noDataMessage) {
       noDataMessage.style.display = 'block';
     }
   } else {
+    console.log(`[${windowId}] 🔍 DEBUG: Found ${dataSources.length} items, hiding no-data message and creating items`);
     if (noDataMessage) {
       noDataMessage.style.display = 'none';
     }
     
     dataSources.forEach((item, index) => {
+      console.log(`[${windowId}] 🔍 DEBUG: Creating UI element for item ${index}:`, item);
       const itemElement = createDataSourcesItemElement(item);
       itemsContainer.appendChild(itemElement);
     });
@@ -283,6 +319,8 @@ function refreshDataSourcesDialog() {
 
 // Create Data Sources item element
 function createDataSourcesItemElement(item) {
+  console.log(`[${windowId}] 🔍 DEBUG: createDataSourcesItemElement called for item:`, item);
+  
   const itemElement = document.createElement('div');
   itemElement.className = 'data-sources-item';
   itemElement.setAttribute('data-item-id', item.id);
@@ -312,6 +350,7 @@ function createDataSourcesItemElement(item) {
     </div>
   `;
   
+  console.log(`[${windowId}] 🔍 DEBUG: Created item element:`, itemElement);
   return itemElement;
 }
 

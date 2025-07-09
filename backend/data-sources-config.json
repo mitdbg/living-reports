@@ -1,0 +1,36 @@
+{
+  "dataSources": {
+    "midrc": {
+      "id": "midrc",
+      "name": "MIDRC Data Source",
+      "description": "Download files from MIDRC using object ID",
+      "command": "gen3-client",
+      "timeout": 300,
+      "workingDirectory": ".",
+      "args": [
+        "--auth", "{cred}",
+        "--endpoint", "data.midrc.org",
+        "drs-pull", "object",
+        "{object_id}",
+        "--output-dir", "database/midrc/{doc_id}/"
+      ],
+      "environment": {
+        "MIDRC_CREDENTIALS_PATH": "{cred}"
+      },
+      "parameters": [
+        {
+          "name": "object_id",
+          "label": "Object ID",
+          "type": "text",
+          "required": true,
+          "placeholder": "Enter MIDRC object ID"
+        }
+      ],
+      "outputParsing": {
+        "type": "directory",
+        "outputPath": "database/midrc/{doc_id}/",
+        "filePatterns": ["*"]
+      }
+    }
+  }
+} 

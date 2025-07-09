@@ -173,3 +173,12 @@ The DocumentManager provides several lifecycle methods you can hook into:
 ### Document Deletion
 - `deleteDocument(docId)` → Permanently removes document
 - `cleanAllElement(docId)` → Removes all DOM elements and cleans up
+
+# Variable System
+Currently there are 3 palces to edit variables:
+
+- Directly set values in Variable dialog
+- Set operator/code for a variable in Variable diaglog
+- In Operator page, add tools and operator for one or more variables.
+
+No matter where you edit the variable, the interface will save the relevant data into backend, and when you load again, they will load from backend, so that they're consistent.

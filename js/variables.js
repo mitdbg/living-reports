@@ -101,6 +101,8 @@ class VariablesManager {
     console.log('🔧 Setting up text selection detection');
     
     document.addEventListener('mouseup', (e) => {
+      console.log('🔧 mouseup event triggered');
+
       const selection = window.getSelection();
       
       // Early validation before setTimeout (same checks as comments.js)
@@ -116,9 +118,12 @@ class VariablesManager {
 
       // Check for valid text selection with visible dimensions
       if (!this.isInTemplateContent(selection) || selectedText.length === 0 || rect.width === 0 || rect.height === 0) {
+        console.log('🔧 mouseup: invalid selection (not in template, no text, or no dimensions), hiding button');
         this.hideFloatingButton();
         return;
-      }      
+      }
+      
+      console.log('🔧 mouseup: valid visible selection detected, scheduling handleTextSelection in 10ms');
       setTimeout(() => {
         this.handleTextSelection(e);
       }, 10);

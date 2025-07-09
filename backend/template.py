@@ -123,7 +123,8 @@ class Template:
         # If type is unknown, try to detect from file extension or URL
         if item_type == 'unknown' and content:
             item_type = self._detect_content_type(content, name)
-            
+        
+
         # Handle different content types
         if item_type.startswith('image/'):
             # For images, create an HTML img tag
@@ -290,7 +291,6 @@ class Template:
         else:
             processed_text = self._process_template(client, result.variables)
 
-        print(f"++++++++++++ Template Processed text: {processed_text}")
         # Update the result
         result.rendered_output = processed_text
         result.rendering_mode = mode

@@ -183,6 +183,7 @@ class OperatorManager {
       }
       
       console.log(`[${windowId}] Executing with data source:`, dataSource);
+      
       console.log(`[${windowId}] Code to execute:`, plainTextCode);
 
       // Execute using the same method as variable-operator-generator
@@ -2929,8 +2930,6 @@ function filterOperatorsTools(searchTerm) {
     }
   });
 }
-
-
 
 // Make functions globally available
 window.operatorsModule = {

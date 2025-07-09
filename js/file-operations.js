@@ -15,11 +15,27 @@ if (!window[FILE_OPS_KEY]) {
     loadContextHandler: null,
     clearContextHandler: null,
     currentOpenFileBtn: null,
-    currentClearContextBtn: null
+    currentClearContextBtn: null,
+    dataSourceConfigs: new Map() // Store configured data source types
   };
 }
 
 const fileOpsData = window[FILE_OPS_KEY];
+
+// Data Source Configuration Management
+const DEFAULT_DATA_SOURCE_CONFIGS = {
+  'midrc': {
+    id: 'midrc',
+    name: 'From MIDRC',
+    description: 'Download files from MIDRC using object ID'
+  }
+};
+
+// Initialize default configs
+Object.entries(DEFAULT_DATA_SOURCE_CONFIGS).forEach(([key, config]) => {
+  fileOpsData.dataSourceConfigs.set(key, config);
+});
+
 
 // File opening functionality
 export function initFileOperations() {
@@ -40,13 +56,17 @@ export function initFileOperations() {
   }
   
   // Create new event handlers
-  fileOpsData.loadContextHandler = loadContextFile;
+  fileOpsData.loadContextHandler = showUploadDropdown;
   fileOpsData.clearContextHandler = clearFileContext;
   
-  // Initialize Load Context button
+  // Initialize Load Context button (now a dropdown trigger)
   if (elements.openFileBtn) {
     elements.openFileBtn.addEventListener('click', fileOpsData.loadContextHandler);
     fileOpsData.currentOpenFileBtn = elements.openFileBtn;
+    
+    // Update button text to indicate dropdown
+    elements.openFileBtn.textContent = 'Upload Files ▼';
+    elements.openFileBtn.style.position = 'relative';
   } else {
     console.error(`[${windowId}] Open file button not found!`);
   }
@@ -66,34 +86,101 @@ export function initFileOperations() {
   window[FILE_OPS_KEY] = fileOpsData;
 }
 
+// Show upload dropdown menu
+function showUploadDropdown() {
+  // Remove existing dropdown if any
+  removeExistingDropdown();
+  
+  const dropdown = document.createElement('div');
+  dropdown.className = 'upload-dropdown';
+  dropdown.id = 'upload-dropdown';
+  
+  // Position dropdown relative to button
+  const buttonRect = elements.openFileBtn.getBoundingClientRect();
+  dropdown.style.position = 'absolute';
+  dropdown.style.top = `${buttonRect.bottom + 5}px`;
+  dropdown.style.left = `${buttonRect.left}px`;
+  dropdown.style.minWidth = `${buttonRect.width}px`;
+  dropdown.style.zIndex = '1000';
+  
+  // Create dropdown content
+  const dropdownContent = `
+    <div class="upload-dropdown-content">
+      <div class="upload-option" data-source-type="local">
+        <div class="upload-option-icon">📁</div>
+        <div class="upload-option-text">
+          <div class="upload-option-title">From Local Files</div>
+          <div class="upload-option-desc">Upload files from your computer</div>
+        </div>
+      </div>
+      ${Array.from(fileOpsData.dataSourceConfigs.values()).map(config => `
+        <div class="upload-option" data-source-type="${config.id}">
+          <div class="upload-option-icon">🖥️</div>
+          <div class="upload-option-text">
+            <div class="upload-option-title">${config.name}</div>
+            <div class="upload-option-desc">${config.description}</div>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+  
+  dropdown.innerHTML = dropdownContent;
+  document.body.appendChild(dropdown);
+  
+  // Add event listeners
+  dropdown.addEventListener('click', handleDropdownSelection);
+  
+  // Close dropdown when clicking outside
+  setTimeout(() => {
+    document.addEventListener('click', closeDropdownOnOutsideClick);
+  }, 0);
+}
+
+// Handle dropdown option selection
+function handleDropdownSelection(event) {
+  const option = event.target.closest('.upload-option');
+  if (!option) return;
+  
+  const sourceType = option.getAttribute('data-source-type');
+  
+  removeExistingDropdown();
+  
+  if (sourceType === 'local') {
+    loadContextFile();
+  } else if (sourceType === 'midrc') {
+    showMIDRCInputDialog();
+  }
+}
+
 async function loadContextFile() {
   try {
     addMessageToUI('system', 'Opening file dialog...');
-    
+
     const file = await ipcRenderer.invoke('open-file-dialog');
-    
+
     if (!file) {
       addMessageToUI('system', 'File selection cancelled.');
       return;
     }
-    
+
     if (file.error) {
       addMessageToUI('system', `Error opening file: ${file.error}`);
       console.error('File error:', file.error);
       return;
     }
-    
+
     addMessageToUI('system', `Context file loaded: ${file.name}`);
-    
+
     const fileExt = file.name.split('.').pop().toLowerCase();
     const needsBackendProcessing = ['xlsx', 'xls', 'html', 'htm', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'svg', 'tiff', 'ico'].includes(fileExt);
     const isPowerPoint = ['pptx', 'ppt'].includes(fileExt);
-    
+
     let processedFile = file;
     if (needsBackendProcessing) {
       try {
         addMessageToUI('system', `Processing ${file.name} file...`);
-        
+
         // Send file to backend for processing
         const documentId = window.documentManager?.activeDocumentId || null;
         const response = await fetch('http://127.0.0.1:5000/api/process-file', {
@@ -113,7 +200,7 @@ async function loadContextFile() {
         }
 
         const processedData = await response.json();
-        
+
         if (processedData.success) {
           // Use the processed content
           processedFile = {
@@ -126,22 +213,19 @@ async function loadContextFile() {
         } else {
           throw new Error(processedData.error || 'Failed to process file');
         }
-        
+
       } catch (error) {
         console.error('Error processing file:', error);
         addMessageToUI('system', `Warning: Could not process file on backend (${error.message}). Using raw content.`);
         // Continue with original file content
       }
     }
-    
-    // Add file to context display immediately
-    // addContextFileToDisplay(processedFile, false); // Removed: using Data Sources instead
-    
+
     // Try to send file to backend as context
     let backendSaved = false;
     try {
       addMessageToUI('system', 'Saving context to backend...');
-      
+
       const response = await fetch('http://127.0.0.1:5000/api/file-context', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -166,10 +250,10 @@ async function loadContextFile() {
       console.error('Error saving context to backend:', error);
       addMessageToUI('system', 'Warning: Could not save to backend (backend may not be running). File still available for display.');
     }
-    
+
     // Always show the display choice dialog, regardless of backend status
     showDisplayChoiceDialog(processedFile, backendSaved);
-    
+
   } catch (error) {
     console.error('Error loading context file:', error);
     addMessageToUI('system', `Error loading context file: ${error.message}`);
@@ -178,7 +262,7 @@ async function loadContextFile() {
 
 function showDisplayChoiceDialog(file, backendSaved) {
   const currentDocumentId = window.documentManager?.activeDocumentId || null;
-  
+
   if (!currentDocumentId) {
     console.warn('No active document found for choice dialog');
     // Fallback to a simple alert or create without document scoping
@@ -189,7 +273,7 @@ function showDisplayChoiceDialog(file, backendSaved) {
   const backendStatus = backendSaved 
     ? 'Context saved successfully to backend.' 
     : 'Context available locally (backend not connected).';
-    
+
   const dialogHtml = `
     <div class="dialog-overlay">
       <div class="dialog-content">
@@ -204,13 +288,13 @@ function showDisplayChoiceDialog(file, backendSaved) {
       </div>
     </div>
   `;
-  
+
   // Create dialog with explicit document ID and register it
   const dialog = createDocumentDialog('display-choice-dialog', dialogHtml, 'file-operations', currentDocumentId);
   dialog.className = 'display-choice-dialog';
-  
+
   document.body.appendChild(dialog);
-  
+
   // Helper function to remove dialog and unregister elements
   const removeDialog = () => {
     // Unregister all elements created for this dialog
@@ -218,7 +302,7 @@ function showDisplayChoiceDialog(file, backendSaved) {
     const dataSourcesBtnId = createDocumentElementId('add-to-data-sources-btn', currentDocumentId);
     const hideBtnId = createDocumentElementId('keep-hidden-btn', currentDocumentId);
     const dialogId = createDocumentElementId('display-choice-dialog', currentDocumentId);
-    
+
     // Unregister elements
     if (window.documentManager) {
       window.documentManager.constructor.unregisterDynamicElement(currentDocumentId, displayBtnId);
@@ -226,45 +310,45 @@ function showDisplayChoiceDialog(file, backendSaved) {
       window.documentManager.constructor.unregisterDynamicElement(currentDocumentId, hideBtnId);
       window.documentManager.constructor.unregisterDynamicElement(currentDocumentId, dialogId);
     }
-    
+
     // Remove from DOM
     if (dialog.parentNode) {
       document.body.removeChild(dialog);
     }
   };
-  
+
   // Get elements using document-specific IDs
   const displayBtn = getDocumentElement('display-context-btn', currentDocumentId);
   const dataSourcesBtn = getDocumentElement('add-to-data-sources-btn', currentDocumentId);
   const hideBtn = getDocumentElement('keep-hidden-btn', currentDocumentId);
-  
+
   if (displayBtn) {
     displayBtn.addEventListener('click', () => {
       displayContextInPreview(file);
       removeDialog();
     });
   }
-  
+
   if (dataSourcesBtn) {
     dataSourcesBtn.addEventListener('click', async () => {
       // Add file to data lake
       const result = await addToDataSources(file);
-      
+
       // Generate the same reference name that data sources uses
       const referenceName = file.name.replace(/\.[^/.]+$/, "").replace(/[^a-zA-Z0-9]/g, '_').replace(/_{2,}/g, '_').replace(/^_|_$/g, '').toLowerCase();
-      
+
       addMessageToUI('system', `${file.name} added to Data Sources. Reference it with $${referenceName}`);
       removeDialog();
     });
   }
-  
+
   if (hideBtn) {
     hideBtn.addEventListener('click', () => {
       addMessageToUI('system', 'Context file loaded but not displayed. Use chat to reference the context.');
       removeDialog();
     });
   }
-  
+
   // Add click outside to close
   const overlay = dialog.querySelector('.dialog-overlay');
   if (overlay) {
@@ -275,6 +359,164 @@ function showDisplayChoiceDialog(file, backendSaved) {
     });
   }
 }
+
+function showMIDRCInputDialog() {
+  const currentDocumentId = window.documentManager?.activeDocumentId || null;
+
+  if (!currentDocumentId) {
+    console.warn('No active document found for MIDRC input dialog');
+    alert('Please ensure you have an active document before adding MIDRC data.');
+    return;
+  }
+
+  const dialogHtml = `
+    <div class="dialog-overlay">
+      <div class="dialog-content">
+        <h3>🔗 Add MIDRC Data to DataSource</h3>
+        <p>Enter the <strong>case_id</strong> or <strong>object_id</strong> for the MIDRC dataset you want to add to your data sources:</p>
+        <div class="input-group">
+          <input 
+            type="text" 
+            id="midrc-case-id-input" 
+            placeholder="Enter case_id or object_id"
+            class="form-control"
+            style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;"
+          >
+        </div>
+        <div class="dialog-actions">
+          <button id="midrc-download-btn" class="btn-primary">Add To DataSource</button>
+          <button id="midrc-cancel-btn" class="btn-secondary">Cancel</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Create dialog with explicit document ID and register it
+  const dialog = createDocumentDialog('midrc-input-dialog', dialogHtml, 'file-operations', currentDocumentId);
+  dialog.className = 'midrc-input-dialog';
+
+  document.body.appendChild(dialog);
+
+  // Helper function to remove dialog and unregister elements
+  const removeDialog = () => {
+    const inputId = createDocumentElementId('midrc-case-id-input', currentDocumentId);
+    const downloadBtnId = createDocumentElementId('midrc-download-btn', currentDocumentId);
+    const cancelBtnId = createDocumentElementId('midrc-cancel-btn', currentDocumentId);
+    const dialogId = createDocumentElementId('midrc-input-dialog', currentDocumentId);
+
+    // Unregister elements
+    if (window.documentManager) {
+      window.documentManager.constructor.unregisterDynamicElement(currentDocumentId, inputId);
+      window.documentManager.constructor.unregisterDynamicElement(currentDocumentId, downloadBtnId);
+      window.documentManager.constructor.unregisterDynamicElement(currentDocumentId, cancelBtnId);
+      window.documentManager.constructor.unregisterDynamicElement(currentDocumentId, dialogId);
+    }
+
+    // Remove from DOM
+    if (dialog.parentNode) {
+      document.body.removeChild(dialog);
+    }
+  };
+
+  // Get elements using document-specific IDs
+  const input = getDocumentElement('midrc-case-id-input', currentDocumentId);
+  const downloadBtn = getDocumentElement('midrc-download-btn', currentDocumentId);
+  const cancelBtn = getDocumentElement('midrc-cancel-btn', currentDocumentId);
+
+  // Function to handle download and add to data sources
+  const handleDownload = async () => {
+    const caseId = input?.value?.trim();
+    if (!caseId) {
+      alert('Please enter a object_id');
+      return;
+    }
+
+    // Close dialog immediately and show starting message
+    removeDialog();
+    addMessageToUI('system', `🔄 Starting MIDRC download for ${caseId}...`);
+    
+    // Start download in background (don't await)
+    downloadMIDRCInBackground(caseId, currentDocumentId);
+  };
+
+  // Background download function
+  const downloadMIDRCInBackground = async (caseId, documentId) => {
+    try {
+      const response = await fetch('http://127.0.0.1:5000/api/download_midrc_file', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          object_id: caseId,
+          document_id: documentId
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+
+      if (result.success) {
+        // Create a file object for adding to data sources
+        const midrcFile = {
+          name: `MIDRC_${caseId}`,
+          path: result.file_path || result.output_directory,
+          content: result.file_content || 'MIDRC data downloaded successfully',
+          redirect_output_file_path: result.file_path,
+          type: 'midrc'
+        };
+
+        // Add file to data sources directly
+        const dataSourceResult = await addToDataSources(midrcFile);
+        
+        // Generate the same reference name that data sources uses
+        const referenceName = midrcFile.name.replace(/\.[^/.]+$/, "").replace(/[^a-zA-Z0-9]/g, '_').replace(/_{2,}/g, '_').replace(/^_|_$/g, '').toLowerCase();
+
+        addMessageToUI('system', `✅ ${midrcFile.name} successfully added to Data Sources. Reference it with $${referenceName}`);
+      } else {
+        throw new Error(result.error || 'Download failed');
+      }
+    } catch (error) {
+      console.error('Error downloading MIDRC file:', error);
+      addMessageToUI('system', `❌ Failed to download MIDRC data (${caseId}): ${error.message}`);
+    }
+  };
+
+  // Add event listeners
+  if (input) {
+    // Enter key trigger for convenience
+    input.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        handleDownload();
+      }
+    });
+
+    // Focus the input
+    setTimeout(() => input.focus(), 100);
+  }
+
+  if (downloadBtn) {
+    downloadBtn.addEventListener('click', handleDownload);
+  }
+
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', removeDialog);
+  }
+
+  // Add click outside to close
+  const overlay = dialog.querySelector('.dialog-overlay');
+  if (overlay) {
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) {
+        removeDialog();
+      }
+    });
+  }
+}
+
 
 function displayContextInPreview(file) {
   // Detect file format and render accordingly
@@ -406,22 +648,13 @@ function renderCSV(content) {
 
 function renderPDF(content) {
   const containerId = `pdf-container-${Date.now()}`;
+  
+  // Create actual DOM element instead of just HTML string
   const container = document.createElement("div");
   container.id = containerId;
   container.className = "pdf-container";
-  
-  // Global mousedown handler for PDF page shift+click functionality
-  const pdfMouseDownHandler = (e) => {
-    if (e.target.closest('.pdf-page') && e.shiftKey) {
-      const pageDiv = e.target.closest('.pdf-page');
-      if (pageDiv) {
-        const newDiv = createEditableTextDiv("New Text", e.offsetX, e.offsetY, "16px", "Arial", "#000000", true);
-        pageDiv.appendChild(newDiv);
-      }
-    }
-  };
-  document.addEventListener('mousedown', pdfMouseDownHandler, true);
 
+  // Parse content if it's a string
   let pages = content;
   if (typeof content === 'string') {
     try {
@@ -434,138 +667,70 @@ function renderPDF(content) {
   }
 
   pages.forEach(page => {
+    // Create page container with background image
     const pageDiv = document.createElement("div");
     pageDiv.className = "pdf-page";
     pageDiv.style.width = page.width + "px";
     pageDiv.style.height = page.height + "px";
-    pageDiv.style.backgroundImage = `url(http://127.0.0.1:5000/api/serve-file/${page.background})`;
+    
+    // Convert file path to HTTP URL for serving through backend
+    const backgroundUrl = page.background.startsWith('database/') 
+      ? `http://127.0.0.1:5000/api/serve-file/${page.background}`
+      : `http://127.0.0.1:5000/api/serve-file/${page.background}`;
+    
+    pageDiv.style.backgroundImage = `url(${backgroundUrl})`;
     pageDiv.style.backgroundSize = "cover";
     pageDiv.style.position = "relative";
-    
-    // Ensure the element can receive mouse events
-    pageDiv.style.pointerEvents = "auto";
-    pageDiv.style.cursor = "default";
-    pageDiv.style.zIndex = "1";
 
-    // Add mousedown event listener for shift+click functionality
-    pageDiv.addEventListener("mousedown", function(e) {
-      if (e.shiftKey) {
-        const newDiv = createEditableTextDiv("New Text", e.offsetX, e.offsetY, "16px", "Arial", "#000000", true);
-        pageDiv.appendChild(newDiv);
-      }
-    });
-
+    // Loop over all elements on the page
     page.elements.forEach(el => {
       if (el.type === "text") {
-        const textDiv = createEditableTextDiv(
-          el.text,
-          el.x,
-          el.y,
-          el.font_size + "px",
-          el.font,
-          el.color,
-          false // keep existing PDF text single-line
-        );
-        pageDiv.appendChild(textDiv);
-      }
-      if (el.type === "image") {
-        const img = document.createElement("img");
-        img.src = `http://127.0.0.1:5000/api/serve-file/${el.src}`;
-        Object.assign(img.style, {
+        // Measure actual rendered width using a hidden span
+        const measure = document.createElement("span");
+        measure.style.position = "absolute";
+        measure.style.visibility = "hidden";
+        measure.style.whiteSpace = "nowrap";
+        measure.style.fontSize = el.font_size + "px";
+        measure.style.fontFamily = el.font;
+        measure.textContent = el.text;
+        document.body.appendChild(measure);
+        const measuredWidth = measure.offsetWidth;
+        document.body.removeChild(measure);
+
+        // Choose the larger of original width or measured width
+        const finalWidth = Math.max(el.width, measuredWidth);
+
+        // Create editable text element
+        const textDiv = document.createElement("div");
+        textDiv.className = "text-box";
+        textDiv.contentEditable = true;
+        textDiv.textContent = el.text;
+
+        Object.assign(textDiv.style, {
           position: "absolute",
           left: el.x + "px",
           top: el.y + "px",
-          width: el.width + "px",
+          width: finalWidth + "px",
           height: el.height + "px",
-          cursor: "pointer"
+          fontSize: el.font_size + "px",
+          fontFamily: el.font,
+          color: el.color,
+          whiteSpace: "nowrap",      // Prevent line breaks
+          overflow: "visible",       // Allow overflow if needed
+          backgroundColor: "transparent",
+          lineHeight: "1",           // Match PDF more closely
         });
-        img.addEventListener("click", () => {
-          alert("Replace image functionality here.");
-        });
-        pageDiv.appendChild(img);
+
+        pageDiv.appendChild(textDiv);
       }
     });
 
     container.appendChild(pageDiv);
   });
-
+  
+  // Return the HTML string wrapped in pdf-content div
   return `<div class="pdf-content">${container.outerHTML}</div>`;
 }
-
-// Helper to create a multi-line editable text div
-function createEditableTextDiv(text, x, y, fontSize, fontFamily, color, multiLine = false) {
-  const textDiv = document.createElement("div");
-  textDiv.className = "text-box";
-  textDiv.contentEditable = true;
-  textDiv.textContent = text;
-
-  if (multiLine) {
-    Object.assign(textDiv.style, {
-      whiteSpace: "pre-wrap",
-      wordBreak: "break-word",
-      lineHeight: "1.2",
-      minWidth: "20px",
-      minHeight: "20px"
-    });
-  } else {
-    Object.assign(textDiv.style, {
-      whiteSpace: "nowrap",
-      overflow: "visible"
-    });
-  }
-
-  Object.assign(textDiv.style, {
-    position: "absolute",
-    left: x + "px",
-    top: y + "px",
-    fontSize: fontSize,
-    fontFamily: fontFamily,
-    color: color,
-    backgroundColor: "transparent",
-    cursor: "text",
-    zIndex: "10"
-  });
-
-  autoResizeText(textDiv, multiLine);
-  return textDiv;
-}
-
-
-// Resize width + height based on multi-line text content
-function autoResizeText(textDiv, multiLine) {
-  function resize() {
-    const measure = document.createElement(multiLine ? "div" : "span");
-    measure.style.position = "absolute";
-    measure.style.visibility = "hidden";
-    measure.style.fontSize = textDiv.style.fontSize;
-    measure.style.fontFamily = textDiv.style.fontFamily;
-    if (multiLine) {
-      measure.style.whiteSpace = "pre-wrap";
-      measure.style.wordBreak = "break-word";
-      measure.style.lineHeight = textDiv.style.lineHeight;
-    } else {
-      measure.style.whiteSpace = "nowrap";
-    }
-    measure.textContent = textDiv.textContent;
-
-    document.body.appendChild(measure);
-    
-    // Add padding to account for the border width (1px on each side = 2px total)
-    const borderWidth = 2; // 1px border on each side
-    const padding = 4; // Add some padding for better visual appearance
-    
-    textDiv.style.width = (measure.offsetWidth + borderWidth + padding) + "px";
-    textDiv.style.height = (measure.offsetHeight + borderWidth + padding) + "px";
-    
-    document.body.removeChild(measure);
-  }
-
-  resize();
-  textDiv.addEventListener("input", resize);
-}
-
-
-
 
 function renderJSON(content) {
   try {
@@ -890,6 +1055,51 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+// Add CSS styles for MIDRC input dialog
+const midrcStyles = document.createElement('style');
+midrcStyles.textContent = `
+  .midrc-input-dialog .input-status {
+    transition: all 0.3s ease;
+  }
+  
+  .midrc-input-dialog .status-downloading {
+    color: #3498db;
+    font-weight: 500;
+  }
+  
+  .midrc-input-dialog .status-success {
+    color: #27ae60;
+    font-weight: 500;
+  }
+  
+  .midrc-input-dialog .status-error {
+    color: #e74c3c;
+    font-weight: 500;
+  }
+  
+  .midrc-input-dialog .status-info {
+    color: #2c3e50;
+    font-weight: 500;
+  }
+  
+  .midrc-input-dialog .form-control:focus {
+    border-color: #3498db;
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+  }
+  
+  .midrc-input-dialog .form-control:disabled {
+    background-color: #f8f9fa;
+    opacity: 0.6;
+  }
+  
+  .midrc-input-dialog .btn-primary:disabled {
+    background-color: #95a5a6;
+    cursor: not-allowed;
+  }
+`;
+document.head.appendChild(midrcStyles);
+
 async function clearFileContext() {
   try {
     addMessageToUI('system', 'Clearing context...');
@@ -905,9 +1115,6 @@ async function clearFileContext() {
     const data = await response.json();
     addMessageToUI('system', data.message);
     
-    // Clear the context files display - removed since using Data Sources
-    // state.loadedContextFiles = [];
-    // updateContextFilesDisplay();
   } catch (error) {
     console.error('Error clearing context:', error);
     addMessageToUI('system', 'Error: Failed to clear context. Make sure the backend is running.');
@@ -933,3 +1140,21 @@ export function resetFileOperationsInitialization() {
   fileOpsData.currentClearContextBtn = null;
   window[FILE_OPS_KEY] = fileOpsData;
 }
+
+// Helper functions for dropdown functionality
+
+function removeExistingDropdown() {
+  const existingDropdown = document.getElementById('upload-dropdown');
+  if (existingDropdown) {
+    document.removeEventListener('click', closeDropdownOnOutsideClick);
+    existingDropdown.remove();
+  }
+}
+
+function closeDropdownOnOutsideClick(event) {
+  const dropdown = document.getElementById('upload-dropdown');
+  if (dropdown && !dropdown.contains(event.target) && !elements.openFileBtn.contains(event.target)) {
+    removeExistingDropdown();
+  }
+}
+

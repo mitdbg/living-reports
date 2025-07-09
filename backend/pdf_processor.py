@@ -1,6 +1,7 @@
+# extract_pdf_to_json.py
 import fitz  # PyMuPDF
-import os
 import json
+import os
 
 def save_clean_backgrounds(pdf_path, image_dir="images_clean"):
     print(f"Saving cleaned background images to: {image_dir}")
@@ -8,16 +9,20 @@ def save_clean_backgrounds(pdf_path, image_dir="images_clean"):
     doc = fitz.open(pdf_path)
 
     for i, page in enumerate(doc):
-        blocks = page.get_text("dict")["blocks"]
+        # Temporarily remove text blocks by creating a copy of the page with vector content only
+        text_instances = page.get_text("dict")["blocks"]
 
-        # Remove both text and images
-        for block in blocks:
-            if block["type"] in (0, 1):  # 0=text, 1=image
+        # Remove text blocks without adding fill (clean transparent removal)
+        for block in text_instances:
+            if block["type"] == 0:  # type 0 = text
                 rect = fitz.Rect(block["bbox"])
-                page.add_redact_annot(rect, text="")
+                page.add_redact_annot(rect, text="")  # Remove text without fill
 
+
+        # Apply redactions (removes text visually)
         page.apply_redactions()
 
+        # Save background image
         pix = page.get_pixmap(dpi=150)
         pix.save(os.path.join(image_dir, f"page_{i + 1}.png"))
 
@@ -25,6 +30,7 @@ def save_clean_backgrounds(pdf_path, image_dir="images_clean"):
 
 
 def process_pdf_file(pdf_path, json_path, clean_image_dir="images_clean"):
+    # create clean_images
     save_clean_backgrounds(pdf_path, clean_image_dir)
     doc = fitz.open(pdf_path)
     result = []
@@ -38,18 +44,25 @@ def process_pdf_file(pdf_path, json_path, clean_image_dir="images_clean"):
         }
 
         blocks = page.get_text("dict")["blocks"]
-        image_counter = 0
         for block in blocks:
             if block["type"] == 0:
-                # TEXT
                 for line in block["lines"]:
                     for span in line["spans"]:
+                        # Handle color conversion properly
                         color_int = span["color"]
-                        r = (color_int >> 16) & 0xFF
-                        g = (color_int >> 8) & 0xFF
-                        b = color_int & 0xFF
-                        color_hex = "#{:02x}{:02x}{:02x}".format(r, g, b)
-
+                        if isinstance(color_int, int):
+                            # Convert integer color to RGB
+                            r = (color_int >> 16) & 0xFF
+                            g = (color_int >> 8) & 0xFF
+                            b = color_int & 0xFF
+                            color_hex = "#{:02x}{:02x}{:02x}".format(r, g, b)
+                        elif isinstance(color_int, (list, tuple)) and len(color_int) >= 3:
+                            # Handle case where color is already RGB values
+                            color_hex = "#{:02x}{:02x}{:02x}".format(int(color_int[0]), int(color_int[1]), int(color_int[2]))
+                        else:
+                            # Default to black if color format is unexpected
+                            color_hex = "#000000"
+                        
                         el = {
                             "type": "text",
                             "text": span["text"],
@@ -63,30 +76,9 @@ def process_pdf_file(pdf_path, json_path, clean_image_dir="images_clean"):
                         }
                         page_data["elements"].append(el)
 
-            elif block["type"] == 1:
-                # IMAGE
-                rect = block["bbox"]
-                x0, y0, x1, y1 = rect
-                pix = page.get_pixmap(clip=fitz.Rect(rect))
-                img_path = f"{clean_image_dir}/page_{page_num + 1}_img_{image_counter}.png"
-                pix.save(img_path)
-                image_counter += 1
-
-                el = {
-                    "type": "image",
-                    "src": img_path,
-                    "x": x0,
-                    "y": y0,
-                    "width": x1 - x0,
-                    "height": y1 - y0
-                }
-                page_data["elements"].append(el)
-
         result.append(page_data)
 
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(result, f, indent=2)
 
     return result
-
-

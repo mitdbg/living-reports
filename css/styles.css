@@ -3969,7 +3969,7 @@ p {
   padding: 4px;
   border: 1px solid rgba(0, 0, 0, 0.1);
   position: relative;
-  z-index: 1001;
+  z-index: 999;
 }
 
 .mode-btn {
@@ -8483,26 +8483,355 @@ p {
   }
 }
 
-
-.pdf-container {
-  position: relative;
-  user-select: none;
+/* Upload Dropdown Styles */
+.upload-dropdown {
+  background: white;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+  animation: fadeInDown 0.2s ease-out;
 }
 
-.pdf-page {
-  border: 1px solid #ccc;
-  margin: 10px auto;
+.upload-dropdown-content {
+  padding: 8px 0;
 }
 
-.text-box {
-  border: 1px dashed transparent !important;
-  outline: none !important;
-  transition: border-color 0.2s ease;
+.upload-option {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+  border: none;
+  background: transparent;
+  width: 100%;
+  text-align: left;
 }
-.text-box:focus {
-  border: 1px dashed #666 !important;
-  outline: none !important;
+
+.upload-option:hover {
+  background-color: #f3f4f6;
 }
-.text-box:hover {
-  border: 1px dashed #ccc !important;
+
+.upload-option-icon {
+  font-size: 18px;
+  margin-right: 12px;
+  width: 24px;
+  text-align: center;
+}
+
+.upload-option-text {
+  flex: 1;
+}
+
+.upload-option-title {
+  font-weight: 500;
+  color: #374151;
+  margin-bottom: 2px;
+}
+
+.upload-option-desc {
+  font-size: 12px;
+  color: #6b7280;
+  line-height: 1.3;
+}
+
+.upload-option-configure {
+  border-top: 1px solid #e5e7eb;
+  margin-top: 4px;
+  padding-top: 12px;
+}
+
+/* Parameter Input Dialog Styles */
+.parameter-input-dialog {
+  max-width: 600px;
+  width: 90%;
+}
+
+.parameter-input-dialog .form-group {
+  margin-bottom: 20px;
+}
+
+.parameter-input-dialog label {
+  display: block;
+  font-weight: 500;
+  color: #374151;
+  margin-bottom: 6px;
+}
+
+.parameter-input-dialog .required {
+  color: #dc2626;
+  margin-left: 4px;
+}
+
+.parameter-input-dialog .form-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 14px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.parameter-input-dialog .form-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.parameter-input-dialog .param-description {
+  font-size: 12px;
+  color: #6b7280;
+  margin-top: 4px;
+  font-style: italic;
+}
+
+.command-preview {
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 6px;
+  padding: 12px;
+  margin: 20px 0;
+}
+
+.command-preview label {
+  font-weight: 500;
+  color: #495057;
+  margin-bottom: 8px;
+  display: block;
+}
+
+.command-preview pre {
+  background: #fff;
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin: 0;
+  font-family: 'Monaco', 'Consolas', monospace;
+  font-size: 13px;
+  color: #212529;
+  overflow-x: auto;
+}
+
+.execution-status {
+  background: #e3f2fd;
+  border: 1px solid #bbdefb;
+  border-radius: 6px;
+  padding: 16px;
+  margin-top: 20px;
+}
+
+.execution-status .status-text {
+  color: #1565c0;
+  font-weight: 500;
+  margin-bottom: 10px;
+}
+
+.status-progress {
+  width: 100%;
+  height: 6px;
+  background: #e1f5fe;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #2196f3, #1976d2);
+  width: 0%;
+  animation: progressAnimation 2s ease-in-out infinite;
+}
+
+@keyframes progressAnimation {
+  0% { width: 0%; }
+  50% { width: 70%; }
+  100% { width: 100%; }
+}
+
+/* Configuration Dialog Styles */
+.config-dialog {
+  max-width: 700px;
+  width: 90%;
+}
+
+.config-list {
+  max-height: 400px;
+  overflow-y: auto;
+  margin: 20px 0;
+}
+
+.config-item {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 12px;
+  background: #fafafa;
+}
+
+.config-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 8px;
+}
+
+.config-header h4 {
+  margin: 0;
+  color: #374151;
+  font-size: 16px;
+}
+
+.config-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.config-actions button {
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.edit-config-btn {
+  background: #e0f2fe;
+  border-color: #81d4fa;
+  color: #0277bd;
+}
+
+.edit-config-btn:hover {
+  background: #b3e5fc;
+}
+
+.delete-config-btn {
+  background: #ffebee;
+  border-color: #ffcdd2;
+  color: #c62828;
+}
+
+.delete-config-btn:hover {
+  background: #ffcdd2;
+}
+
+.config-details {
+  margin-top: 12px;
+}
+
+.config-details code {
+  background: #fff;
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-family: 'Monaco', 'Consolas', monospace;
+  font-size: 12px;
+  color: #495057;
+  display: block;
+  overflow-x: auto;
+}
+
+/* Downloaded Files Dialog Styles */
+.downloaded-files-dialog {
+  max-width: 600px;
+  width: 90%;
+}
+
+.files-list {
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  margin: 16px 0;
+}
+
+.file-item {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.file-item:last-child {
+  border-bottom: none;
+}
+
+.file-item input[type="checkbox"] {
+  margin-right: 12px;
+}
+
+.file-item label {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  cursor: pointer;
+  margin: 0;
+}
+
+.file-icon {
+  margin-right: 8px;
+  font-size: 16px;
+}
+
+.file-name {
+  flex: 1;
+  font-weight: 500;
+  color: #374151;
+}
+
+.file-size {
+  font-size: 12px;
+  color: #6b7280;
+  margin-left: 8px;
+}
+
+/* Animation */
+@keyframes fadeInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Button variants for the dialogs */
+.btn-danger {
+  background-color: #dc2626;
+  color: white;
+  border: 1px solid #dc2626;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.15s ease;
+}
+
+.btn-danger:hover {
+  background-color: #b91c1c;
+  border-color: #b91c1c;
+}
+
+/* Responsive adjustments for upload dropdown */
+@media (max-width: 768px) {
+  .upload-dropdown {
+    left: 10px !important;
+    right: 10px;
+    width: auto !important;
+    min-width: auto !important;
+  }
+  
+  .parameter-input-dialog,
+  .config-dialog,
+  .downloaded-files-dialog {
+    width: 95%;
+    margin: 20px auto;
+  }
+  
+  .config-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }

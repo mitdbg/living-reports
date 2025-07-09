@@ -7,17 +7,21 @@ from datetime import datetime
 import shutil
 import hashlib
 import base64
+import subprocess
+import sys
 from werkzeug.utils import secure_filename
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from openai import OpenAI
 
-# Load environment variables from .env file
+# Load environment variables from .env file BEFORE importing midrc
 try:
     from dotenv import load_dotenv
     load_dotenv()
 except ImportError:
     pass  # python-dotenv not installed, continue without .env support
+
+from midrc import download_midrc_file_implementation
 
 # Make together import optional
 try:
@@ -36,7 +40,6 @@ from task_manager import TaskManager
 from pathlib import Path
 
 # Add parent directory to path for imports
-import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Configure logging
@@ -46,6 +49,46 @@ logging.basicConfig(
     datefmt='%H:%M:%S'
 )
 logger = logging.getLogger('backend')
+
+def ensure_gen3_installed():
+    """Ensure gen3 package is installed for MIDRC downloads"""
+    try:
+        # Check if gen3 command is available
+        result = subprocess.run(['gen3', '--version'], 
+                              capture_output=True, text=True, timeout=10)
+        if result.returncode == 0:
+            logger.info("✅ gen3 command-line tool is already available")
+            return True
+    except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.CalledProcessError):
+        pass
+    
+    try:
+        # Check if gen3 package is installed
+        import gen3
+        logger.info("✅ gen3 Python package is available")
+        return True
+    except ImportError:
+        pass
+    
+    # Install gen3 package
+    logger.info("📦 Installing gen3 package for MIDRC downloads...")
+    try:
+        result = subprocess.run([
+            sys.executable, "-m", "pip", "install", "gen3"
+        ], capture_output=True, text=True, timeout=120)
+        
+        if result.returncode == 0:
+            logger.info("✅ gen3 package installed successfully")
+            return True
+        else:
+            logger.error(f"❌ Failed to install gen3: {result.stderr}")
+            return False
+    except Exception as e:
+        logger.error(f"❌ Error installing gen3: {e}")
+        return False
+
+# Ensure gen3 is available
+ensure_gen3_installed()
 
 app = Flask(__name__)
 CORS(app)
@@ -2263,6 +2306,103 @@ def execute_code_endpoint():
 
     except Exception as e:
         logger.error(f"❌ Error generating variable code: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/download_midrc_file', methods=['POST'])
+def download_midrc_file():
+    """Download MIDRC file using object ID and return file path"""
+    try:
+        data = request.get_json()
+        object_id = data.get('object_id', '')
+        document_id = data.get('document_id', 'default')
+        if not object_id:
+            return jsonify({
+                'success': False,
+                'error': 'Object ID is required'
+            }), 400
+        
+        # Load MIDRC configuration
+        config_path = os.path.join(os.path.dirname(__file__), 'data-sources-config.json')
+        try:
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+            midrc_config = config.get('dataSources', {}).get('midrc', {})
+        except FileNotFoundError:
+            return jsonify({
+                'success': False,
+                'error': 'MIDRC configuration file not found'
+            }), 500
+        
+        # Create output directory
+        output_dir = os.path.join(os.path.dirname(__file__), 'database', 'midrc', document_id)
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Prepare command arguments with proper placeholder replacement
+        args = []
+        cred_path = os.environ.get('MIDRC_CREDENTIALS_PATH')
+
+        # Check if credentials file exists
+        if not os.path.exists(cred_path):
+            logger.error(f"❌ Credentials file not found: {cred_path}")
+            return jsonify({
+                'success': False,
+                'error': f'Credentials file not found at: {cred_path}. Please ensure MIDRC credentials are properly configured.'
+            }), 500
+
+        for arg in midrc_config.get('args', []):
+            # Replace placeholders within each argument string
+            processed_arg = arg
+            processed_arg = processed_arg.replace('{object_id}', object_id)
+            processed_arg = processed_arg.replace('{doc_id}', document_id)
+            processed_arg = processed_arg.replace('{cred}', cred_path)
+            args.append(processed_arg)
+        
+        download_id = download_midrc_file_implementation(object_id, document_id, app, cred_path, output_dir)
+        # Return immediately with download ID for status checking
+        return jsonify({
+            'success': True,
+            'message': 'Download started in background',
+            'download_id': download_id,
+            'object_id': object_id,
+            'status_check_url': f'/api/download_status/{download_id}'
+        })
+            
+    except Exception as e:
+        logger.error(f"❌ Error downloading MIDRC file: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/download_status/<download_id>', methods=['GET'])
+def get_download_status(download_id):
+    """Get the status of a background download"""
+    try:
+        if not hasattr(app, 'download_statuses'):
+            return jsonify({
+                'success': False,
+                'error': 'No downloads found'
+            }), 404
+
+        status = app.download_statuses.get(download_id)
+        if not status:
+            return jsonify({
+                'success': False,
+                'error': 'Download not found'
+            }), 404
+        
+        return jsonify({
+            'success': True,
+            'download_status': status
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Error getting download status: {e}")
         return jsonify({
             'success': False,
             'error': str(e)
