@@ -319,7 +319,12 @@ class Template:
                     value = variables[var_name].get("value", "")
                     resolved_value = self._resolve_variable_value_from_datasource(value)
                     
-                    # Wrap in span with metadata for content-to-template mapping
+                    # If the value is an <img> tag or HTML table, return as raw HTML
+                    if isinstance(resolved_value, str) and resolved_value.strip().startswith('<img'):
+                        return resolved_value
+                    if isinstance(resolved_value, str) and resolved_value.strip().startswith('<div class="annotations-table-container"'):
+                        return resolved_value
+                    # Otherwise, wrap in span
                     return f'<span class="var-ref" data-var="{var_name}" data-instance="{variable_instances[var_name]}" data-value="{value}">{resolved_value}</span>'
                 else:
                     # Check if it's a data source reference
@@ -343,7 +348,10 @@ class Template:
                     value = variables[var_name].get("value", "")
                     resolved_value = self._resolve_variable_value_from_datasource(value)
                     
-                    # Wrap in span with metadata for content-to-template mapping
+                    if isinstance(resolved_value, str) and resolved_value.strip().startswith('<img'):
+                        return resolved_value
+                    if isinstance(resolved_value, str) and resolved_value.strip().startswith('<div class="annotations-table-container"'):
+                        return resolved_value
                     return f'<span class="var-ref" data-var="{var_name}" data-instance="{variable_instances[var_name]}" data-value="{value}">{resolved_value}</span>'
                 else:
                     # Check if it's a data source reference
@@ -372,7 +380,10 @@ class Template:
                     value = variables[var_name].get("value", "")
                     resolved_value = self._resolve_variable_value_from_datasource(value)
                     
-                    # Wrap in span with metadata for content-to-template mapping
+                    if isinstance(resolved_value, str) and resolved_value.strip().startswith('<img'):
+                        return resolved_value
+                    if isinstance(resolved_value, str) and resolved_value.strip().startswith('<div class="annotations-table-container"'):
+                        return resolved_value
                     return f'<span class="var-ref" data-var="{var_name}" data-instance="{variable_instances[var_name]}" data-value="{value}">{resolved_value}</span>'
                 else:
                     # Check if it's a data source reference

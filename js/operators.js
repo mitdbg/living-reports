@@ -2829,12 +2829,29 @@ async function substituteOperatorDependencies(operator) {
             const depVariable = variablesManager.variables.get(depName);
             if (depVariable && depVariable.value !== undefined) {
               const depValue = depVariable.value;
-              // Format the value based on type
+              console.log(`[${windowId}] Processing dependency ${depName}:`, depValue, typeof depValue);
+              
+              // Format the value based on type with proper JSON serialization
               if (typeof depValue === 'string') {
                 args.push(`'${depValue.replace(/'/g, "\\'")}'`);
               } else if (typeof depValue === 'number') {
                 args.push(depValue.toString());
+              } else if (typeof depValue === 'boolean') {
+                args.push(depValue.toString());
+              } else if (depValue === null) {
+                args.push('None');
+              } else if (typeof depValue === 'object') {
+                // For objects (dicts, lists, etc.), serialize as JSON
+                try {
+                  const jsonValue = JSON.stringify(depValue);
+                  args.push(`json.loads('${jsonValue.replace(/'/g, "\\'")}')`);
+                  console.log(`[${windowId}] Serialized object ${depName} as JSON:`, jsonValue);
+                } catch (error) {
+                  console.error(`[${windowId}] Failed to serialize ${depName}:`, error);
+                  args.push('None');
+                }
               } else {
+                // Fallback for other types
                 args.push(`'${String(depValue).replace(/'/g, "\\'")}'`);
               }
               console.log(`[${windowId}] Prepared dependency ${depName} with value:`, depValue);

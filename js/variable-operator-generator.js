@@ -1186,12 +1186,27 @@ class VariableOperatorGenerator {
               const value = dependencyValues[depName].value;
               console.log(`✅ Found value for ${depName}:`, value, typeof value);
               
-              // Format the value based on type
+              // Format the value based on type with proper JSON serialization
               if (typeof value === 'string') {
                 args.push(`'${value.replace(/'/g, "\\'")}'`);
               } else if (typeof value === 'number') {
                 args.push(value.toString());
+              } else if (typeof value === 'boolean') {
+                args.push(value.toString());
+              } else if (value === null) {
+                args.push('None');
+              } else if (typeof value === 'object') {
+                // For objects (dicts, lists, etc.), serialize as JSON
+                try {
+                  const jsonValue = JSON.stringify(value);
+                  args.push(`json.loads('${jsonValue.replace(/'/g, "\\'")}')`);
+                  console.log(`✅ Serialized object ${depName} as JSON:`, jsonValue);
+                } catch (error) {
+                  console.error(`❌ Failed to serialize ${depName}:`, error);
+                  args.push('None');
+                }
               } else {
+                // Fallback for other types
                 args.push(`'${String(value).replace(/'/g, "\\'")}'`);
               }
             } else {

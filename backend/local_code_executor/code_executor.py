@@ -31,13 +31,14 @@ def execute_code_locally(code, parameters):
     try:
         import pandas as pd
         import numpy as np
-        from tools import GetPatientData
+        from tools import GetPatientData, GenerateAnnotations
         
         # Make these available in the execution environment
         restricted_globals.update({
             'pd': pd,
             'np': np,
-            'GetPatientData': GetPatientData
+            'GetPatientData': GetPatientData,
+            'GenerateAnnotations': GenerateAnnotations
         })
     except ImportError as e:
         # Log import errors but don't fail - tools may not be needed

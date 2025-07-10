@@ -7,6 +7,8 @@ import requests
 import subprocess
 from typing import Dict, List, Optional, Any
 import json
+import openai
+import urllib.parse
 
 import pydicom
 from PIL import Image
@@ -302,3 +304,199 @@ def _convert_dicom_to_jpeg(dicom_path: str, output_dir: str) -> Optional[str]:
     except Exception as e:
         logger.error(f"Error converting DICOM to JPEG {dicom_path}: {str(e)}")
         return None
+    
+
+def RenderImage(x_ray_image: str) -> str:
+    """
+    Render an image and return HTML container to display the image.
+    
+    Args:
+        x_ray_image (str): Absolute path to the image file
+        
+    Returns:
+        str: HTML string containing the image display container
+    """
+    try:
+        # Validate file exists
+        if not os.path.exists(x_ray_image):
+            return f'<div class="image-error">⚠️ Image file not found: {os.path.basename(x_ray_image)}</div>'
+        
+        # Validate it's an image file
+        image_extensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.webp', '.svg', '.ico']
+        file_ext = os.path.splitext(x_ray_image)[1].lower()
+        
+        if file_ext not in image_extensions:
+            return f'<div class="image-error">⚠️ Unsupported image format: {file_ext}</div>'
+        
+        # Get file info
+        file_name = os.path.basename(x_ray_image)
+        file_size = os.path.getsize(x_ray_image)
+        
+        # Convert file size to human readable format
+        def format_file_size(bytes):
+            if bytes < 1024:
+                return f"{bytes} B"
+            elif bytes < 1024 * 1024:
+                return f"{bytes // 1024} KB"
+            else:
+                return f"{bytes // (1024 * 1024)} MB"
+        
+        # Try to get image dimensions using PIL
+        try:
+            with Image.open(x_ray_image) as img:
+                width, height = img.size
+                image_info = f"Dimensions: {width}×{height}px"
+        except Exception as e:
+            logger.warning(f"Could not get image dimensions for {x_ray_image}: {e}")
+            image_info = "Dimensions: Unknown"
+        
+        # Create a URL-friendly path for serving the image
+        # Use the MIDRC file serving endpoint with query parameter for absolute paths
+        # URL-encode the absolute path as a query parameter to avoid URL path issues
+        encoded_path = urllib.parse.quote(x_ray_image, safe='')
+        image_url = f"http://127.0.0.1:5000/api/serve-midrc-file?path={encoded_path}"
+        
+        # Return just the image URL instead of full HTML to avoid template processing issues
+        # The template system will handle the HTML rendering
+        logger.info(f"Successfully rendered image: {file_name}")
+        return f'<img src="{image_url}" alt="{file_name}" style="max-width: 100%; height: auto;" />'
+    
+    except Exception as e:
+        logger.error(f"Error rendering image {x_ray_image}: {str(e)}")
+        return f'<div class="image-error">❌ Error rendering image: {str(e)}</div>'
+
+
+def GenerateAnnotations(x_ray_image: str) -> str:
+    """
+    Generate annotations for a X-ray image and return as HTML table.
+    """
+
+    # Load the X-ray image
+    image = Image.open(x_ray_image)
+
+    prompt = """ Examine this image and look for any important clinical findings. 
+Provide a summary in a table format where the positive clinical conditions are 1 and the negative clinical conditions are 0.
+Designate each condition as left side, right side, or bilateral. Provide an ICD-10 code in a separate column for positive findings only or N/A if not applicable.
+
+Table columns include: [Exam no., Finding No., Clinical Finding, Left Side, Right Side, Bilateral, ICD-10 Code, ICD-10 Description]
+
+Additional instructions:
+1. Normal findings should be excluded from the each table.
+2. Group similar findings together where possible for each table.
+3. Create a csv format that we can use to create a table.
+"""
+
+    response = openai.chat.completions.create(
+        model="gpt-4.1-mini",
+        messages=[
+            {
+                "role": "system",
+                "content": "You are a helpful Chest Radiographer. You are given a chest X-ray image and you need to generate a table of clinical findings.",
+            },
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0.1,
+        max_tokens=5000,
+    )
+
+    csv_content = response.choices[0].message.content.strip()
+    print(csv_content)
+    
+    # Convert CSV to HTML table
+    html_table = _convert_csv_to_html_table(csv_content)
+    return html_table
+
+
+def _convert_csv_to_html_table(csv_content: str) -> str:
+    """
+    Convert CSV content to HTML table format.
+    
+    Args:
+        csv_content: CSV string content
+        
+    Returns:
+        HTML table string
+    """
+    try:
+        # Split content into lines
+        lines = csv_content.strip().split('\n')
+        
+        if not lines:
+            return '<div class="annotation-error">No data available for annotations</div>'
+        
+        # Start building HTML table with proper styling to handle span wrapper
+        html = '<div class="annotations-table-container" style="display: block; width: 100%; overflow-x: auto;">\n'
+        html += '<table class="annotations-table" style="display: table; width: 100%; border-collapse: collapse; margin: 0; padding: 0;">\n'
+        
+        # Process each line
+        for i, line in enumerate(lines):
+            if not line.strip():
+                continue
+                
+            # Split by comma, handling quoted fields
+            fields = _parse_csv_line(line)
+            
+            if i == 0:
+                # Header row
+                html += '<thead>\n<tr>\n'
+                for field in fields:
+                    html += f'<th style="border: 1px solid #ddd; padding: 8px; text-align: left; background-color: #f2f2f2; font-weight: bold;">{field.strip()}</th>\n'
+                html += '</tr>\n</thead>\n<tbody>\n'
+            else:
+                # Data row
+                html += '<tr>\n'
+                for field in fields:
+                    # Clean up the field content
+                    clean_field = field.strip().strip('"').strip("'")
+                    html += f'<td style="border: 1px solid #ddd; padding: 8px; text-align: left;">{clean_field}</td>\n'
+                html += '</tr>\n'
+        
+        html += '</tbody>\n</table>\n</div>'
+        
+        return html
+        
+    except Exception as e:
+        logger.error(f"Error converting CSV to HTML table: {str(e)}")
+        return f'<div class="annotation-error">Error processing annotations: {str(e)}</div>'
+
+
+def _parse_csv_line(line: str) -> List[str]:
+    """
+    Parse a CSV line, handling quoted fields properly.
+    
+    Args:
+        line: CSV line string
+        
+    Returns:
+        List of field values
+    """
+    fields = []
+    current_field = ""
+    in_quotes = False
+    i = 0
+    
+    while i < len(line):
+        char = line[i]
+        
+        if char == '"':
+            if in_quotes and i + 1 < len(line) and line[i + 1] == '"':
+                # Escaped quote
+                current_field += '"'
+                i += 2
+                continue
+            else:
+                # Toggle quote state
+                in_quotes = not in_quotes
+        elif char == ',' and not in_quotes:
+            # End of field
+            fields.append(current_field)
+            current_field = ""
+        else:
+            current_field += char
+        
+        i += 1
+    
+    # Add the last field
+    fields.append(current_field)
+    
+    return fields

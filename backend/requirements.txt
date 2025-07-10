@@ -10,12 +10,11 @@ openpyxl
 python-pptx
 python-dotenv
 mcp
-httpx 
+httpx
 gen3
 pydicom
 Pillow
 numpy
-requests
 python-gdcm
 pylibjpeg
 pylibjpeg-libjpeg

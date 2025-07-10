@@ -9,6 +9,8 @@ import hashlib
 import base64
 import subprocess
 import sys
+import urllib.parse
+import tempfile
 from werkzeug.utils import secure_filename
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
@@ -39,7 +41,7 @@ from pdf_processor import process_pdf_file
 from local_code_executor.code_executor import execute_code_locally
 from task_manager import TaskManager
 from pathlib import Path
-from tools import GetPatientData
+from tools import GetPatientData, GenerateAnnotations
 
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -2425,6 +2427,46 @@ age = patient_data['age']
 sex = patient_data['sex'] 
 x_ray_images = patient_data['x_ray']  # List of JPEG file paths""",
             "import_statement": "from tools import GetPatientData"
+        },
+        {
+            "name": "GenerateAnnotations",
+            "description": "Generate annotations for a X-ray image",
+            "function_signature": "GenerateAnnotations(x_ray_image: str) -> str",
+            "parameters": [
+                {
+                    "name": "x_ray_image",
+                    "type": "str",
+                    "description": "The path to the X-ray image to generate annotations for"
+                }
+            ],
+            "returns": {
+                "type": "str",
+                "description": "The annotations for the X-ray image"
+            },
+            "usage_example": """# Example usage:
+annotations = GenerateAnnotations("/var/folders/midrc_download_goy6na3v/1.2.826.0.1.3680043.10.474.419639.234031360761458340322601917251.jpg")
+""",
+            "import_statement": "from tools import GenerateAnnotations"
+        },
+        {
+            "name": "RenderImage",
+            "description": "Render an image, return the container to display the image in html.",
+            "function_signature": "RenderImage(x_ray_image: str) -> str",
+            "parameters": [
+                {
+                    "name": "x_ray_image",
+                    "type": "str",
+                    "description": "The path to the X-ray image to render"
+                }
+            ],
+            "returns": {
+                "type": "str",
+                "description": "The container to display the image in html"
+            },
+            "usage_example": """# Example usage:
+image_container = RenderImage("/var/folders/midrc_download_goy6na3v/1.2.826.0.1.3680043.10.474.419639.234031360761458340322601917251.jpg")
+""",
+            "import_statement": "from tools import RenderImage"
         }
     ]
     
@@ -2573,6 +2615,8 @@ def generate_variable_code():
             "8. The generated code should be reusable and work with different input values",
             "9. You can use any of the available tools listed above - they are pre-imported and ready to use",
             "10. For MIDRC data, use GetPatientData tool instead of manual API calls",
+            "11. For X-ray image annotations, use GenerateAnnotations tool instead of manual API calls",
+            "12. For image rendering, use RenderImage tool instead of manual API calls",
         ]
 
         if selected_data_source:
@@ -2941,6 +2985,66 @@ def serve_file(file_path):
 
     except Exception as e:
         logger.error(f"❌ Error serving file {file_path}: {e}")
+        return jsonify({"error": "Internal server error"}), 500
+
+
+# File serving endpoint for MIDRC files (absolute paths)
+@app.route("/api/serve-midrc-file")
+def serve_midrc_file():
+    """Serve MIDRC files from absolute paths (for temporary downloaded files)"""
+    try:
+        # Get the file path from query parameter
+        file_path = request.args.get('path')
+        if not file_path:
+            return jsonify({"error": "Path parameter is required"}), 400
+            
+        # URL-decode the file path to handle encoded absolute paths
+        decoded_path = urllib.parse.unquote(file_path)
+        
+        # Security check: ensure the path is within allowed directories
+        safe_path = os.path.normpath(decoded_path)
+        if ".." in safe_path:
+            logger.warning(f"🚫 Blocked potentially unsafe file path: {decoded_path}")
+            return jsonify({"error": "Invalid file path"}), 400
+
+        # Check if file exists
+        if not os.path.exists(safe_path):
+            logger.warning(f"📄 MIDRC file not found: {safe_path}")
+            return jsonify({"error": "File not found"}), 404
+
+        # Check if it's actually a file (not a directory)
+        if not os.path.isfile(safe_path):
+            logger.warning(f"🚫 Not a file: {safe_path}")
+            return jsonify({"error": "Not a file"}), 400
+
+        # Additional security: only allow files from temp directories or specific paths
+        allowed_prefixes = [
+            "/var/folders/",  # macOS temp directories
+            "/tmp/",          # Linux temp directories
+            tempfile.gettempdir() + "/",  # System temp directory
+        ]
+        
+        is_allowed = any(safe_path.startswith(prefix) for prefix in allowed_prefixes)
+        if not is_allowed:
+            logger.warning(f"🚫 Blocked access to file outside allowed directories: {safe_path}")
+            return jsonify({"error": "Access denied"}), 403
+
+        logger.info(f"📎 Serving MIDRC file: {safe_path}")
+
+        # Send file with proper headers for images
+        response = send_file(safe_path)
+
+        # Add CORS headers to allow cross-origin requests
+        response.headers.add("Access-Control-Allow-Origin", "*")
+        response.headers.add(
+            "Access-Control-Allow-Headers", "Content-Type,Authorization"
+        )
+        response.headers.add("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+
+        return response
+
+    except Exception as e:
+        logger.error(f"❌ Error serving MIDRC file {decoded_path}: {e}")
         return jsonify({"error": "Internal server error"}), 500
 
 
