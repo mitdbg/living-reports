@@ -16,6 +16,6 @@ pydicom
 Pillow
 numpy
 python-gdcm
-pylibjpeg
-pylibjpeg-libjpeg
+pylibjpeg>=2.0
+pylibjpeg-libjpeg>=2.1
 pylibjpeg-openjpeg

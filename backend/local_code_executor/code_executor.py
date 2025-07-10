@@ -47,6 +47,12 @@ def execute_code_locally(code, parameters):
     # Also try to import other commonly used libraries
     try:
         import pydicom
+        # Import pixel data handlers for DICOM decompression
+        import pydicom.pixel_data_handlers.gdcm_handler
+        import pydicom.pixel_data_handlers.pylibjpeg_handler
+        import pydicom.pixel_data_handlers.pillow_handler
+        import pydicom.pixel_data_handlers.jpeg_ls_handler
+        import pydicom.pixel_data_handlers.rle_handler
         from PIL import Image
         import requests
         import json

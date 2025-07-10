@@ -11,6 +11,12 @@ import openai
 import urllib.parse
 
 import pydicom
+# Import pixel data handlers for DICOM decompression
+import pydicom.pixel_data_handlers.gdcm_handler
+import pydicom.pixel_data_handlers.pylibjpeg_handler
+import pydicom.pixel_data_handlers.pillow_handler
+import pydicom.pixel_data_handlers.jpeg_ls_handler
+import pydicom.pixel_data_handlers.rle_handler
 from PIL import Image
 import numpy as np
 
@@ -273,8 +279,19 @@ def _convert_dicom_to_jpeg(dicom_path: str, output_dir: str) -> Optional[str]:
         Path to converted JPEG file or None if conversion failed
     """
     try:
-        # Read DICOM file
-        dicom_data = pydicom.dcmread(dicom_path)
+        # Debug: Check if handlers are available
+        from pydicom.pixel_data_handlers import gdcm_handler, pylibjpeg_handler
+        logger.info(f"GDCM handler available: {gdcm_handler.is_available()}")
+        logger.info(f"PyLibJPEG handler available: {pylibjpeg_handler.is_available()}")
+        logger.info(f"Registered handlers: {[h.__name__ for h in pydicom.config.pixel_data_handlers]}")
+        
+        # Read DICOM file with force=True to bypass some validation
+        dicom_data = pydicom.dcmread(dicom_path, force=True)
+        
+        # Check if pixel data exists
+        if not hasattr(dicom_data, 'pixel_array'):
+            logger.warning(f"No pixel data found in DICOM file: {dicom_path}")
+            return None
         
         # Get pixel array
         pixel_array = dicom_data.pixel_array
