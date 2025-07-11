@@ -17,7 +17,10 @@ const modesData = window[MODES_KEY];
 // Check if current user can switch modes
 export function canUserSwitchModes() {
   const currentUser = getCurrentUser();
-  if (!currentUser) return false;
+  
+  if (!currentUser) {
+    return false;
+  }
   
   // Alice (Report Consumer) cannot switch modes, only view preview
   if (currentUser.role === 'Report Consumer') {
@@ -61,7 +64,6 @@ function updateModeButtonStates(activeMode) {
   const previewModeBtn = getElements.previewModeBtn;
   
   if (!templateModeBtn || !previewModeBtn) {
-    console.log(`[${windowId}] Mode buttons not found for current document`);
     return;
   }
   
@@ -85,7 +87,6 @@ function updateModeButtonStates(activeMode) {
 }
 
 export function switchToSource() {
-  console.log(`[${windowId}] Switching to source mode`);
   
   updateState({ currentMode: 'source' });
   
@@ -130,9 +131,7 @@ export function switchToSource() {
   setTimeout(() => refreshHighlightEventListeners(), 100);
 }
 
-export function switchToTemplate() {
-  console.log(`[${windowId}] Switching to template mode`);
-  
+export function switchToTemplate() {  
   // Check if user can switch to template mode
   if (!canUserSwitchModes()) {
     console.log(`[${windowId}] User ${getCurrentUser()?.name} (${getCurrentUser()?.role}) cannot switch to template mode`);
@@ -182,8 +181,6 @@ export function switchToTemplate() {
 }
 
 export function switchToPreview() {
-  console.log(`[${windowId}] Switching to preview mode`);
-  
   updateState({ currentMode: 'preview' });
   
   // Use document-specific elements from state.js
@@ -224,13 +221,18 @@ export function switchToPreview() {
   updateModeButtonStates('preview');
   
   // Auto-execute template if switching from template mode and user can switch modes
+  
   if (canUserSwitchModes()) {
-    console.log(`[${windowId}] Auto-executing template when switching to preview`);
+    
     // Import and execute template - use dynamic import to avoid circular dependency
     import('./template-execution.js').then(module => {
-      module.executeTemplate(false, true); // isLiveUpdate = true to avoid showing status messages
-    }).catch(error => {
-      console.error(`[${windowId}] Error auto-executing template:`, error);
+      
+      if (module.executeTemplate) {
+        return module.executeTemplate(false, true); // isLiveUpdate = true to avoid showing status messages
+      } else {
+        console.error(`[${windowId}] 🔍 DEBUG: executeTemplate function not found in module`);
+        throw new Error('executeTemplate function not found');
+      }
     });
   }
   
@@ -326,12 +328,10 @@ function enforceConsumerMode() {
       templateControls.style.display = 'none';
     }
     
-    console.log(`[${windowId}] Consumer mode enforced for ${currentUser.name} - hiding source and template UI elements but allowing comments`);
   }
 }
 
 export function initModes() {
-  console.log(`[${windowId}] Initializing modes...`);
   
   // Setup event delegation once
   setupModeButtonEventDelegation();
@@ -340,30 +340,23 @@ export function initModes() {
   setTimeout(() => {
     // Check if buttons exist using document-specific access
     if (!getElements.templateModeBtn || !getElements.previewModeBtn) {
-      console.log(`[${windowId}] Mode buttons not found for current document`);
       return;
     }
     
     // Check if buttons are actually visible and have dimensions
     const buttonRect = getElements.templateModeBtn.getBoundingClientRect();
     if (buttonRect.width === 0 || buttonRect.height === 0) {
-      console.log(`[${windowId}] Mode buttons not visible yet, but event delegation is set up`);
       return;
     }
     
-    console.log(`[${windowId}] Mode buttons are visible, finalizing initialization`);
-    
     // Check user role and enforce restrictions
     const currentUser = getCurrentUser();
-    console.log(`[${windowId}] Initializing modes for user: ${currentUser?.name} (${currentUser?.role})`);
     
     // Enforce consumer mode restrictions
     enforceConsumerMode();
     
     // Update button states to match current mode
     updateModeButtonStates(state.currentMode);
-    
-    console.log(`[${windowId}] Modes initialized, current mode: ${state.currentMode}`);
     
     // Mark as initialized
     modesData.modesInitialized = true;

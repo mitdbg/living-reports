@@ -1,9 +1,220 @@
 // operators Module
+// Updated for consistency with variable-operator-generator.js:
+// - Standardized parameter type definitions (LITERAL, DATASET, VARIABLE)
+// - Standardized dependency handling patterns
+// - Consistent code execution with dependency support
 import { elements, state, updateState, windowId } from './state.js';
 import { addMessageToUI } from './chat.js';
 import { getCurrentUser } from './auth.js';
 import { createDocumentElementId } from './element-id-manager.js';
 import { executeCodeForAuthorLocal, convertHtmlCodeToPlainText } from './execute_tool_util.js';
+
+// Standardized Parameter Type Definitions (consistent with variable-operator-generator)
+const PARAMETER_TYPES = {
+  LITERAL: 'literal',
+  DATASET: 'dataset',
+  VARIABLE: 'variable'
+};
+
+// Standardized Dependency Handling Patterns
+class DependencyHandler {
+  /**
+   * Get current values of dependency variables (consistent with variable-operator-generator)
+   */
+  static async getDependencyValues(dependencies) {
+    const dependencyValues = {};
+    
+    if (!dependencies || dependencies.length === 0) {
+      return dependencyValues;
+    }
+    
+    try {
+      // Load variables manager to get current values
+      const { variablesManager } = await import('./variables.js');
+      
+      if (!variablesManager) {
+        console.warn('Variables manager not available for getting dependency values');
+        return dependencyValues;
+      }
+      
+      // Load latest variables
+      await variablesManager.loadVariables();
+      
+      // Get values for each dependency
+      for (const depName of dependencies) {
+        const variable = variablesManager.variables.get(depName);
+        if (variable) {
+          // Include variable info and current value
+          dependencyValues[depName] = {
+            name: variable.name,
+            type: variable.type || 'text',
+            description: variable.description || '',
+            value: variable.value !== undefined ? variable.value : null,
+            format: variable.format || ''
+          };
+          
+          console.log(`Dependency ${depName}:`, dependencyValues[depName]);
+        } else {
+          console.warn(`Dependency variable ${depName} not found`);
+          dependencyValues[depName] = {
+            name: depName,
+            type: 'text',
+            description: 'Variable not found',
+            value: null,
+            format: ''
+          };
+        }
+      }
+      
+    } catch (error) {
+      console.error('Error getting dependency values:', error);
+    }
+    
+    return dependencyValues;
+  }
+
+  /**
+   * Execute code with dependency values as function arguments (consistent with variable-operator-generator)
+   */
+  static async executeCodeWithDependencies(code, dataSource, dependencyValues, variableName) {
+    try {
+      // Prepare the execution context with dependencies
+      let executionCode = code;
+      
+      // If there are dependencies, we need to call the function with dependency values
+      if (dependencyValues && Object.keys(dependencyValues).length > 0) {
+        // Extract the function name from the generated code (assuming it follows pattern: def function_name(...))
+        const functionMatch = code.match(/def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/);
+        if (functionMatch) {
+          const functionName = functionMatch[1];
+          
+          // Prepare arguments for function call
+          const args = [];
+          const dependencies = Object.keys(dependencyValues);
+          
+          for (const depName of dependencies) {
+            console.log(`🔍 Processing dependency ${depName}:`, dependencyValues[depName]);
+            
+            if (dependencyValues[depName] && dependencyValues[depName].value !== null && dependencyValues[depName].value !== undefined) {
+              const value = dependencyValues[depName].value;
+              console.log(`✅ Found value for ${depName}:`, value, typeof value);
+              
+              // Format the value based on type with proper JSON serialization
+              if (typeof value === 'string') {
+                args.push(`'${value.replace(/'/g, "\\'")}'`);
+              } else if (typeof value === 'number') {
+                args.push(value.toString());
+              } else if (typeof value === 'boolean') {
+                args.push(value.toString());
+              } else if (value === null) {
+                args.push('None');
+              } else if (typeof value === 'object') {
+                // For objects (dicts, lists, etc.), serialize as JSON
+                try {
+                  const jsonValue = JSON.stringify(value);
+                  args.push(`json.loads('${jsonValue.replace(/'/g, "\\'")}')`);
+                  console.log(`✅ Serialized object ${depName} as JSON:`, jsonValue);
+                } catch (error) {
+                  console.error(`❌ Failed to serialize ${depName}:`, error);
+                  args.push('None');
+                }
+              } else {
+                // Fallback for other types
+                args.push(`'${String(value).replace(/'/g, "\\'")}'`);
+              }
+            } else {
+              console.warn(`❌ No valid value for dependency ${depName}, using None`);
+              args.push('None');
+            }
+          }
+          
+          // Check if function expects data_source parameter
+          const functionSignature = code.match(new RegExp(`def\\s+${functionName}\\s*\\(([^)]+)\\)`))?.[1] || '';
+          const hasDataSourceParam = functionSignature.includes('data_source');
+          
+          // Build function call with proper arguments
+          let functionCall;
+          if (hasDataSourceParam && dataSource) {
+            functionCall = `${functionName}(${args.join(', ')}, parameters['data_source'])`;
+          } else {
+            functionCall = `${functionName}(${args.join(', ')})`;
+          }
+          
+          // Append function call to the code
+          executionCode += `\n\n# Execute function with dependency values\noutput = ${functionCall}`;          
+        }
+      }
+      
+      // Use the same execution method but with enhanced code
+      const result = await executeCodeForAuthorLocal(
+        executionCode, 
+        dataSource, 
+        variableName, 
+        window.documentManager?.activeDocumentId || 'default',
+        true // Skip propagation to avoid infinite loops during dependency execution
+      );
+      
+      return result;
+      
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  /**
+   * Extract dependencies from operator parameters
+   */
+  static extractDependenciesFromParameters(parameters) {
+    const dependencies = [];
+    
+    if (!parameters) return dependencies;
+    
+    // Look for parameters of type 'variable' which represent dependencies
+    Object.entries(parameters).forEach(([key, paramData]) => {
+      if (typeof paramData === 'object' && paramData.type === PARAMETER_TYPES.VARIABLE) {
+        dependencies.push(paramData.value);
+      }
+    });
+    
+    return dependencies;
+  }
+
+  /**
+   * Validate that all dependencies exist in variables manager
+   */
+  static async validateDependencies(dependencies) {
+    if (!dependencies || dependencies.length === 0) {
+      return { valid: true, missing: [] };
+    }
+    
+    try {
+      const { variablesManager } = await import('./variables.js');
+      
+      if (!variablesManager) {
+        return { valid: false, missing: dependencies, error: 'Variables manager not available' };
+      }
+      
+      await variablesManager.loadVariables();
+      
+      const missing = [];
+      for (const depName of dependencies) {
+        const variable = variablesManager.variables.get(depName);
+        if (!variable) {
+          missing.push(depName);
+        }
+      }
+      
+      return {
+        valid: missing.length === 0,
+        missing: missing
+      };
+      
+    } catch (error) {
+      console.error('Error validating dependencies:', error);
+      return { valid: false, missing: dependencies, error: error.message };
+    }
+  }
+}
 
 // Create window-specific storage
 const CODE_INSTANCES_KEY = `operators_${windowId}`;
@@ -84,10 +295,7 @@ class OperatorManager {
     const instance = new Operator(options);
     this.instances.set(instance.id, instance);
     this.saveInstances();
-    
-    console.log(`[${windowId}] Created operator: ${instance.name} for document: ${instance.documentId}`);
-    addMessageToUI('system', `Created operator: ${instance.name}`);
-    
+
     return instance;
   }
 
@@ -114,7 +322,6 @@ class OperatorManager {
     this.instances.delete(instanceId);
     this.saveInstances();
     
-    console.log(`[${windowId}] Deleted operator: ${instance.name}`);
     addMessageToUI('system', `Deleted operator: ${instance.name}`);
   }
 
@@ -128,6 +335,20 @@ class OperatorManager {
     for (const instance of this.instances.values()) {
       if (instance.name === name && instance.documentId === currentDocumentId) {
         return instance;
+      }
+    }
+    return null;
+  }
+
+  getInstanceByOutputVariable(variableName) {
+    // Only search within the current document's operators
+    const currentDocumentId = window.documentManager?.activeDocumentId || 'default';
+    for (const instance of this.instances.values()) {
+      if (instance.documentId === currentDocumentId && instance.outputs) {
+        const hasOutput = instance.outputs.some(output => output.variable === variableName);
+        if (hasOutput) {
+          return instance;
+        }
       }
     }
     return null;
@@ -153,8 +374,6 @@ class OperatorManager {
       throw new Error('Instance not found');
     }
 
-    console.log(`[${windowId}] Executing operator: ${instance.name}`);
-    
     let dataSource = null; // Declare dataSource in the broader scope
     
     try {
@@ -182,19 +401,38 @@ class OperatorManager {
         }
       }
       
-      console.log(`[${windowId}] Executing with data source:`, dataSource);
+      // Extract dependencies from parameters using standardized approach
+      const dependencies = DependencyHandler.extractDependenciesFromParameters(instance.parameters);
       
-      console.log(`[${windowId}] Code to execute:`, plainTextCode);
+      // Validate dependencies before execution
+      const dependencyValidation = await DependencyHandler.validateDependencies(dependencies);
+      if (!dependencyValidation.valid) {
+        console.warn(`[${windowId}] Missing dependencies:`, dependencyValidation.missing);
+      }
 
-      // Execute using the same method as variable-operator-generator
-      const result = await executeCodeForAuthorLocal(
-        plainTextCode, 
-        dataSource, 
-        instance.name, 
-        window.documentManager?.activeDocumentId || 'default'
-      );
-
-      console.log(`[${windowId}] Result:`, result);
+      // Execute using standardized dependency handling (consistent with variable-operator-generator)
+      let result;
+      if (dependencies.length > 0) {
+        // Get current dependency values
+        const dependencyValues = await DependencyHandler.getDependencyValues(dependencies);
+        console.log(`[${windowId}] Dependency values:`, dependencyValues);
+        
+        // Execute with dependencies
+        result = await DependencyHandler.executeCodeWithDependencies(
+          plainTextCode,
+          dataSource,
+          dependencyValues,
+          instance.name
+        );
+      } else {
+        // Execute without dependencies (original approach)
+        result = await executeCodeForAuthorLocal(
+          plainTextCode, 
+          dataSource, 
+          instance.name, 
+          window.documentManager?.activeDocumentId || 'default'
+        );
+      }
       
       // Update instance with results
       instance.output = result;
@@ -218,7 +456,6 @@ class OperatorManager {
               // but we still support output config for nested value extraction
               if (output.config && output.config.trim() && output.config !== 'output') {
                 valueToStore = this.extractValueFromOutput(result, output.config);
-                console.log(`[${windowId}] Extracted value using config "${output.config}":`, valueToStore);
               }
               
               // Import variables manager and store the result (same as variable-operator-generator)
@@ -236,25 +473,18 @@ class OperatorManager {
                   
                   // Use setVariableValue to trigger dependency propagation
                   await variablesManager.setVariableValue(output.variable, valueToStore);
-                  console.log(`[${windowId}] Stored output in variable with dependency propagation: ${output.variable} = ${valueToStore}`);
-                  addMessageToUI('system', `📊 Output stored in variable: \${${output.variable}} = ${JSON.stringify(valueToStore)}`);
                 } else {
                   console.warn(`[${windowId}] Variable not found: ${output.variable}`);
-                  addMessageToUI('system', `⚠️ Warning: Variable ${output.variable} not found`);
                 }
               }
             } catch (error) {
               console.warn(`[${windowId}] Failed to store output in variable ${output.variable}:`, error);
-              addMessageToUI('system', `⚠️ Warning: Could not store output in variable ${output.variable}: ${error.message}`);
             }
           }
         }
 
         this.saveInstances();
         this.notifyInstanceUpdate(instance);
-  
-        console.log(`[${windowId}] operator executed successfully: ${instance.name}`);
-        addMessageToUI('system', `✅ operator executed: ${instance.name}`);
   
         return result;
       } else {
@@ -263,7 +493,6 @@ class OperatorManager {
         instance.error = 'Execution returned null or undefined result';
         this.saveInstances();
         this.notifyInstanceUpdate(instance);
-        addMessageToUI('system', `❌ Error executing ${instance.name}: No result returned`);
         throw new Error('Execution returned null or undefined result');
       }
 
@@ -292,32 +521,18 @@ class OperatorManager {
       this.saveInstances();
       this.notifyInstanceUpdate(instance);
 
-      addMessageToUI('system', `❌ Error executing ${instance.name}: ${errorMessage}`);
       throw error;
     }
   }
 
   async getTool(toolId) {
-    console.log(`[${windowId}] Getting tool with ID: ${toolId}`);
     
     // Get tool from the existing tools system
     if (window.toolsManager) {
-      console.log(`[${windowId}] Using toolsManager, available tools:`, window.toolsManager.tools.length);
       const tool = window.toolsManager.tools.find(tool => tool.id === toolId);
       if (tool) {
-        console.log(`[${windowId}] Found tool in toolsManager:`, {
-          id: tool.id, 
-          name: tool.name, 
-          hasCode: !!tool.code,
-          toolKeys: Object.keys(tool)
-        });
         return tool;
-      } else {
-        console.log(`[${windowId}] Tool not found in toolsManager. Available tool IDs:`, 
-          window.toolsManager.tools.map(t => t.id));
       }
-    } else {
-      console.log(`[${windowId}] No toolsManager available`);
     }
     
     // Fallback to API
@@ -333,16 +548,7 @@ class OperatorManager {
       const result = await response.json();
       if (result.success) {
         const tools = result.tools || [];
-        console.log(`[${windowId}] API returned ${tools.length} tools`);
         const tool = tools.find(tool => tool.id === toolId);
-        if (tool) {
-          console.log(`[${windowId}] Found tool in API:`, {
-            id: tool.id, 
-            name: tool.name, 
-            hasCode: !!tool.code,
-            toolKeys: Object.keys(tool)
-          });
-        }
         return tool;
       }
     } catch (error) {
@@ -471,8 +677,6 @@ class OperatorManager {
       // Use document-specific storage key
       const storageKey = `code_instances_${windowId}_${currentDocumentId}`;
       localStorage.setItem(storageKey, JSON.stringify(instancesData));
-      
-      console.log(`[${windowId}] Saved ${Object.keys(instancesData).length} operators for document: ${currentDocumentId}`);
     } catch (error) {
       console.error('Error saving operators:', error);
     }
@@ -498,12 +702,9 @@ class OperatorManager {
           const instance = Operator.fromJSON(data);
           this.instances.set(id, instance);
         }
-        
-        console.log(`[${windowId}] Loaded ${Object.keys(instancesData).length} operators for document: ${currentDocumentId}`);
       } else {
         // Clear instances for this document if no saved data
         this.clearInstancesForDocument(currentDocumentId);
-        console.log(`[${windowId}] No saved operators found for document: ${currentDocumentId}`);
       }
     } catch (error) {
       console.error('Error loading operators:', error);
@@ -522,14 +723,10 @@ class OperatorManager {
     instancesToRemove.forEach(id => {
       this.instances.delete(id);
     });
-    
-    console.log(`[${windowId}] Cleared ${instancesToRemove.length} operators for document: ${documentId}`);
   }
 
   // Method to refresh operators when switching documents
   async refreshForDocument(documentId) {
-    console.log(`[${windowId}] Refreshing operators for document: ${documentId}`);
-    
     // Load instances for the new document
     this.loadInstances();
     
@@ -539,14 +736,10 @@ class OperatorManager {
 
   // Validate that operator output variable assignments still exist in variables manager
   async validateVariableAssignments() {
-    console.log(`[${windowId}] Validating variable assignments for operators...`);
-    
     try {
       // Get current valid variables from variables manager and backend
       const validVariables = await this.getValidVariables();
       const validVariableNames = new Set(Object.keys(validVariables));
-      
-      console.log(`[${windowId}] Found ${validVariableNames.size} valid variables:`, Array.from(validVariableNames));
       
       let invalidAssignmentsFound = 0;
       
@@ -571,12 +764,8 @@ class OperatorManager {
       
       if (invalidAssignmentsFound > 0) {
         console.warn(`[${windowId}] Found ${invalidAssignmentsFound} invalid variable assignments`);
-        addMessageToUI('system', `⚠️ ${invalidAssignmentsFound} operator output assignments point to non-existent variables`);
-        
         // Save the updated instances with validation flags
         this.saveInstances();
-      } else {
-        console.log(`[${windowId}] All variable assignments are valid`);
       }
       
     } catch (error) {
@@ -593,23 +782,15 @@ class OperatorManager {
       
       // Try variables manager first
       if (window.variablesManager) {
-        console.log(`[${windowId}] Loading fresh variables from backend via variables manager...`);
         await window.variablesManager.loadVariables();
         
         if (window.variablesManager.variables && window.variablesManager.variables.size > 0) {
           variables = window.variablesManager.variables;
-          console.log(`[${windowId}] Found ${variables.size} variables from variables manager`);
-        } else {
-          console.log(`[${windowId}] No variables found in variables manager after loading`);
         }
-      } else {
-        console.log(`[${windowId}] Variables manager not available, falling back to direct API call`);
       }
       
       // Fallback: Call API directly if variables manager is null or has no variables
       if (!variables || variables.size === 0) {
-        console.log(`[${windowId}] Calling /api/variables directly as fallback...`);
-        
         const documentId = window.documentManager?.activeDocumentId;
         if (!documentId) {
           console.warn(`[${windowId}] No active document ID available for API call`);
@@ -625,21 +806,17 @@ class OperatorManager {
         const result = await response.json();
         if (result.success && result.variables) {
           const variablesData = result.variables || {};
-          console.log(`[${windowId}] API returned ${Object.keys(variablesData).length} variables`);
           
           // Convert API response to object for consistent processing
           Object.entries(variablesData).forEach(([name, variable]) => {
             validVariables[name] = variable;
           });
-        } else {
-          console.log(`[${windowId}] API returned no variables or failed`);
         }
       } else {
         // Use variables from variables manager
         variables.forEach((variable, name) => {
           validVariables[name] = variable;
         });
-        console.log(`[${windowId}] Loaded ${variables.size} variables from variables manager`);
       }
       
     } catch (error) {
@@ -745,10 +922,7 @@ export function initOperators() {
       showOperatorLoadingIndicator,
       hideOperatorLoadingIndicator
     };
-    console.log(`[${windowId}] window.operatorsModule set up in initOperators`);
-  }
-  
-  console.log(`[${windowId}] operators initialized`);
+  }  
 }
 
 // Setup listener for document switching to refresh operators
@@ -761,7 +935,6 @@ function setupDocumentSwitchingListener() {
       setTimeout(async () => {
         if (operatorManager && window.documentManager?.activeDocumentId) {
           const newDocumentId = window.documentManager.activeDocumentId;
-          console.log(`[${windowId}] Document switched to: ${newDocumentId}, refreshing operators`);
           await operatorManager.refreshForDocument(newDocumentId);
           
           // If operators panel is currently open, refresh its content
@@ -778,7 +951,6 @@ function setupDocumentSwitchingListener() {
   document.addEventListener('documentChanged', async (event) => {
     if (operatorManager && event.detail?.documentId) {
       const newDocumentId = event.detail.documentId;
-      console.log(`[${windowId}] Document changed event to: ${newDocumentId}, refreshing operators`);
       await operatorManager.refreshForDocument(newDocumentId);
       
       // If operators panel is currently open, refresh its content
@@ -818,8 +990,6 @@ function setupAutoStyling() {
 
 // Setup event listeners using direct element attachment (similar to file-operations.js)
 function setupOperatorEventListeners() {
-  console.log(`[${windowId}] 🔧 setupOperatorEventListeners() called - using direct element attachment`);
-  
   // Get the active document container
   const container = getActiveDocumentContainer();
   if (!container) {
@@ -835,7 +1005,6 @@ function setupOperatorEventListeners() {
   
   // Create event handlers
   operatorsEventData.operatorsBtnHandler = () => {
-    console.log(`[${windowId}] operators button clicked`);
     showOperatorsDialog();
   };
   
@@ -905,13 +1074,11 @@ function setupOperatorEventListeners() {
     }
 
     if (e.target.matches('.add-parameter-btn')) {
-      console.log(`[${windowId}] 🔧 Add parameter button clicked`);
       addParameterField();
       return;
     }
     
     if (e.target.matches('.add-output-btn')) {
-      console.log(`[${windowId}] 🔧 Add output button clicked`);
       addOutputField();
       return;
     }
@@ -932,61 +1099,51 @@ function setupOperatorEventListeners() {
   if (operatorsBtn) {
     operatorsBtn.addEventListener('click', operatorsEventData.operatorsBtnHandler);
     operatorsEventData.currentElements.operatorsBtn = operatorsBtn;
-    console.log(`[${windowId}] ✅ Attached operators button listener`);
   }
   
   if (addInstanceBtn) {
     addInstanceBtn.addEventListener('click', operatorsEventData.addInstanceBtnHandler);
     operatorsEventData.currentElements.addInstanceBtn = addInstanceBtn;
-    console.log(`[${windowId}] ✅ Attached add instance button listener`);
   }
   
   if (backToOperatorsBtn) {
     backToOperatorsBtn.addEventListener('click', operatorsEventData.backToOperatorsBtnHandler);
     operatorsEventData.currentElements.backToOperatorsBtn = backToOperatorsBtn;
-    console.log(`[${windowId}] ✅ Attached back to operators button listener`);
   }
   
   if (saveToolBtn) {
     saveToolBtn.addEventListener('click', operatorsEventData.saveToolBtnHandler);
     operatorsEventData.currentElements.saveToolBtn = saveToolBtn;
-    console.log(`[${windowId}] ✅ Attached save tool button listener`);
   }
   
   if (cancelToolBtn) {
     cancelToolBtn.addEventListener('click', operatorsEventData.cancelToolBtnHandler);
     operatorsEventData.currentElements.cancelToolBtn = cancelToolBtn;
-    console.log(`[${windowId}] ✅ Attached cancel tool button listener`);
   }
   
   if (saveInstanceBtn) {
     saveInstanceBtn.addEventListener('click', operatorsEventData.saveInstanceBtnHandler);
     operatorsEventData.currentElements.saveInstanceBtn = saveInstanceBtn;
-    console.log(`[${windowId}] ✅ Attached save instance button listener`);
   }
   
   if (cancelInstanceBtn) {
     cancelInstanceBtn.addEventListener('click', operatorsEventData.cancelInstanceBtnHandler);
     operatorsEventData.currentElements.cancelInstanceBtn = cancelInstanceBtn;
-    console.log(`[${windowId}] ✅ Attached cancel instance button listener`);
   }
   
   if (closeOperatorsBtn) {
     closeOperatorsBtn.addEventListener('click', operatorsEventData.closeOperatorsBtnHandler);
     operatorsEventData.currentElements.closeOperatorsBtn = closeOperatorsBtn;
-    console.log(`[${windowId}] ✅ Attached close operators button listener`);
   }
   
   if (toolSelection) {
     toolSelection.addEventListener('change', operatorsEventData.toolSelectionChangeHandler);
     operatorsEventData.currentElements.toolSelection = toolSelection;
-    console.log(`[${windowId}] ✅ Attached tool selection change listener`);
   }
   
   // Attach the panel click handler for dynamic elements
   if (container) {
     container.addEventListener('click', operatorsEventData.operatorsPanelClickHandler);
-    console.log(`[${windowId}] ✅ Attached operators panel delegation handler`);
   }
   
   // Setup tools sidebar event listeners
@@ -995,63 +1152,50 @@ function setupOperatorEventListeners() {
   // Mark as initialized
   operatorsEventData.operatorsInitialized = true;
   
-  console.log(`[${windowId}] ✅ setupOperatorEventListeners completed - direct element attachment`);
 }
 
 // Cleanup function for operator event listeners
 function cleanupOperatorEventListeners() {
-  console.log(`[${windowId}] 🧹 Cleaning up operator event listeners...`);
-  
   // Remove listeners from tracked elements
   if (operatorsEventData.currentElements.operatorsBtn && operatorsEventData.operatorsBtnHandler) {
     operatorsEventData.currentElements.operatorsBtn.removeEventListener('click', operatorsEventData.operatorsBtnHandler);
-    console.log(`[${windowId}] 🧹 Removed operators button listener`);
   }
   
   if (operatorsEventData.currentElements.addInstanceBtn && operatorsEventData.addInstanceBtnHandler) {
     operatorsEventData.currentElements.addInstanceBtn.removeEventListener('click', operatorsEventData.addInstanceBtnHandler);
-    console.log(`[${windowId}] 🧹 Removed add instance button listener`);
   }
   
   if (operatorsEventData.currentElements.backToOperatorsBtn && operatorsEventData.backToOperatorsBtnHandler) {
     operatorsEventData.currentElements.backToOperatorsBtn.removeEventListener('click', operatorsEventData.backToOperatorsBtnHandler);
-    console.log(`[${windowId}] 🧹 Removed back to operators button listener`);
   }
   
   if (operatorsEventData.currentElements.saveToolBtn && operatorsEventData.saveToolBtnHandler) {
     operatorsEventData.currentElements.saveToolBtn.removeEventListener('click', operatorsEventData.saveToolBtnHandler);
-    console.log(`[${windowId}] 🧹 Removed save tool button listener`);
   }
   
   if (operatorsEventData.currentElements.cancelToolBtn && operatorsEventData.cancelToolBtnHandler) {
     operatorsEventData.currentElements.cancelToolBtn.removeEventListener('click', operatorsEventData.cancelToolBtnHandler);
-    console.log(`[${windowId}] 🧹 Removed cancel tool button listener`);
   }
   
   if (operatorsEventData.currentElements.saveInstanceBtn && operatorsEventData.saveInstanceBtnHandler) {
     operatorsEventData.currentElements.saveInstanceBtn.removeEventListener('click', operatorsEventData.saveInstanceBtnHandler);
-    console.log(`[${windowId}] 🧹 Removed save instance button listener`);
   }
   
   if (operatorsEventData.currentElements.cancelInstanceBtn && operatorsEventData.cancelInstanceBtnHandler) {
     operatorsEventData.currentElements.cancelInstanceBtn.removeEventListener('click', operatorsEventData.cancelInstanceBtnHandler);
-    console.log(`[${windowId}] 🧹 Removed cancel instance button listener`);
   }
   
   if (operatorsEventData.currentElements.closeOperatorsBtn && operatorsEventData.closeOperatorsBtnHandler) {
     operatorsEventData.currentElements.closeOperatorsBtn.removeEventListener('click', operatorsEventData.closeOperatorsBtnHandler);
-    console.log(`[${windowId}] 🧹 Removed close operators button listener`);
   }
   
   if (operatorsEventData.currentElements.toolSelection && operatorsEventData.toolSelectionChangeHandler) {
     operatorsEventData.currentElements.toolSelection.removeEventListener('change', operatorsEventData.toolSelectionChangeHandler);
-    console.log(`[${windowId}] 🧹 Removed tool selection change listener`);
   }
   
   // Remove panel delegation handler
   if (operatorsEventData.currentOperatorsPanel && operatorsEventData.operatorsPanelClickHandler) {
     operatorsEventData.currentOperatorsPanel.removeEventListener('click', operatorsEventData.operatorsPanelClickHandler);
-    console.log(`[${windowId}] 🧹 Removed operators panel delegation handler`);
   }
   
   // Clean up tools sidebar listeners
@@ -1080,7 +1224,6 @@ function cleanupOperatorEventListeners() {
   
   operatorsEventData.operatorsInitialized = false;
   
-  console.log(`[${windowId}] ✅ Operator event listeners cleanup completed`);
 }
 
 // Helper function to get the active document container
@@ -1209,8 +1352,6 @@ function showOperatorsListView() {
 }
 
 function showToolEditor(toolId = null) {
-  console.log(`[${windowId}] 🔧 showToolEditor() EXECUTED - Call #${++window.showToolEditorCallCount || (window.showToolEditorCallCount = 1)}`);
-  
   // Get the active document container
   const container = getActiveDocumentContainer();
   if (!container) {
@@ -1253,7 +1394,7 @@ function showToolEditor(toolId = null) {
   }
 }
 
-function showInstanceEditor(instanceId = null) {
+async function showInstanceEditor(instanceId = null) {
   // Get the active document container
   const container = getActiveDocumentContainer();
   if (!container) {
@@ -1296,7 +1437,7 @@ function showInstanceEditor(instanceId = null) {
   // Set title and populate form if editing
   if (instanceId) {
     if (title) title.textContent = 'Edit Operator Instance';
-    populateInstanceForm(instanceId);
+    await populateInstanceForm(instanceId);
   } else {
     if (title) title.textContent = 'Configure Operator Instance';
     clearInstanceForm();
@@ -1399,19 +1540,14 @@ async function populateVariablesList() {
   const container = getActiveDocumentContainer();
   if (!container) return;
   
-  console.log('🔄 Populating all variable dropdowns in instance editor...');
-  
   const allSelects = container.querySelectorAll(`#${createDocumentElementId('embedded-instance-outputs')} .output-variable-select`);
-  console.log(`📊 Found ${allSelects.length} variable dropdown(s) to populate`);
   
   for (const select of allSelects) {
     await populateVariablesDropdown(select);
   }
-  
-  console.log('✅ All variable dropdowns populated');
 }
 
-function populateInstanceForm(instanceId) {
+async function populateInstanceForm(instanceId) {
   const instance = operatorManager.getInstance(instanceId);
   if (!instance) return;
   
@@ -1426,7 +1562,7 @@ function populateInstanceForm(instanceId) {
   if (toolSelect) toolSelect.value = instance.toolId;
   
   // Populate parameters
-  populateParametersForm(instance.parameters);
+  await populateParametersForm(instance.parameters);
   
   // Populate outputs
   populateOutputsForm(instance);
@@ -1452,7 +1588,7 @@ function clearInstanceForm() {
   operatorsData.currentEditingInstance = null;
 }
 
-function populateParametersForm(parameters) {
+async function populateParametersForm(parameters) {
   // Get the active document container
   const documentContainer = getActiveDocumentContainer();
   if (!documentContainer) return;
@@ -1462,13 +1598,17 @@ function populateParametersForm(parameters) {
 
   container.innerHTML = '';
 
-      Object.entries(parameters).forEach(([key, paramData]) => {
-      if (typeof paramData === 'object' && paramData.type && paramData.value !== undefined) {
-        addParameterField(key, paramData.value, paramData.type);
-      } else {
-        addParameterField(key, paramData, 'literal');
-      }
-    });
+  for (const [key, paramData] of Object.entries(parameters)) {
+    if (typeof paramData === 'object' && paramData.type && paramData.value !== undefined) {
+      // Use standardized parameter types
+      const paramType = Object.values(PARAMETER_TYPES).includes(paramData.type) 
+        ? paramData.type 
+        : PARAMETER_TYPES.LITERAL;
+      await addParameterField(key, paramData.value, paramType);
+    } else {
+      await addParameterField(key, paramData, PARAMETER_TYPES.LITERAL);
+    }
+  }
 }
 
 function clearParametersForm() {
@@ -1511,9 +1651,7 @@ function clearOutputsForm() {
   }
 }
 
-function addParameterField(key = '', value = '', valueType = 'literal') {
-  console.log(`[${windowId}] 🔧 addParameterField() EXECUTED - Call #${++window.addParameterCallCount || (window.addParameterCallCount = 1)}`);
-  
+async function addParameterField(key = '', value = '', valueType = 'literal') {
   // Get the active document container
   const documentContainer = getActiveDocumentContainer();
   if (!documentContainer) return;
@@ -1526,9 +1664,24 @@ function addParameterField(key = '', value = '', valueType = 'literal') {
   const datasetOptions = datasets.map(dataset => {
     // Use filePath as the value for code execution, fallback to referenceName for backward compatibility
     const datasetValue = dataset.filePath || dataset.referenceName;
-    const isSelected = valueType === 'dataset' && (value === datasetValue || value === dataset.referenceName);
+    const isSelected = valueType === PARAMETER_TYPES.DATASET && (value === datasetValue || value === dataset.referenceName);
     const displayName = `${getFileIcon(dataset.type)} ${dataset.name} ($${dataset.referenceName})`;
     return `<option value="${datasetValue}" ${isSelected ? 'selected' : ''}>${displayName}</option>`;
+  }).join('');
+
+  // Get available variables for the dropdown (load fresh if needed)
+  let variables = [];
+  if (window.variablesManager) {
+    try {
+      await window.variablesManager.loadVariables();
+      variables = Array.from(window.variablesManager.variables.keys());
+    } catch (error) {
+      console.warn('Could not load variables for parameter field:', error);
+    }
+  }
+  const variableOptions = variables.map(varName => {
+    const isSelected = valueType === PARAMETER_TYPES.VARIABLE && value === varName;
+    return `<option value="${varName}" ${isSelected ? 'selected' : ''}>${varName}</option>`;
   }).join('');
 
   const field = document.createElement('div');
@@ -1537,30 +1690,42 @@ function addParameterField(key = '', value = '', valueType = 'literal') {
     <input type="text" class="param-key" placeholder="Parameter name" value="${key}">
     <div class="param-value-container">
       <select class="param-type-select">
-        <option value="literal" ${valueType === 'literal' ? 'selected' : ''}>Literal Value</option>
-        <option value="dataset" ${valueType === 'dataset' ? 'selected' : ''}>Dataset</option>
+        <option value="${PARAMETER_TYPES.LITERAL}" ${valueType === PARAMETER_TYPES.LITERAL ? 'selected' : ''}>Literal Value</option>
+        <option value="${PARAMETER_TYPES.DATASET}" ${valueType === PARAMETER_TYPES.DATASET ? 'selected' : ''}>Dataset</option>
+        <option value="${PARAMETER_TYPES.VARIABLE}" ${valueType === PARAMETER_TYPES.VARIABLE ? 'selected' : ''}>Variable</option>
       </select>
-      <input type="text" class="param-value param-literal" placeholder="e.g., false, 123, 'text'" value="${valueType === 'literal' ? value : ''}" ${valueType === 'dataset' ? 'style="display: none;"' : ''}>
-      <select class="param-value param-dataset" ${valueType === 'literal' ? 'style="display: none;"' : ''}>
+      <input type="text" class="param-value param-literal" placeholder="e.g., false, 123, 'text'" value="${valueType === PARAMETER_TYPES.LITERAL ? value : ''}" ${valueType !== PARAMETER_TYPES.LITERAL ? 'style="display: none;"' : ''}>
+      <select class="param-value param-dataset" ${valueType !== PARAMETER_TYPES.DATASET ? 'style="display: none;"' : ''}>
         <option value="">Select dataset...</option>
         ${datasetOptions}
+      </select>
+      <select class="param-value param-variable" ${valueType !== PARAMETER_TYPES.VARIABLE ? 'style="display: none;"' : ''}>
+        <option value="">Select variable...</option>
+        ${variableOptions}
       </select>
     </div>
     <button type="button" class="remove-param-btn">✕</button>
   `;
   
-  // Add event listener to toggle between literal and dataset
+  // Add event listener to toggle between parameter types
   const typeSelect = field.querySelector('.param-type-select');
   const literalInput = field.querySelector('.param-literal');
   const datasetSelect = field.querySelector('.param-dataset');
+  const variableSelect = field.querySelector('.param-variable');
   
   typeSelect.addEventListener('change', () => {
-    if (typeSelect.value === 'literal') {
+    // Hide all inputs first
+    literalInput.style.display = 'none';
+    datasetSelect.style.display = 'none';
+    variableSelect.style.display = 'none';
+    
+    // Show the appropriate input based on selection
+    if (typeSelect.value === PARAMETER_TYPES.LITERAL) {
       literalInput.style.display = '';
-      datasetSelect.style.display = 'none';
-    } else {
-      literalInput.style.display = 'none';
+    } else if (typeSelect.value === PARAMETER_TYPES.DATASET) {
       datasetSelect.style.display = '';
+    } else if (typeSelect.value === PARAMETER_TYPES.VARIABLE) {
+      variableSelect.style.display = '';
     }
   });
 
@@ -1573,8 +1738,6 @@ function addParameterField(key = '', value = '', valueType = 'literal') {
 }
 
 async function addOutputField(outputConfig = '', outputVariable = '') {
-  console.log(`[${windowId}] 🔧 addOutputField() EXECUTED - Call #${++window.addOutputCallCount || (window.addOutputCallCount = 1)}`);
-  
   // Get the active document container
   const documentContainer = getActiveDocumentContainer();
   if (!documentContainer) return;
@@ -1605,17 +1768,10 @@ async function addOutputField(outputConfig = '', outputVariable = '') {
   
   // Set the selected value if provided
   if (outputVariable) {
-    console.log(`🔧 Setting output variable selection to: "${outputVariable}"`);
-    
     // Check if the variable exists in the dropdown
     const optionExists = select.querySelector(`option[value="${outputVariable}"]`);
     if (optionExists) {
       select.value = outputVariable;
-      console.log(`  ✅ Variable "${outputVariable}" found and selected`);
-    } else {
-      console.log(`  ⚠️ Variable "${outputVariable}" not found in existing variables. Skipping assignment.`);
-      console.log(`  Available variables:`, Array.from(select.options).map(opt => opt.value).filter(v => v));
-      // Just skip - don't set any value, leave it unselected
     }
   }
 }
@@ -1626,8 +1782,6 @@ async function populateVariablesDropdown(select) {
     return;
   }
 
-  console.log('🔄 Populating variables dropdown...');
-
   // Clear existing options except the first one
   select.innerHTML = '<option value="">Select a variable...</option>';
 
@@ -1636,22 +1790,15 @@ async function populateVariablesDropdown(select) {
     
     // Try variables manager first
     if (window.variablesManager) {
-      console.log('📡 Loading fresh variables from backend via variables manager...');
       await window.variablesManager.loadVariables();
       
       if (window.variablesManager.variables && window.variablesManager.variables.size > 0) {
         variables = window.variablesManager.variables;
-        console.log(`📊 Found ${variables.size} variables in variables manager`);
-      } else {
-        console.log('📊 No variables found in variables manager after loading from backend');
       }
-    } else {
-      console.log('⚠️ Variables manager not available, falling back to direct API call');
     }
     
     // Fallback: Call API directly if variables manager is null or has no variables
     if (!variables || variables.size === 0) {
-      console.log('📡 Calling /api/variables directly as fallback...');
       
       const documentId = window.documentManager?.activeDocumentId;
       if (!documentId) {
@@ -1668,7 +1815,6 @@ async function populateVariablesDropdown(select) {
       const result = await response.json();
       if (result.success && result.variables) {
         const variablesData = result.variables || {};
-        console.log(`📊 API returned ${Object.keys(variablesData).length} variables`);
         
         // Convert API response to Map-like structure for consistent processing
         variables = new Map();
@@ -1676,7 +1822,6 @@ async function populateVariablesDropdown(select) {
           variables.set(name, variable);
         });
       } else {
-        console.log('📊 API returned no variables or failed');
         variables = new Map(); // Empty map
       }
     }
@@ -1688,12 +1833,7 @@ async function populateVariablesDropdown(select) {
         option.value = name;
         option.textContent = `${name} (${variable.type || 'text'})`;
         select.appendChild(option);
-        console.log(`  ✓ Added variable: ${name}`);
       });
-      
-      console.log(`✅ Populated ${variables.size} variables in dropdown`);
-    } else {
-      console.log('📊 No variables available from any source');
     }
 
   } catch (error) {
@@ -1740,13 +1880,10 @@ function hideOperatorLoadingIndicator() {
   if (nameInput) nameInput.disabled = false;
   if (toolSelect) toolSelect.disabled = false;
   
-  console.log('✅ Hiding operator loading indicator');
 }
 
 // Auto-populate operator fields using LLM
 async function autoPopulateOperatorFields(toolId) {
-  console.log(`[${windowId}] Auto-populating fields for tool: ${toolId}`);
-  
   try {
     // Get the tool
     const tool = await operatorManager.getTool(toolId);
@@ -1757,7 +1894,6 @@ async function autoPopulateOperatorFields(toolId) {
 
     // Show loading indicator
     showOperatorLoadingIndicator();
-    addMessageToUI('system', `🤖 Analyzing tool "${tool.name}" to suggest operator configuration...`);
 
     // Call LLM to analyze the tool and suggest configurations
     const suggestions = await callLLMForToolAnalysis(tool);
@@ -1765,13 +1901,11 @@ async function autoPopulateOperatorFields(toolId) {
     if (suggestions) {
       // Populate the suggested fields (force repopulation since this is auto-triggered by tool selection)
       await populateSuggestedFields(suggestions, true);
-      addMessageToUI('system', `✅ Auto-populated operator fields based on "${tool.name}"`);
     }
 
   } catch (error) {
     hideOperatorLoadingIndicator();
     console.error('Error auto-populating operator fields:', error);
-    addMessageToUI('system', `⚠️ Could not auto-populate fields: ${error.message}`);
   } finally {
     // Always hide loading indicator, even if there was an error
     hideOperatorLoadingIndicator();
@@ -1802,7 +1936,6 @@ async function callLLMForToolAnalysis(tool) {
     }
 
     const result = await response.json();
-    console.log('Operator config suggestion response:', result);
 
     if (result.success && result.suggestion) {
       const suggestions = result.suggestion;
@@ -1814,12 +1947,9 @@ async function callLLMForToolAnalysis(tool) {
         suggestions.parameters = Array.isArray(suggestions.parameters) ? suggestions.parameters : [];
         suggestions.outputs = Array.isArray(suggestions.outputs) ? suggestions.outputs : [];
         
-        console.log('Validated suggestions:', suggestions);
-        
         // Show warning if fallback was used
         if (result.warning) {
           console.warn('Warning from API:', result.warning);
-          addMessageToUI('system', `⚠️ ${result.warning}`);
         }
         
         return suggestions;
@@ -1841,19 +1971,11 @@ async function populateSuggestedFields(suggestions, forceRepopulate = false) {
   const container = getActiveDocumentContainer();
   if (!container) return;
 
-  console.log('🔧 Populating suggested fields:', {
-    operatorName: suggestions.operatorName,
-    parametersCount: suggestions.parameters?.length || 0,
-    outputsCount: suggestions.outputs?.length || 0,
-    forceRepopulate: forceRepopulate
-  });
-
   // 1. Populate operator name
   if (suggestions.operatorName && suggestions.operatorName.trim()) {
     const nameInput = container.querySelector(`#${createDocumentElementId('embedded-instance-name')}`);
     if (nameInput && (!nameInput.value.trim() || forceRepopulate)) {
       nameInput.value = suggestions.operatorName.trim();
-      console.log(`✅ Set operator name: "${suggestions.operatorName}"`);
     }
   }
 
@@ -1861,8 +1983,6 @@ async function populateSuggestedFields(suggestions, forceRepopulate = false) {
   const parametersContainer = container.querySelector(`#${createDocumentElementId('embedded-instance-parameters')}`);
   if (parametersContainer && suggestions.parameters && suggestions.parameters.length > 0) {
     const existingParams = parametersContainer.querySelectorAll('.parameter-field');
-    
-    console.log(`🔧 Appending ${suggestions.parameters.length} suggested parameters to ${existingParams.length} existing parameters`);
     
     let addedCount = 0;
     // Add suggested parameters (append, don't clear)
@@ -1873,14 +1993,9 @@ async function populateSuggestedFields(suggestions, forceRepopulate = false) {
           param.defaultValue || '', 
           param.type || 'literal'
         );
-        console.log(`  ✅ Added parameter: ${param.name} (${param.type})`);
         addedCount++;
-      } else {
-        console.log(`  ⚠️ Skipping parameter with missing name:`, param);
       }
     }
-    
-    console.log(`✅ Added ${addedCount} parameter fields (${addedCount + existingParams.length} total)`);
   }
 
   // 3. Append suggested outputs (don't clear existing ones)
@@ -1889,8 +2004,6 @@ async function populateSuggestedFields(suggestions, forceRepopulate = false) {
     const existingOutputs = outputsContainer.querySelectorAll('.output-config-field');
     
     if (suggestions.outputs && suggestions.outputs.length > 0) {
-      console.log(`🔧 Processing ${suggestions.outputs.length} suggested outputs...`);
-      
       // Get valid variables to filter out non-existent ones
       try {
         const validVariables = await operatorManager.getValidVariables();
@@ -1899,30 +2012,23 @@ async function populateSuggestedFields(suggestions, forceRepopulate = false) {
         // Filter outputs to only include those with existing variables
         const validOutputs = suggestions.outputs.filter(output => {
           if (!output.variable || !output.variable.trim()) {
-            console.log(`  ⚠️ Skipping output with missing variable:`, output);
             return false;
           }
           
           const varName = output.variable.trim();
           if (!validVariableNames.has(varName)) {
-            console.log(`  ⚠️ Skipping output with non-existent variable: ${varName}`);
             return false;
           }
           
           return true;
         });
         
-        console.log(`🔧 Filtered to ${validOutputs.length} valid outputs (from ${suggestions.outputs.length} suggested)`);
-        
         let addedCount = 0;
         // Add only valid outputs (append, don't clear)
         for (const output of validOutputs) {
-          console.log(`  ✓ Adding output field: config="${output.config}", variable="${output.variable}"`);
           await addOutputField(output.config || 'output', output.variable.trim());
           addedCount++;
         }
-        
-        console.log(`✅ Added ${addedCount} output fields (${addedCount + existingOutputs.length} total)`);
         
       } catch (error) {
         console.error('❌ Error filtering suggested outputs:', error);
@@ -1930,25 +2036,18 @@ async function populateSuggestedFields(suggestions, forceRepopulate = false) {
         let addedCount = 0;
         for (const output of suggestions.outputs) {
           if (output.variable && output.variable.trim()) {
-            console.log(`  ✓ Adding output field (fallback): config="${output.config}", variable="${output.variable}"`);
             await addOutputField(output.config || 'output', output.variable.trim());
             addedCount++;
           }
         }
-        console.log(`✅ Added ${addedCount} output fields (fallback mode)`);
       }
     } else if (existingOutputs.length === 0) {
       // If no outputs suggested and no existing outputs, ensure at least one empty output field
-      console.log('🔧 No outputs suggested, adding empty output field');
       await addOutputField();
-    } else {
-      console.log('🔧 No outputs to add, keeping existing outputs');
     }
   } else {
     console.error('❌ Output container not found');
   }
-
-  console.log('✅ Successfully populated suggested fields');
 }
 
 function refreshInstancesList() {
@@ -2041,19 +2140,15 @@ function createInstanceElement(instance) {
 
 // Open instance details from a clicked reference
 async function openInstanceFromReference(instanceName) {
-  console.log(`[${windowId}] Opening instance from reference: ${instanceName}`);
-  
   // Find the instance by name
   const instance = operatorManager.getInstanceByName(instanceName);
   
   if (!instance) {
-    addMessageToUI('system', `Instance "${instanceName}" not found. It may have been deleted.`);
     return;
   }
   
   // Open the instance editor for this instance
   showInstanceEditor(instance.id);
-  addMessageToUI('system', `Opened instance details for: ${instanceName}`);
 }
 
 // Style instance references in template
@@ -2135,7 +2230,6 @@ function styleInstanceReferences(templateEditor) {
 
   // Form Save Functions
 async function saveTool() {
-  console.log('Saving tool.............');
   // Get the active document container
   const container = getActiveDocumentContainer();
   if (!container) return;
@@ -2151,7 +2245,6 @@ async function saveTool() {
 
   // Validation
   if (!name) {
-    addMessageToUI('system', 'Please enter a tool name.');
     nameInput?.focus();
     return;
   }
@@ -2161,7 +2254,6 @@ async function saveTool() {
   tempDiv.innerHTML = code;
   const textContent = tempDiv.textContent || tempDiv.innerText || '';
   if (!textContent.trim()) {
-    addMessageToUI('system', 'Please enter source code for the tool.');
     codeEditor?.focus();
     return;
   }
@@ -2190,7 +2282,6 @@ async function saveTool() {
             updatedAt: new Date().toISOString()
           });
           await window.toolsManager.saveTools();
-          addMessageToUI('system', `Tool "${name}" updated successfully.`);
         }
       } else {
         // Create new tool
@@ -2204,7 +2295,6 @@ async function saveTool() {
         };
         window.toolsManager.tools.push(newTool);
         await window.toolsManager.saveTools();
-        addMessageToUI('system', `Tool "${name}" created successfully.`);
       }
     } else {
       // Fallback API call
@@ -2219,7 +2309,6 @@ async function saveTool() {
       if (!response.ok) {
         throw new Error('Failed to save tool');
       }
-      addMessageToUI('system', `Tool "${name}" saved successfully.`);
     }
 
     // Refresh the tools list and go back to list view
@@ -2228,7 +2317,6 @@ async function saveTool() {
     
   } catch (error) {
     console.error('Error saving tool:', error);
-    addMessageToUI('system', `Error saving tool: ${error.message}`);
   }
 }
 
@@ -2247,13 +2335,11 @@ function saveInstance() {
 
   // Validation
   if (!name) {
-    addMessageToUI('system', 'Please enter an instance name.');
     nameInput?.focus();
     return;
   }
 
   if (!toolId) {
-    addMessageToUI('system', 'Please select a tool.');
     toolSelect?.focus();
     return;
   }
@@ -2277,11 +2363,9 @@ function saveInstance() {
         variable: variable
       });
     } else if (config && !variable) {
-      addMessageToUI('system', 'Please select a variable for output configuration: ' + config);
       variableSelect?.focus();
       return;
     } else if (!config && variable) {
-      addMessageToUI('system', 'Please specify output configuration for variable: ' + variable);
       configInput?.focus();
       return;
     }
@@ -2296,10 +2380,12 @@ function saveInstance() {
     const paramType = typeSelect?.value;
     
     let value = '';
-    if (paramType === 'literal') {
+    if (paramType === PARAMETER_TYPES.LITERAL) {
       value = field.querySelector('.param-literal')?.value.trim();
-    } else if (paramType === 'dataset') {
+    } else if (paramType === PARAMETER_TYPES.DATASET) {
       value = field.querySelector('.param-dataset')?.value;
+    } else if (paramType === PARAMETER_TYPES.VARIABLE) {
+      value = field.querySelector('.param-variable')?.value;
     }
     
     if (key && value) {
@@ -2327,11 +2413,9 @@ function saveInstance() {
     if (operatorsData.currentEditingInstance) {
       // Update existing instance
       operatorManager.updateInstance(operatorsData.currentEditingInstance.id, instanceData);
-      addMessageToUI('system', `Operator "${name}" updated successfully.`);
     } else {
       // Create new instance
       operatorManager.createInstance(instanceData);
-      addMessageToUI('system', `Operator "${name}" created successfully.`);
     }
 
     // Refresh the instances list and go back to list view
@@ -2340,7 +2424,6 @@ function saveInstance() {
     
   } catch (error) {
     console.error('Error saving instance:', error);
-    addMessageToUI('system', `Error saving instance: ${error.message}`);
   }
 }
 
@@ -2364,7 +2447,6 @@ function deleteInstance(instanceId) {
       refreshInstancesList();
     } catch (error) {
       console.error('Error deleting instance:', error);
-      addMessageToUI('system', `Error deleting instance: ${error.message}`);
     }
   }
 }
@@ -2397,6 +2479,8 @@ function getFileIcon(type) {
 export { 
   Operator, 
   OperatorManager, 
+  DependencyHandler,
+  PARAMETER_TYPES,
   showOperatorsDialog,
   showInstanceEditor,
   addParameterField,
@@ -2409,9 +2493,7 @@ export {
 };
 
 // Reset function for DocumentManager cleanup
-function resetOperatorsInitialization() {
-  console.log('🔄 Operators initialization reset');
-  
+function resetOperatorsInitialization() {  
   // Clean up all event listeners first
   cleanupOperatorEventListeners();
   
@@ -2517,7 +2599,6 @@ class ToolsManager {
       
       if (result.success) {
         this.tools = result.tools || [];
-        console.log(`[${windowId}] Loaded ${this.tools.length} tools for document ${currentDocumentId}`);
       } else {
         console.error('Error loading tools:', result.error);
         this.tools = [];
@@ -2543,7 +2624,6 @@ class ToolsManager {
       // Save the updated tools
       await this.saveTools();
       
-      console.log(`[${windowId}] Removed tool ${toolId} from document ${currentDocumentId}`);
     } catch (error) {
       console.error('Error removing tool:', error);
     }
@@ -2563,24 +2643,18 @@ async function initToolsManager() {
 
 // Template-Operator Integration Functions
 async function executeRequiredOperatorsForTemplate(templateContent) {
-  console.log(`[${windowId}] Analyzing template for required operators...`);
-  
   try {
     // 1. Extract variables from template content
     const requiredVariables = extractVariablesFromTemplate(templateContent);
-    console.log(`[${windowId}] Template requires variables:`, requiredVariables);
     
     if (requiredVariables.length === 0) {
-      console.log(`[${windowId}] No variables found in template, skipping operator execution`);
       return { success: true, executedOperators: [] };
     }
     
     // 2. Identify operators that output these variables
     const requiredOperators = identifyRequiredOperators(requiredVariables);
-    console.log(`[${windowId}] Required operators:`, requiredOperators.map(op => op.name));
     
     if (requiredOperators.length === 0) {
-      console.log(`[${windowId}] No operators needed for template variables`);
       return { success: true, executedOperators: [] };
     }
     
@@ -2618,8 +2692,6 @@ function extractVariablesFromTemplate(templateContent) {
   const filteredVariables = variables.filter(varName => !varName.includes(':='));
   const uniqueVariables = [...new Set(filteredVariables)];
   
-  console.log(`[${windowId}] Extracted variables from template:`, uniqueVariables);
-  
   return uniqueVariables;
 }
 
@@ -2638,7 +2710,6 @@ function identifyRequiredOperators(requiredVariables) {
     
     if (hasRequiredOutput) {
       requiredOperators.push(operator);
-      console.log(`[${windowId}] Operator "${operator.name}" outputs variables:`, outputVariables);
     }
   }
   
@@ -2665,27 +2736,44 @@ async function executeOperatorsSequence(operators) {
   let successCount = 0;
   let errorCount = 0;
   
-  console.log(`[${windowId}] Executing ${operators.length} required operators...`);
-  
   // Set flag to prevent template auto-refresh loop
   operatorsData.isExecutingForTemplate = true;
   
   try {
     // Show progress message
-    addMessageToUI('system', `🔄 Executing ${operators.length} required operators for template...`);
+    // Show the floating indicator at the start
+    if (window.showOperatorExecutionIndicator) {
+      window.showOperatorExecutionIndicator(`Starting execution of ${operators.length} operators...`);
+    } else {
+      console.log(`[${windowId}] ❌ showOperatorExecutionIndicator function NOT found`);
+    }
     
     // Execute operators in dependency order
     const orderedOperators = await getOperatorsInDependencyOrder(operators);
     
-    for (const operator of orderedOperators) {
+    for (let i = 0; i < orderedOperators.length; i++) {
+      const operator = orderedOperators[i];
       try {
-        console.log(`[${windowId}] Executing operator: ${operator.name}`);
-        addMessageToUI('system', `⚙️ Executing operator: ${operator.name}...`);
+        // Update progress indicator for individual operator
+        if (window.updateOperatorExecutionProgress) {
+          const progress = ((i + 1) / orderedOperators.length) * 100;
+          window.updateOperatorExecutionProgress(`Executing operator ${i + 1} of ${orderedOperators.length}`, operator.name, progress);
+        }        
+        // Set up timeout for slow operations
+        let slowOperationTimeout;
+        const slowOperationMessage = setTimeout(() => {
+          if (window.updateOperatorExecutionProgress) {
+            window.updateOperatorExecutionProgress(`Still processing: ${operator.name} (this may take a moment for data downloads)`, operator.name);
+          }
+        }, 5000); // Show message after 5 seconds
         
         // Substitute dependency values in operator parameters before execution
         const substitutedOperator = await substituteOperatorDependencies(operator);
         
         const result = await operatorManager.executeInstance(substitutedOperator.id);
+        
+        // Clear the slow operation timeout
+        clearTimeout(slowOperationMessage);
         
         results.push({
           operatorId: operator.id,
@@ -2695,7 +2783,12 @@ async function executeOperatorsSequence(operators) {
         });
         
         successCount++;
-        console.log(`[${windowId}] ✅ Operator "${operator.name}" executed successfully`);
+        
+        // Update progress indicator for completion
+        if (window.updateOperatorExecutionProgress) {
+          const progress = ((i + 1) / orderedOperators.length) * 100;
+          window.updateOperatorExecutionProgress(`Completed: ${operator.name}`, operator.name, progress);
+        }
         
       } catch (error) {
         console.error(`[${windowId}] ❌ Error executing operator "${operator.name}":`, error);
@@ -2707,23 +2800,23 @@ async function executeOperatorsSequence(operators) {
           error: error.message
         });
         
-        errorCount++;
-        addMessageToUI('system', `❌ Error executing operator "${operator.name}": ${error.message}`);
+        errorCount++;        
+        // Update progress indicator for error
+        if (window.updateOperatorExecutionProgress) {
+          const progress = ((i + 1) / orderedOperators.length) * 100;
+          window.updateOperatorExecutionProgress(`Failed: ${operator.name}`, operator.name, progress);
+        }
       }
     }
-    
-    // Summary message
-    if (errorCount === 0) {
-      addMessageToUI('system', `✅ All ${successCount} operators executed successfully`);
-    } else {
-      addMessageToUI('system', `⚠️ Operators execution completed: ${successCount} successful, ${errorCount} failed`);
-    }
-    
-    console.log(`[${windowId}] Operators execution summary: ${successCount} successful, ${errorCount} failed`);
     
   } finally {
     // Always clear flag after execution is complete, even if there were errors
     operatorsData.isExecutingForTemplate = false;
+    
+    // Hide the floating indicator at the end
+    if (window.hideOperatorExecutionIndicator) {
+      window.hideOperatorExecutionIndicator();
+    }
   }
   
   return results;
@@ -2779,8 +2872,6 @@ async function getOperatorsInDependencyOrder(operators) {
       }
     });
     
-    console.log(`[${windowId}] Ordered operators by dependencies:`, orderedOperators.map(op => op.name));
-    
     return orderedOperators;
     
   } catch (error) {
@@ -2813,8 +2904,6 @@ async function substituteOperatorDependencies(operator) {
     for (const varName of outputVars) {
       const variable = variablesManager.variables.get(varName);
       if (variable && variable.dependencies && variable.dependencies.length > 0) {
-        console.log(`[${windowId}] Preparing dependencies for variable: ${varName}`, variable.dependencies);
-        
         // Get the generated code for this operator (from parameters or stored code)
         let code = operator.parameters?.code || operator.code || '';
         
@@ -2829,7 +2918,6 @@ async function substituteOperatorDependencies(operator) {
             const depVariable = variablesManager.variables.get(depName);
             if (depVariable && depVariable.value !== undefined) {
               const depValue = depVariable.value;
-              console.log(`[${windowId}] Processing dependency ${depName}:`, depValue, typeof depValue);
               
               // Format the value based on type with proper JSON serialization
               if (typeof depValue === 'string') {
@@ -2845,7 +2933,6 @@ async function substituteOperatorDependencies(operator) {
                 try {
                   const jsonValue = JSON.stringify(depValue);
                   args.push(`json.loads('${jsonValue.replace(/'/g, "\\'")}')`);
-                  console.log(`[${windowId}] Serialized object ${depName} as JSON:`, jsonValue);
                 } catch (error) {
                   console.error(`[${windowId}] Failed to serialize ${depName}:`, error);
                   args.push('None');
@@ -2854,7 +2941,6 @@ async function substituteOperatorDependencies(operator) {
                 // Fallback for other types
                 args.push(`'${String(depValue).replace(/'/g, "\\'")}'`);
               }
-              console.log(`[${windowId}] Prepared dependency ${depName} with value:`, depValue);
             } else {
               args.push('None');
               console.warn(`[${windowId}] Dependency ${depName} not found or has no value`);
@@ -2880,8 +2966,6 @@ async function substituteOperatorDependencies(operator) {
           if (operator.parameters) {
             operator.parameters.code = executionCode;
           }
-          
-          console.log(`[${windowId}] Updated operator with dependency execution code for ${varName}`);
         }
       }
     }
@@ -2970,8 +3054,6 @@ function createOperatorsSidebarToolElement(tool) {
 }
 
 function setupToolsSidebarEventListeners() {
-  console.log(`[${windowId}] 🔧 Setting up tools sidebar event listeners using direct element attachment...`);
-  
   // Get the active document container
   const container = getActiveDocumentContainer();
   if (!container) {
@@ -2988,7 +3070,6 @@ function setupToolsSidebarEventListeners() {
   };
   
   operatorsEventData.addToolBtnSidebarHandler = () => {
-    console.log(`[${windowId}] 🔧 Add tool button clicked - setupToolsSidebarEventListeners`);
     showToolEditor();
   };
   
@@ -2996,7 +3077,6 @@ function setupToolsSidebarEventListeners() {
     // Log clicks for debugging
     if (e.target.classList.contains('sidebar-tool-delete-btn') ||
         e.target.closest('.operators-sidebar-tool-item')) {
-      console.log(`[${windowId}] 🔧 Tools sidebar click event detected on:`, e.target.className, e.target.id);
     }
     
     // Delete tool button
@@ -3029,43 +3109,35 @@ function setupToolsSidebarEventListeners() {
   if (toolsSearch) {
     toolsSearch.addEventListener('input', operatorsEventData.toolsSearchHandler);
     operatorsEventData.currentElements.toolsSearch = toolsSearch;
-    console.log(`[${windowId}] ✅ Attached tools search listener`);
   }
   
   if (addToolBtnSidebar) {
     addToolBtnSidebar.addEventListener('click', operatorsEventData.addToolBtnSidebarHandler);
     operatorsEventData.currentElements.addToolBtnSidebar = addToolBtnSidebar;
-    console.log(`[${windowId}] ✅ Attached add tool sidebar button listener`);
   }
   
   // Attach click delegation to tools container for dynamic tool items
   if (toolsContainer) {
     toolsContainer.addEventListener('click', operatorsEventData.toolsSidebarClickHandler);
     operatorsEventData.currentElements.toolsContainer = toolsContainer;
-    console.log(`[${windowId}] ✅ Attached tools container delegation handler`);
   }
   
-  console.log(`[${windowId}] ✅ Tools sidebar event listeners setup complete - direct element attachment`);
 }
 
 // Cleanup function for tools sidebar event listeners
 function cleanupToolsSidebarEventListeners() {
-  console.log(`[${windowId}] 🧹 Cleaning up tools sidebar event listeners...`);
   
   // Remove listeners from tracked tools sidebar elements
   if (operatorsEventData.currentElements.toolsSearch && operatorsEventData.toolsSearchHandler) {
     operatorsEventData.currentElements.toolsSearch.removeEventListener('input', operatorsEventData.toolsSearchHandler);
-    console.log(`[${windowId}] 🧹 Removed tools search listener`);
   }
   
   if (operatorsEventData.currentElements.addToolBtnSidebar && operatorsEventData.addToolBtnSidebarHandler) {
     operatorsEventData.currentElements.addToolBtnSidebar.removeEventListener('click', operatorsEventData.addToolBtnSidebarHandler);
-    console.log(`[${windowId}] 🧹 Removed add tool sidebar button listener`);
   }
   
   if (operatorsEventData.currentElements.toolsContainer && operatorsEventData.toolsSidebarClickHandler) {
     operatorsEventData.currentElements.toolsContainer.removeEventListener('click', operatorsEventData.toolsSidebarClickHandler);
-    console.log(`[${windowId}] 🧹 Removed tools container delegation handler`);
   }
   
   // Clear handler references
@@ -3078,7 +3150,7 @@ function cleanupToolsSidebarEventListeners() {
   operatorsEventData.currentElements.addToolBtnSidebar = null;
   operatorsEventData.currentElements.toolsContainer = null;
   
-  console.log(`[${windowId}] ✅ Tools sidebar event listeners cleanup completed`);
+  
 }
 
 function filterOperatorsTools(searchTerm) {
@@ -3124,5 +3196,6 @@ window.operatorsModule = {
   callLLMForToolAnalysis,
   populateSuggestedFields,
   showOperatorLoadingIndicator,
-  hideOperatorLoadingIndicator
+  hideOperatorLoadingIndicator,
+  getOperatorForVariable: (variableName) => operatorManager?.getInstanceByOutputVariable(variableName)
 }; 
