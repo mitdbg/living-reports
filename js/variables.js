@@ -93,20 +93,17 @@ class VariablesManager {
     
     // Build the graph and calculate in-degrees
     this.variables.forEach((variable, name) => {
-      graph.set(name, variable.dependencies || []);
+      const dependencies = variable.dependencies || [];
+      graph.set(name, dependencies);
       inDegree.set(name, 0);
     });
     
-    // Calculate in-degrees
+    // Calculate in-degrees (how many variables each variable depends on)
     graph.forEach((dependencies, name) => {
-      dependencies.forEach(dep => {
-        if (inDegree.has(dep)) {
-          inDegree.set(dep, inDegree.get(dep) + 1);
-        }
-      });
+      inDegree.set(name, dependencies.length);
     });
     
-    // Topological sort using Kahn's algorithm
+    // Topological sort using Kahn's algorithm with stable ordering
     const queue = [];
     const result = [];
     
@@ -117,23 +114,45 @@ class VariablesManager {
       }
     });
     
+    // Sort queue to ensure stable ordering (alphabetical order for same in-degree)
+    queue.sort();
+    
     while (queue.length > 0) {
       const current = queue.shift();
       result.push(current);
       
-      const dependencies = graph.get(current) || [];
-      dependencies.forEach(dep => {
-        inDegree.set(dep, inDegree.get(dep) - 1);
-        if (inDegree.get(dep) === 0) {
-          queue.push(dep);
+      // Find all variables that depend on the current variable
+      const dependents = [];
+      graph.forEach((dependencies, varName) => {
+        if (dependencies.includes(current)) {
+          dependents.push(varName);
         }
       });
+      
+      // Reduce in-degree for all variables that depend on the current variable
+      dependents.forEach(dependent => {
+        const currentInDegree = inDegree.get(dependent);
+        inDegree.set(dependent, currentInDegree - 1);
+        if (inDegree.get(dependent) === 0) {
+          queue.push(dependent);
+        }
+      });
+      
+      // Sort queue to maintain stable ordering for variables with same in-degree
+      queue.sort();
     }
     
     // If result doesn't include all variables, there's a cycle
     if (result.length !== this.variables.size) {
       console.warn('Cycle detected in variable dependencies');
-      return Array.from(this.variables.keys()); // Return all variables as fallback
+      const remaining = Array.from(this.variables.keys()).filter(name => !result.includes(name));
+      
+      // Sort remaining variables to maintain stable ordering
+      remaining.sort();
+      
+      // For now, return variables in dependency order, with remaining variables at the end
+      // This is a fallback that should work for most cases
+      return [...result, ...remaining];
     }
     
     return result;
@@ -194,43 +213,23 @@ class VariablesManager {
    * @param {string} changedVariableName - The variable that changed
    */
   async propagateUpdatesToDependents(changedVariableName) {
-    console.log(`🔄 PROPAGATION START: Propagating updates from variable: ${changedVariableName}`);
-    
-    // Debug: Log current variable state
-    console.log(`📋 All variables:`, Array.from(this.variables.keys()));
-    this.variables.forEach((variable, name) => {
-      if (variable.dependencies && variable.dependencies.length > 0) {
-        console.log(`  📎 ${name} depends on:`, variable.dependencies);
-      }
-    });
     
     // Get dependent variables in execution order
     const dependentVariables = this.getDependentVariablesInOrder(changedVariableName);
     
     if (dependentVariables.length === 0) {
-      console.log(`ℹ️ No dependent variables found for: ${changedVariableName}`);
       return;
     }
-    
-    console.log(`📋 Found ${dependentVariables.length} dependent variables:`, dependentVariables);
     
     // Re-execute each dependent variable in order
     for (const dependentVariableName of dependentVariables) {
       try {
-        console.log(`🔄 Re-executing dependent variable: ${dependentVariableName}`);
-        
         // Get the variable data
         const variableData = this.variables.get(dependentVariableName);
         if (!variableData) {
           console.warn(`❌ Variable ${dependentVariableName} not found, skipping`);
           continue;
         }
-        
-        console.log(`📋 Variable ${dependentVariableName} data:`, {
-          dependencies: variableData.dependencies,
-          hasValue: variableData.value !== undefined,
-          currentValue: variableData.value
-        });
         
         // Check if the variable has a tool/operator that can be executed
         if (window.variableToolGenerator) {
@@ -244,8 +243,6 @@ class VariablesManager {
         // Continue with other variables even if one fails
       }
     }
-    
-    console.log(`✅ PROPAGATION END: Finished propagating updates from: ${changedVariableName}`);
   }
 
   /**
@@ -255,15 +252,10 @@ class VariablesManager {
    */
   async executeVariableOperator(variableName, variableData) {
     try {
-      console.log(`🔧 EXECUTE OPERATOR: Starting execution for variable ${variableName}`);
-      
       // Check if variable has dependencies
       if (!variableData.dependencies || variableData.dependencies.length === 0) {
-        console.log(`ℹ️ Variable ${variableName} has no dependencies, skipping execution`);
         return;
       }
-      
-      console.log(`📋 Variable ${variableName} dependencies:`, variableData.dependencies);
       
       // Get dependency values (structure must match getDependencyValues format)
       const dependencyValues = {};
@@ -280,7 +272,6 @@ class VariablesManager {
             value: depVariable.value,
             format: depVariable.format || ''
           };
-          console.log(`✅ Dependency ${depName} = ${JSON.stringify(depVariable.value)}`);
         } else {
           console.warn(`❌ Dependency ${depName} for variable ${variableName} has no value`);
           hasAllDependencyValues = false;
@@ -288,36 +279,19 @@ class VariablesManager {
       }
       
       if (!hasAllDependencyValues) {
-        console.log(`⚠️ Variable ${variableName} cannot be executed - missing dependency values`);
         return;
       }
       
-      console.log(`🔄 Executing variable ${variableName} with dependencies:`, dependencyValues);
-      
       // Check if variable has generated code/operator
       if (window.variableToolGenerator && window.variableToolGenerator.variableExecutionResults) {
-        console.log(`📋 Checking variableExecutionResults for ${variableName}...`);
         const result = window.variableToolGenerator.variableExecutionResults.get(variableName);
         
-        console.log(`📋 Found result for ${variableName}:`, result);
-        
         if (result && result.generatedCode) {
-          console.log(`✅ Found generated code for ${variableName}, executing...`);
-          console.log(`📝 Generated code:`, result.generatedCode.substring(0, 200) + '...');
-          console.log(`📝 Dependencies for execution:`, result.dependencies);
-          
           // Re-execute the variable's generated code with new dependency values
           await this.executeVariableCode(variableName, result.generatedCode, dependencyValues);
           return;
         } else {
-          console.log(`⚠️ No generated code found for ${variableName} in variableExecutionResults`);
-          if (result) {
-            console.log(`📋 Result structure:`, {
-              hasGeneratedCode: !!result.generatedCode,
-              hasExecutionResult: !!result.executionResult,
-              dependencies: result.dependencies
-            });
-          }
+          
           if (window.variableToolGenerator.variableExecutionResults) {
             console.log(`📋 Available execution results:`, Array.from(window.variableToolGenerator.variableExecutionResults.keys()));
             // Show structure of each result
@@ -330,27 +304,16 @@ class VariablesManager {
             });
           }
         }
-      } else {
-        console.log(`⚠️ window.variableToolGenerator or variableExecutionResults not available`);
       }
       
       // If no generated code found, check if there's an operator/tool defined for this variable
       if (window.operatorsModule && window.operatorsModule.getOperatorForVariable) {
-        console.log(`📋 Checking for operator for variable ${variableName}...`);
         const operator = window.operatorsModule.getOperatorForVariable(variableName);
         if (operator) {
-          console.log(`✅ Found operator ${operator.name} for variable ${variableName}, executing...`);
-          await window.operatorsModule.executeOperator(operator.id);
+          await window.operatorsModule.executeInstanceById(operator.id);
           return;
-        } else {
-          console.log(`⚠️ No operator found for variable ${variableName}`);
         }
-      } else {
-        console.log(`⚠️ window.operatorsModule not available`);
       }
-      
-      console.log(`❌ Variable ${variableName} has dependencies but no executable code - this may be a simple dependent variable that should be updated manually`);
-      
     } catch (error) {
       console.error(`❌ Error executing variable operator for ${variableName}:`, error);
       throw error;
@@ -365,16 +328,12 @@ class VariablesManager {
    */
   async executeVariableCode(variableName, code, dependencyValues) {
     try {
-      console.log(`🔧 EXECUTE CODE: Starting code execution for variable ${variableName}`);
-      console.log(`📋 Dependency values:`, dependencyValues);
-      
       // Get the variable data source information
       const variableData = this.variables.get(variableName);
       const dataSource = variableData?.dataSource || null;
       
       // Use the variable tool generator to execute the code
       if (window.variableToolGenerator) {
-        console.log(`⚡ Executing code for ${variableName} using variableToolGenerator...`);
         const result = await window.variableToolGenerator.executeCodeIsolatedWithDependencies(
           code, 
           dataSource, 
@@ -382,12 +341,9 @@ class VariablesManager {
           variableName
         );
         
-        console.log(`📊 Code execution result for ${variableName}:`, result);
-        
         if (result !== null && result !== undefined) {
           // Update the variable's value using setVariableValue but skip propagation to avoid infinite loops
           // (since this is already part of a propagation chain)
-          console.log(`✅ Variable ${variableName} code executed successfully, new value:`, result);
           await this.setVariableValue(variableName, result, true); // Skip propagation
         } else {
           console.error(`❌ Failed to execute code for variable ${variableName}: null/undefined result`);
@@ -429,31 +385,20 @@ class VariablesManager {
    */
   init() {
     if (this.initialized) {
-      console.log('Variables Manager already initialized');
       return;
     }
     
-    console.log('Initializing Variables Manager');
-    
     try {
       this.createFloatingButton();
-      console.log('✓ Floating button created');
       
       this.setupVariablesEventListeners();
-      console.log('✓ Variables event listeners setup');
       
       this.setupTextSelection();
-      console.log('✓ Text selection setup complete');
       
       // Initialize variable tool generator
       variableToolGenerator.init();
-      console.log('✓ Variable tool generator initialized');
-      
-      // Note: Dialogs are created lazily when needed to ensure document context
-      console.log('✓ Dialogs will be created when needed (lazy loading)');
       
       this.initialized = true;
-      console.log('Variables Manager initialization complete');
     } catch (error) {
       console.error('Error during Variables Manager initialization:', error);
     }
@@ -463,8 +408,6 @@ class VariablesManager {
    * Create the floating "Suggest Variables" button
    */
   createFloatingButton() {
-    console.log('Creating floating button...');
-    
     this.floatingButton = document.createElement('div');
     this.floatingButton.className = 'floating-variable-button';
     this.floatingButton.innerHTML = '<button class="suggest-variables-btn">🔧 Suggest Variables</button>';
@@ -473,13 +416,10 @@ class VariablesManager {
     this.floatingButton.style.zIndex = '10000';
     
     document.body.appendChild(this.floatingButton);
-    console.log('Floating button added to DOM');
 
     const suggestBtn = this.floatingButton.querySelector('.suggest-variables-btn');
     if (suggestBtn) {
       suggestBtn.addEventListener('click', () => {
-        console.log('Suggest Variables button clicked');
-        
         // Hide floating comment when SuggestVariable button is clicked
         if (typeof hideFloatingComment === 'function') {
           hideFloatingComment();
@@ -490,7 +430,6 @@ class VariablesManager {
         
         this.showVariableDialog();
       });
-      console.log('Event listener added to suggest button');
     } else {
       console.error('Could not find suggest variables button inside floating button');
     }
@@ -500,16 +439,13 @@ class VariablesManager {
    * Setup text selection detection
    */
   setupTextSelection() {
-    console.log('🔧 Setting up text selection detection');
     
     document.addEventListener('mouseup', (e) => {
-      console.log('🔧 mouseup event triggered');
 
       const selection = window.getSelection();
       
       // Early validation before setTimeout (same checks as comments.js)
       if (selection.rangeCount === 0) {
-        console.log('🔧 mouseup: no selection range, hiding button');
         this.hideFloatingButton();
         return;
       }
@@ -520,12 +456,10 @@ class VariablesManager {
 
       // Check for valid text selection with visible dimensions
       if (!this.isInTemplateContent(selection) || selectedText.length === 0 || rect.width === 0 || rect.height === 0) {
-        console.log('🔧 mouseup: invalid selection (not in template, no text, or no dimensions), hiding button');
         this.hideFloatingButton();
         return;
       }
       
-      console.log('🔧 mouseup: valid visible selection detected, scheduling handleTextSelection in 10ms');
       setTimeout(() => {
         this.handleTextSelection(e);
       }, 10);
@@ -552,7 +486,6 @@ class VariablesManager {
     
     // Early return if no selection range (same as comments.js)
     if (selection.rangeCount === 0) {
-      console.log('🔧 No selection range, hiding button');
       this.hideFloatingButton();
       return;
     }
@@ -815,13 +748,10 @@ class VariablesManager {
           const dependencyName = e.target.getAttribute('data-dependency-name');
           this.removeDependency(dependencyName);
         } else if (elementId.includes('variable-value-display')) {
-          console.log('Variable value display clicked');
           this.startValueEditingInDialog();
         } else if (elementId.includes('save-variable-value')) {
-          console.log('Save variable value clicked');
           await this.saveVariableValueInDialog();
         } else if (elementId.includes('cancel-variable-value')) {
-          console.log('Cancel variable value clicked');
           this.cancelValueEditingInDialog();
         }
       }
@@ -831,7 +761,6 @@ class VariablesManager {
      this.variableDialog.addEventListener('change', async (e) => {
        const elementId = e.target.id;
        if (elementId && elementId.includes('data-source-select')) {
-         console.log('Data source select changed:', e.target.value);
          await this.handleDataSourceChange(e.target.value);
        }
      });
@@ -844,7 +773,6 @@ class VariablesManager {
     // Listen for Variables buttons (using event delegation like Data Sources)
     document.addEventListener('click', async (event) => {
       if (event.target.matches('.variables-btn') || event.target.closest('.variables-btn')) {
-        console.log('Variables button clicked');
         event.preventDefault();
         event.stopPropagation();
         await this.showVariablesPanel();
@@ -883,12 +811,8 @@ class VariablesManager {
     this.variablesPanel.className = 'variables-panel-dialog';
     this.variablesPanel.style.display = 'none';
     
-    // Debug: Check what IDs were actually created
-    console.log('Variables panel dialog ID:', this.variablesPanel.id);
     const listElement = this.variablesPanel.querySelector('[id*="variables-list"]');
     const msgElement = this.variablesPanel.querySelector('[id*="no-variables-message"]');
-    console.log('Found list element:', listElement?.id);
-    console.log('Found message element:', msgElement?.id);
     
     // Add to body for global access
     document.body.appendChild(this.variablesPanel);
@@ -944,9 +868,7 @@ class VariablesManager {
     } catch (error) {
       console.error('Error getting LLM suggestions:', error);
       // Fallback to basic suggestions
-      console.log('Using fallback suggestions for:', this.selectedText);
       const basicSuggestions = this.generateVariableSuggestions(this.selectedText);
-      console.log('Generated basic suggestions:', basicSuggestions);
       this.fillDialogWithSuggestions(basicSuggestions);
     } finally {
       this.hideLoadingInDialog();
@@ -1038,16 +960,7 @@ class VariablesManager {
     if (descInput) descInput.value = suggestions.description || '';
     if (typeSelect) typeSelect.value = suggestions.type || 'text';
     if (formatInput) formatInput.value = suggestions.format || '';
-    
-    // Log smart replacement info if available
-    if (suggestions.value_to_replace) {
-      console.log('Smart replacement suggestion:', {
-        fullSelection: this.selectedText,
-        valueToReplace: suggestions.value_to_replace,
-        staticPrefix: suggestions.static_prefix || '(none)',
-        staticSuffix: suggestions.static_suffix || '(none)'
-      });
-    }
+
   }
 
   /**
@@ -1156,7 +1069,6 @@ class VariablesManager {
    * Show/hide dialogs
    */
   showVariableDialog(isEditing = false) {
-    console.log('showVariableDialog called for text:', this.selectedText, 'isEditing:', isEditing);
     
     // Hide floating comment when variable dialog is shown
     if (typeof hideFloatingComment === 'function') {
@@ -1168,11 +1080,9 @@ class VariablesManager {
     
     // Create dialog if it doesn't exist or if it's been removed from DOM
     if (!this.variableDialog || !dialogExists) {
-      console.log('Creating variable dialog lazily...');
       
       // Clear stale reference if it exists but not in DOM
       if (this.variableDialog && !dialogExists) {
-        console.log('Clearing stale variable dialog reference');
         this.variableDialog = null;
       }
       
@@ -1187,12 +1097,10 @@ class VariablesManager {
     const textDisplay = this.variableDialog.querySelector('.selected-text-display');
     if (textDisplay && this.selectedText) {
       textDisplay.textContent = `"${this.selectedText}"`;
-      console.log('Set selected text display to:', this.selectedText);
     }
     
     // If we're in editing mode, populate the form with existing variable data
     if (isEditing && this._editingVariable && this._editingVariableName) {
-      console.log('Populating dialog for editing variable:', this._editingVariableName);
       // Use setTimeout to ensure DOM elements are ready after dialog creation
       setTimeout(() => {
         this.populateEditForm(this._editingVariable, this._editingVariableName);
@@ -1248,30 +1156,24 @@ class VariablesManager {
     this._editingVariableName = null;
     this._temporaryValue = undefined;
     this.currentSuggestion = null;
-    
-    console.log('🧹 Editing state cleared');
   }
 
   async showVariablesPanel() {
-    console.log('showVariablesPanel called');
     
     // Check if the current panel reference is valid (still in DOM)
     const panelExists = this.variablesPanel && document.body.contains(this.variablesPanel);
     
     // Create panel if it doesn't exist or if it's been removed from DOM
     if (!this.variablesPanel || !panelExists) {
-      console.log('Creating variables panel lazily...');
       
       // Clear stale reference if it exists but not in DOM
       if (this.variablesPanel && !panelExists) {
-        console.log('Clearing stale variables panel reference');
         this.variablesPanel = null;
       }
       
       // IMPORTANT: Remove any existing variables panels to prevent duplicate IDs
       const existingPanels = document.querySelectorAll('.variables-panel-dialog');
       existingPanels.forEach((panel, index) => {
-        console.log(`Removing existing variables panel ${index}: ${panel.id}`);
         panel.remove();
       });
       
@@ -1284,7 +1186,6 @@ class VariablesManager {
     }
     
     // Load latest variables from backend before showing
-    console.log('Loading latest variables from backend before showing panel...');
     await this.refreshVariablesFromBackend();
     
     this.updateVariablesList();
@@ -1343,8 +1244,6 @@ class VariablesManager {
     
     this.updateVariablesUI();
     this.clearSelectionAndHideDialog(); // Clear selection to prevent button re-showing
-    
-    console.log('Variable created:', variable);
   }
 
   /**
@@ -1411,14 +1310,6 @@ class VariablesManager {
   replaceSelectedTextWithPlaceholder(variable) {
     if (!this.selectedRange) return;
     
-    console.log('replaceSelectedTextWithPlaceholder called with:', {
-      originalText: variable.originalText,
-      value_to_replace: variable.value_to_replace,
-      static_prefix: variable.static_prefix,
-      static_suffix: variable.static_suffix,
-      placeholder: variable.placeholder
-    });
-    
     try {
       // Check if we have smart replacement info from LLM
       if (variable.value_to_replace && variable.value_to_replace !== variable.originalText) {
@@ -1442,11 +1333,6 @@ class VariablesManager {
           this.selectedRange.insertNode(replacementNode);
           window.getSelection().removeAllRanges();
           
-          console.log(`Smart replacement: "${originalText}" -> "${replacementText}"`);
-          console.log(`  Static prefix: "${variable.static_prefix || '(none)'}"`);
-          console.log(`  Variable part: "${variable.value_to_replace}" -> "${variable.placeholder}"`);
-          console.log(`  Static suffix: "${variable.static_suffix || '(none)'}"`);
-          
           // Trigger change detection for document auto-save
           this.triggerTemplateChangeDetection();
           return;
@@ -1464,8 +1350,6 @@ class VariablesManager {
       this.selectedRange.insertNode(placeholder);
       window.getSelection().removeAllRanges();
       
-      console.log(`Simple replacement: "${variable.originalText}" with "${variable.placeholder}"`);
-      
       // Trigger change detection for document auto-save
       this.triggerTemplateChangeDetection();
     } catch (error) {
@@ -1480,7 +1364,6 @@ class VariablesManager {
     // Notify document manager that template content has changed
     if (window.documentManager) {
       window.documentManager.onContentChange();
-      console.log('Template change detected - auto-save triggered');
     }
   }
 
@@ -1488,11 +1371,9 @@ class VariablesManager {
    * Update variables list in panel - Updated to use document-specific IDs
    */
   updateVariablesList() {
-    console.log('updateVariablesList called, variables count:', this.variables.size);
     
     // Debug: Check what document ID we're using
     const currentDocId = window.documentManager?.activeDocumentId;
-    console.log('Current document ID:', currentDocId);
     
     // Get the variables list element
     const variablesList = this.variablesPanel.querySelector('.variables-list');
@@ -1509,7 +1390,6 @@ class VariablesManager {
       return;
     }
     
-    console.log('Displaying', this.variables.size, 'variables');
     this.variables.forEach((variable, name) => {
       const variableItem = document.createElement('div');
       variableItem.className = 'variable-item';
@@ -1576,8 +1456,6 @@ class VariablesManager {
       
       const result = await response.json();
       if (result.success) {
-        console.log(`Variables saved to backend: ${result.count} variables for document ${documentId}`);
-        
         // Also update local state for compatibility
         if (typeof updateState === 'function') {
           updateState({ variables: variablesObj });
@@ -1594,7 +1472,6 @@ class VariablesManager {
         if (typeof updateState === 'function') {
           updateState({ variables: variablesObj });
         }
-        console.log('Variables saved to local state as fallback');
       } catch (fallbackError) {
         console.error('Error saving variables to local state:', fallbackError);
       }
@@ -1634,7 +1511,6 @@ class VariablesManager {
         });
         
         this.updateVariablesUI();
-        console.log(`Loaded ${this.variables.size} variables from backend for document ${documentId}`);
         
         // Also update local state for compatibility
         if (typeof updateState === 'function') {
@@ -1668,7 +1544,6 @@ class VariablesManager {
    * Edit an existing variable
    */
   async editVariable(variableName) {
-    console.log('Editing variable:', variableName);
     
     // Load latest variable data from backend first
     await this.refreshVariablesFromBackend();
@@ -1679,8 +1554,6 @@ class VariablesManager {
       console.error('Variable not found for editing:', variableName);
       return;
     }
-    
-    console.log('Loading latest variable data from backend for editing:', variable);
     
     // Set up the dialog for editing
     this.selectedText = variable.originalText;
@@ -1699,8 +1572,6 @@ class VariablesManager {
     * Remove a variable
     */
    removeVariable(variableName) {
-     console.log('Removing variable:', variableName);
-     
      // Show confirmation dialog
      if (confirm(`Are you sure you want to remove the variable "${variableName}"?`)) {
        // Remove from variables map
@@ -1713,7 +1584,6 @@ class VariablesManager {
        // Save changes to backend
        this.saveVariables();
        
-       console.log(`Variable "${variableName}" removed successfully`);
      }
    }
 
@@ -1721,8 +1591,6 @@ class VariablesManager {
     * Update an existing variable
     */
    async updateVariable(variableName) {
-     console.log('🔄 UPDATE VARIABLE: Updating variable:', variableName);
-     
      // Validate form data with update context
      const formData = this.getVariableFormData();
      const isValid = this.validateVariableForm(formData, true, variableName);
@@ -1744,8 +1612,6 @@ class VariablesManager {
        (this._temporaryValue === '' ? undefined : this._temporaryValue) : 
        originalValue;
      
-     console.log(`📊 Variable ${variableName}: originalValue = ${JSON.stringify(originalValue)}, newValue = ${JSON.stringify(newValue)}`);
-     
      // Create updated variable object, preserving original text and other properties
      const updatedVariable = {
        ...originalVariable,
@@ -1761,7 +1627,6 @@ class VariablesManager {
      // Handle variable name change
      const nameChanged = formData.name !== variableName;
      if (nameChanged) {
-       console.log(`📝 Variable name changed from "${variableName}" to "${formData.name}"`);
        // Remove old entry and add new one (without value first)
        this.variables.delete(variableName);
        this.variables.set(formData.name, updatedVariable);
@@ -1777,10 +1642,8 @@ class VariablesManager {
      const finalVariableName = formData.name; // Use the new name if it changed
      
      if (originalValue !== newValue) {
-       console.log(`✅ Value changed, using setVariableValue for proper propagation`);
        await this.setVariableValue(finalVariableName, newValue);
      } else {
-       console.log(`ℹ️ Value unchanged, no propagation needed`);
        // Update UI anyway since metadata might have changed
        this.updateVariablesUI();
      }
@@ -1792,15 +1655,12 @@ class VariablesManager {
      this.clearSelectionAndHideDialog();
      this.resetDialogToCreateMode();
      
-     console.log(`✅ Variable "${finalVariableName}" updated successfully`);
    }
 
      /**
    * Populate the edit form with variable data
    */
   populateEditForm(variable, variableName) {
-    console.log('populateEditForm called with variable:', variable);
-    
     try {
       // Fill the dialog with existing variable data
       const nameInput = getDocumentElement('variable-name');
@@ -1808,14 +1668,6 @@ class VariablesManager {
       const typeSelect = getDocumentElement('variable-type');
       const formatInput = getDocumentElement('variable-format');
       const requiredCheckbox = getDocumentElement('variable-required');
-      
-      console.log('Form elements found:', {
-        nameInput: !!nameInput,
-        descInput: !!descInput,
-        typeSelect: !!typeSelect,
-        formatInput: !!formatInput,
-        requiredCheckbox: !!requiredCheckbox
-      });
       
       if (nameInput) nameInput.value = variable.name || '';
       if (descInput) descInput.value = variable.description || '';
@@ -1857,8 +1709,6 @@ class VariablesManager {
         addButton.setAttribute('data-action', 'update-variable');
         addButton.setAttribute('data-variable-name', variableName);
       }
-      
-      console.log('✓ Edit form populated successfully for variable:', variableName);
       
     } catch (error) {
       console.error('Error populating edit form:', error);
@@ -1926,8 +1776,6 @@ class VariablesManager {
    * Generate tool for an existing variable from the variables panel
    */
   async generateToolForVariable(variableName) {
-    console.log('Generating tool for existing variable:', variableName);
-    
     const variable = this.variables.get(variableName);
     if (!variable) {
       console.error('Variable not found:', variableName);
@@ -1946,8 +1794,6 @@ class VariablesManager {
       originalText: variable.originalText || ''
     };
     
-    console.log('Variable data for tool generator:', variableData);
-    
     // Show the tool generator (variables panel should already be open)
     await variableToolGenerator.show(variableData, this.variablesPanel);
   }
@@ -1956,8 +1802,6 @@ class VariablesManager {
    * Open the tool generator for the current variable
    */
   async openToolGenerator() {
-    console.log('Opening tool generator for variable...');
-    
     // Get current variable data from form
     const formData = this.getVariableFormData();
     
@@ -2046,8 +1890,6 @@ class VariablesManager {
    * Set a variable value programmatically (for operator outputs)
    */
   async setVariableValue(variableName, value, skipPropagation = false) {
-    console.log(`🔧 setVariableValue called: ${variableName} = ${JSON.stringify(value)}, skipPropagation = ${skipPropagation}`);
-    
     if (!variableName || !variableName.trim()) {
       throw new Error('Variable name is required');
     }
@@ -2060,19 +1902,14 @@ class VariablesManager {
     // If variable is not in vars manager, skip it.
     if (!this.variables.has(variableName)) {
       console.warn(`❌ Variable ${variableName} not found in variables manager, skipping`);
-      console.log('Available variables:', Array.from(this.variables.keys()));
       return;
     }
 
     const existingVariable = this.variables.get(variableName);
     const oldValue = existingVariable.value;
     
-    console.log(`📊 Variable ${variableName}: oldValue = ${JSON.stringify(oldValue)}, newValue = ${JSON.stringify(value)}`);
-    
     // Only trigger updates if the value actually changed
     if (oldValue !== value) {
-      console.log(`✅ Value changed for ${variableName}, updating and ${skipPropagation ? 'skipping' : 'triggering'} propagation...`);
-      
       existingVariable.value = value;
       existingVariable.lastUpdated = new Date().toISOString();
       this.variables.set(variableName, existingVariable);
@@ -2083,18 +1920,10 @@ class VariablesManager {
       // Save to backend
       await this.saveVariables();
 
-      console.log(`💾 Variable ${variableName} saved to backend with new value:`, value);
-      
       // Trigger automatic update propagation to dependent variables
       if (!skipPropagation) {
-        console.log(`🔄 Starting dependency propagation for ${variableName}...`);
         await this.propagateUpdatesToDependents(variableName);
-        console.log(`✅ Dependency propagation completed for ${variableName}`);
-      } else {
-        console.log(`⏭️ Skipping dependency propagation for ${variableName}`);
       }
-    } else {
-      console.log(`ℹ️ Variable ${variableName} value unchanged (${JSON.stringify(oldValue)}), skipping update propagation`);
     }
   }
 
@@ -2150,7 +1979,6 @@ class VariablesManager {
       // Load variables from backend API for the current document
       const documentId = window.documentManager?.activeDocumentId;
       if (!documentId) {
-        console.log('No active document to load variables for');
         return;
       }
       
@@ -2171,10 +1999,7 @@ class VariablesManager {
             this.variables.set(name, variable);
           });
           
-          console.log(`📊 Loaded ${this.variables.size} variables from backend for document ${documentId}`);
         }
-      } else {
-        console.log('No variables found in backend for document:', documentId);
       }
       
       this.updateVariablesUI();
@@ -2191,11 +2016,8 @@ class VariablesManager {
     try {
       const documentId = window.documentManager?.activeDocumentId;
       if (!documentId) {
-        console.log('No active document to refresh variables for');
         return;
       }
-      
-      console.log('Refreshing variables from backend for document:', documentId);
       
       const response = await fetch(`http://127.0.0.1:5000/api/variables?documentId=${encodeURIComponent(documentId)}`, {
         method: 'GET',
@@ -2214,8 +2036,6 @@ class VariablesManager {
             this.variables.set(name, variable);
           });
           
-          console.log(`🔄 Refreshed ${this.variables.size} variables from backend for document ${documentId}`);
-          
           // Update variables list display if panel is visible
           if (this.variablesPanel && this.variablesPanel.style.display === 'flex') {
             this.updateVariablesList();
@@ -2223,8 +2043,6 @@ class VariablesManager {
           
           this.updateVariablesUI();
         }
-      } else {
-        console.log('No variables found in backend for document:', documentId);
       }
 
     } catch (error) {
@@ -2236,8 +2054,6 @@ class VariablesManager {
    * Clear all variables for current document (called before loading new document)
    */
   clearDocumentVariables() {
-    console.log('🧹 Clearing variables UI for document switch');
-    
     // Clear variables from memory
     this.variables.clear();
     
@@ -2248,19 +2064,16 @@ class VariablesManager {
     
     // Clear dialog references so they get recreated for new document
     if (this.variableDialog) {
-      console.log('Removing variable dialog from DOM');
       this.variableDialog.remove();
       this.variableDialog = null;
     }
     if (this.variablesPanel) {
-      console.log('Removing variables panel from DOM');
       this.variablesPanel.remove();
       this.variablesPanel = null;
     }
     
     // Clear variable tool generator dialog if it exists
     if (window.variableToolGenerator && window.variableToolGenerator.generatorDialog) {
-      console.log('Removing variable tool generator dialog from DOM');
       window.variableToolGenerator.hide();
       window.variableToolGenerator.generatorDialog.remove();
       window.variableToolGenerator.generatorDialog = null;
@@ -2273,19 +2086,14 @@ class VariablesManager {
     this.selectedText = null;
     this.selectedRange = null;
     this.currentSuggestion = null;
-    
-    console.log('✅ Variables UI cleared for document switch');
   }
 
   /**
    * Load variables for a document (when opening/creating) with registration
    */
   loadDocumentVariables() {
-    console.log('🏗️ Loading variables for document');
-    
     const activeDocumentId = window.documentManager?.activeDocumentId;
     if (!activeDocumentId) {
-      console.log('No active document - skipping variables UI creation');
       return;
     }
     
@@ -2365,8 +2173,6 @@ class VariablesManager {
    * Value setting methods for the dialog
    */
   startValueEditingInDialog() {
-    console.log('Starting value editing in dialog');
-    
     const valueDisplay = getDocumentElement('variable-value-display');
     const valueInputContainer = this.variableDialog.querySelector('.value-input-container');
     const valueInput = getDocumentElement('variable-value-input');
@@ -2380,15 +2186,12 @@ class VariablesManager {
   }
 
   async saveVariableValueInDialog() {
-    console.log('💾 MANUAL SAVE: Saving value in dialog');
-    
     const valueInput = getDocumentElement('variable-value-input');
     const valueDisplay = getDocumentElement('variable-value-display');
     const valueInputContainer = this.variableDialog.querySelector('.value-input-container');
     
     if (valueInput && valueDisplay && valueInputContainer) {
       const newValue = valueInput.value.trim();
-      console.log(`📝 User entered value: "${newValue}"`);
       
       // Update display
       valueDisplay.textContent = newValue || 'Click to set value';
@@ -2403,26 +2206,20 @@ class VariablesManager {
       
       // If we're editing an existing variable, save the value to backend immediately
       if (this._editingVariableName) {
-        console.log(`🔧 Editing existing variable: ${this._editingVariableName}`);
         
         // Use setVariableValue to ensure proper propagation
         await this.setVariableValue(this._editingVariableName, newValue || undefined);
         
         // Show success notification
         this.showVariableUpdateNotification();
-      } else {
-        console.log(`ℹ️ Not editing existing variable, value will be used when variable is created`);
       }
       
-      console.log('✅ Value processing completed in dialog:', newValue);
     } else {
       console.error('❌ Required dialog elements not found for saving value');
     }
   }
 
   cancelValueEditingInDialog() {
-    console.log('Canceling value editing in dialog');
-    
     const valueDisplay = getDocumentElement('variable-value-display');
     const valueInputContainer = this.variableDialog.querySelector('.value-input-container');
     const valueInput = getDocumentElement('variable-value-input');
@@ -2442,8 +2239,6 @@ class VariablesManager {
    */
   
   showDependencySelector() {
-    console.log('Showing dependency selector');
-    
     const selector = getDocumentElement('dependency-selector');
     const addBtn = getDocumentElement('add-dependency-btn');
     
@@ -2458,8 +2253,6 @@ class VariablesManager {
   }
   
   hideDependencySelector() {
-    console.log('Hiding dependency selector');
-    
     const selector = getDocumentElement('dependency-selector');
     const addBtn = getDocumentElement('add-dependency-btn');
     
@@ -2476,8 +2269,6 @@ class VariablesManager {
   }
   
   populateDependencySelector() {
-    console.log('Populating dependency selector');
-    
     const select = getDocumentElement('dependency-select');
     if (!select) return;
     
@@ -2521,8 +2312,6 @@ class VariablesManager {
   }
   
   addSelectedDependency() {
-    console.log('Adding selected dependency');
-    
     const select = getDocumentElement('dependency-select');
     if (!select) return;
     
@@ -2565,8 +2354,6 @@ class VariablesManager {
   }
   
   removeDependency(dependencyName) {
-    console.log('Removing dependency:', dependencyName);
-    
     const dependenciesList = getDocumentElement('variable-dependencies-list');
     if (!dependenciesList) return;
     
@@ -2584,8 +2371,6 @@ class VariablesManager {
   }
   
   addDependencyToList(dependencyName) {
-    console.log('Adding dependency to list:', dependencyName);
-    
     const dependenciesList = getDocumentElement('variable-dependencies-list');
     if (!dependenciesList) return;
     
@@ -2625,8 +2410,6 @@ class VariablesManager {
   }
   
   populateDependenciesInEditForm(variable) {
-    console.log('Populating dependencies in edit form for variable:', variable.name);
-    
     const dependenciesList = getDocumentElement('variable-dependencies-list');
     if (!dependenciesList) return;
     
@@ -2647,8 +2430,6 @@ class VariablesManager {
   }
 
   populateDataSourceSelect() {
-    console.log('Populating data source select');
-    
     const select = getDocumentElement('data-source-select');
     if (!select) return;
     
@@ -2705,10 +2486,8 @@ class VariablesManager {
   }
 
   async handleDataSourceChange(selectedValue) {
-    console.log('📊 DATA SOURCE CHANGE: Handling data source change:', selectedValue);
     
     if (selectedValue === 'manual') {
-      console.log('📝 Switching to manual input mode');
       // Switch to manual input mode
       this.startValueEditingInDialog();
       // Reset the select back to default
@@ -2717,7 +2496,6 @@ class VariablesManager {
         select.value = '';
       }
     } else if (selectedValue && selectedValue !== '') {
-      console.log('📊 Setting value from data source:', selectedValue);
       
       // Set value from data source
       const valueDisplay = getDocumentElement('variable-value-display');
@@ -2735,10 +2513,8 @@ class VariablesManager {
       if (selectedOption) {
         const referenceName = selectedOption.getAttribute('data-source-name');
         displayValue = `$${referenceName}`;
-        console.log(`📊 Formatted data source value: ${displayValue} (from ${referenceName})`);
       } else {
         displayValue = `[${selectedValue}]`;
-        console.log(`📊 Fallback data source value: ${displayValue}`);
       }
       
       if (valueDisplay) {
@@ -2761,11 +2537,8 @@ class VariablesManager {
         
         // Show success notification
         this.showVariableUpdateNotification();
-      } else {
-        console.log(`ℹ️ Not editing existing variable, data source value will be used when variable is created`);
       }
       
-      console.log('✅ Data source value processing completed:', displayValue);
     }
   }
 
@@ -2778,7 +2551,6 @@ export default variablesManager;
 
 // Export functions for DocumentManager integration
 export function resetVariablesInitialization() {
-  console.log('resetVariablesInitialization called by DocumentManager');
   variablesManager.clearDocumentVariables();
   
   // Clear window reference
@@ -2788,6 +2560,5 @@ export function resetVariablesInitialization() {
 }
 
 export function initVariablesForDocument() {
-  console.log('initVariablesForDocument called by DocumentManager');
   variablesManager.loadDocumentVariables();
 } 

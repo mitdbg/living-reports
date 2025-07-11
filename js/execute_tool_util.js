@@ -314,7 +314,7 @@ export async function executeOperatorWithData(tool, datasets, parameters, window
           
           // If execution was successful and returned a value, offer to populate the variable
           if (result.output) {
-            if (window.variablesManager) {
+            if (window.variablesManager && variableName) {
               await window.variablesManager.setVariableValue(variableName, result.output, skipPropagation);
             }
           }

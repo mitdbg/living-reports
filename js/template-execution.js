@@ -35,59 +35,254 @@ function createDocumentAnnotationId(baseId) {
 // Operators Integration - Execute required operators before template processing
 async function executeRequiredOperatorsBeforeTemplate(templateText, isLiveUpdate = false) {
   try {
-    // Debug logging for operators module availability
-    console.log(`[${windowId}] Checking operators module availability:`);
-    console.log(`[${windowId}] - window.operatorsModule exists:`, !!window.operatorsModule);
-    console.log(`[${windowId}] - executeRequiredOperatorsForTemplate exists:`, !!(window.operatorsModule && window.operatorsModule.executeRequiredOperatorsForTemplate));
-    
     // Only execute operators if operators module is available
     if (!window.operatorsModule || !window.operatorsModule.executeRequiredOperatorsForTemplate) {
-      console.log(`[${windowId}] Operators module not available, skipping operator execution`);
       return;
     }
 
-    console.log(`[${windowId}] Checking template for required operators...`);
+    // Show loading indicator for operator execution
+    if (!isLiveUpdate) {
+      showOperatorExecutionIndicator();
+    }
     
     // Execute required operators for this template
     const result = await window.operatorsModule.executeRequiredOperatorsForTemplate(templateText);
     
-    if (result.success) {
-      if (result.executedOperators.length > 0) {
-        console.log(`[${windowId}] Successfully executed ${result.executedOperators.length} operators:`, result.executedOperators);
-        
-        if (!isLiveUpdate) {
-          // Show summary message for manual execution
-          addMessageToUI('system', `✅ Pre-executed ${result.executedOperators.length} operators: ${result.executedOperators.join(', ')}`);
-        }
-      } else {
-        console.log(`[${windowId}] No operators needed for this template`);
-      }
-    } else {
-      console.error(`[${windowId}] Error executing required operators:`, result.error);
-      
-      if (!isLiveUpdate) {
-        addMessageToUI('system', `⚠️ Some operators failed to execute: ${result.error}`);
-      }
-      
-      // Continue with template execution even if operators fail
-      // This allows templates to work with partial data or fallback to manual execution
-    }
-    
-  } catch (error) {
-    console.error(`[${windowId}] Error in executeRequiredOperatorsBeforeTemplate:`, error);
-    
+    // Hide loading indicator
     if (!isLiveUpdate) {
-      addMessageToUI('system', `⚠️ Could not execute required operators: ${error.message}`);
+      hideOperatorExecutionIndicator();
     }
-    
-    // Continue with template execution
+  } catch (error) {
+    // Hide loading indicator on error
+    if (!isLiveUpdate) {
+      hideOperatorExecutionIndicator();
+    }
   }
 }
 
+// Show loading indicator for operator execution
+function showOperatorExecutionIndicator() {
+  // Create or update the indicator
+  let indicator = document.getElementById('operator-execution-indicator');
+  
+  if (!indicator) {
+    indicator = document.createElement('div');
+    indicator.id = 'operator-execution-indicator';
+    indicator.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 16px 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      z-index: 10000;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 14px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 320px;
+      max-width: 450px;
+      animation: slideInRight 0.3s ease-out;
+    `;
+    
+    // Add keyframe animation
+    if (!document.querySelector('#operator-indicator-styles')) {
+      const style = document.createElement('style');
+      style.id = 'operator-indicator-styles';
+      style.textContent = `
+        @keyframes slideInRight {
+          from {
+            transform: translateX(100%);
+            opacity: 0;
+          }
+          to {
+            transform: translateX(0);
+            opacity: 1;
+          }
+        }
+        
+        @keyframes slideOutRight {
+          from {
+            transform: translateX(0);
+            opacity: 1;
+          }
+          to {
+            transform: translateX(100%);
+            opacity: 0;
+          }
+        }
+        
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+        
+        .operator-spinner {
+          animation: spin 1s linear infinite;
+        }
+        
+        .operator-progress-bar {
+          width: 100%;
+          height: 4px;
+          background: rgba(255, 255, 255, 0.2);
+          border-radius: 2px;
+          overflow: hidden;
+          margin-top: 8px;
+        }
+        
+        .operator-progress-fill {
+          height: 100%;
+          background: rgba(255, 255, 255, 0.8);
+          border-radius: 2px;
+          transition: width 0.3s ease;
+          width: 0%;
+        }
+      `;
+      document.head.appendChild(style);
+    }
+    
+    document.body.appendChild(indicator);
+  }
+  
+  indicator.innerHTML = `
+    <div class="operator-spinner" style="
+      width: 20px;
+      height: 20px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-top: 2px solid white;
+      border-radius: 50%;
+      flex-shrink: 0;
+    "></div>
+    <div style="flex: 1;">
+      <div style="font-weight: 600; margin-bottom: 4px;">Executing Operators</div>
+      <div style="font-size: 12px; opacity: 0.9; margin-bottom: 4px;">Preparing data for template execution...</div>
+      <div class="operator-progress-bar">
+        <div class="operator-progress-fill" style="width: 0%;"></div>
+      </div>
+    </div>
+  `;
+  
+  indicator.style.display = 'flex';
+}
+
+// Hide loading indicator for operator execution
+function hideOperatorExecutionIndicator() {
+  const indicator = document.getElementById('operator-execution-indicator');
+  if (indicator) {
+    indicator.style.animation = 'slideOutRight 0.3s ease-out';
+    setTimeout(() => {
+      if (indicator && indicator.parentNode) {
+        indicator.parentNode.removeChild(indicator);
+      }
+    }, 300);
+  }
+}
+
+// Update operator execution progress
+function updateOperatorExecutionProgress(message, operatorName = null, progress = null) {
+  const indicator = document.getElementById('operator-execution-indicator');
+  if (indicator) {
+    const messageDiv = indicator.querySelector('div > div:nth-child(2)');
+    const progressBar = indicator.querySelector('.operator-progress-fill');
+    
+    if (messageDiv) {
+      if (operatorName) {
+        messageDiv.textContent = `Executing: ${operatorName}`;
+      } else {
+        messageDiv.textContent = message;
+      }
+    }
+    
+    if (progressBar && progress !== null) {
+      progressBar.style.width = `${progress}%`;
+    }
+  }
+}
+
+// Expose functions globally for operators module to use
+window.showOperatorExecutionIndicator = showOperatorExecutionIndicator;
+window.hideOperatorExecutionIndicator = hideOperatorExecutionIndicator;
+window.updateOperatorExecutionProgress = updateOperatorExecutionProgress;
+
+// Test function to manually show the indicator (for debugging)
+window.testOperatorIndicator = function() {
+  showOperatorExecutionIndicator();
+  
+  // Update progress after 2 seconds
+  setTimeout(() => {
+    updateOperatorExecutionProgress('Testing progress update', 'Test Operator', 25);
+  }, 2000);
+  
+  // Update progress after 4 seconds
+  setTimeout(() => {
+    updateOperatorExecutionProgress('Testing progress update', 'Test Operator', 50);
+  }, 4000);
+  
+  // Update progress after 6 seconds
+  setTimeout(() => {
+    updateOperatorExecutionProgress('Testing progress update', 'Test Operator', 75);
+  }, 6000);
+  
+  // Hide after 8 seconds
+  setTimeout(() => {
+    hideOperatorExecutionIndicator();
+  }, 8000);
+};
+
 // Basic template execution
-export async function executeTemplate(clearCache = false, isLiveUpdate = false) {
+export async function executeTemplate(clearCache = false, isLiveUpdate = false) {  
   const templateEditor = getElements.templateEditor;
+  const currentDocumentId = window.documentManager?.activeDocumentId;
+  if (currentDocumentId) {
+    const documentSpecificId = `${currentDocumentId}-template-editor`;
+    const documentSpecificEditor = document.getElementById(documentSpecificId);
+    const activeDocument = document.querySelector('.tab-content.active');
+    if (activeDocument) {
+      const templateEditorInActiveDoc = activeDocument.querySelector('.template-editor');
+    }
+  }
+  
   if (!templateEditor) {
+    const fallbackEditor = document.querySelector('.template-editor') || 
+                          document.getElementById('template-editor') ||
+                          document.querySelector('.tab-content.active .template-editor');
+    
+    if (fallbackEditor) {
+      // Use the fallback editor
+      const fallbackTemplateText = getTextContentWithLineBreaks(fallbackEditor);
+      
+      if (fallbackTemplateText && fallbackTemplateText.trim()) {
+        // Continue with the fallback editor
+        const hasRichHTML = fallbackEditor.innerHTML && 
+                           fallbackEditor.innerHTML !== fallbackEditor.textContent &&
+                           isRichHTMLContent(fallbackEditor.innerHTML);
+        
+        let templateText;
+        if (hasRichHTML) {
+          templateText = fallbackEditor.innerHTML;
+        } else {
+          templateText = fallbackTemplateText;
+        }
+        
+        if (!isLiveUpdate) {
+          setExecutionStatus('Preparing template execution...', 'loading');
+        }
+        
+        await executeRequiredOperatorsBeforeTemplate(templateText, isLiveUpdate);
+        
+        if (!isLiveUpdate) {
+          setExecutionStatus(clearCache ? 'Executing template (no cache)...' : 'Executing template...', 'loading');
+        }
+        
+        executeTemplateRequest(templateText, clearCache, isLiveUpdate);
+        return;
+      }
+    }
+    
     setExecutionStatus('Template editor not found', 'error');
     return;
   }
@@ -101,13 +296,13 @@ export async function executeTemplate(clearCache = false, isLiveUpdate = false) 
   if (hasRichHTML) {
     // Preserve rich HTML content (like PPTX2HTML)
     templateText = templateEditor.innerHTML;
-    console.log('Detected rich HTML content, preserving HTML structure');
   } else {
     // Convert to plain text for simple content
     templateText = getTextContentWithLineBreaks(templateEditor);
   }
   
   if (!templateText.trim()) {
+    console.error(`[${windowId}] 🔍 DEBUG: Template text is empty after trimming!`);
     setExecutionStatus('Please enter a template first', 'error');
     return;
   }
@@ -127,19 +322,23 @@ export async function executeTemplate(clearCache = false, isLiveUpdate = false) 
 }
 
 async function executeTemplateRequest(templateText, clearCache = false, isLiveUpdate = false) {
+  
   try {
     // Get current document ID for data sources context
     const documentId = window.documentManager?.activeDocumentId || null;
     
+    const requestBody = { 
+      template_text: templateText,
+      session_id: state.sessionId,
+      document_id: documentId,
+      clear_cache: clearCache
+    };
+    
+    
     const response = await fetch('http://127.0.0.1:5000/api/execute-template', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        template_text: templateText,
-        session_id: state.sessionId,
-        document_id: documentId,
-        clear_cache: clearCache
-      })
+      body: JSON.stringify(requestBody)
     });
 
     if (!response.ok) {
@@ -149,6 +348,7 @@ async function executeTemplateRequest(templateText, clearCache = false, isLiveUp
     const data = await response.json();
     
     if (data.success) {
+      
       updateState({ 
         variables: data.variables || {},
         currentOutput: data.rendered_output,
@@ -165,6 +365,7 @@ async function executeTemplateRequest(templateText, clearCache = false, isLiveUp
       
       // Update preview (simplified)
       const previewContent = getElements.previewContent;
+      
       if (previewContent) {
         previewContent.innerHTML = escapeAndFormatOutput(data.rendered_output);
       }
@@ -172,6 +373,7 @@ async function executeTemplateRequest(templateText, clearCache = false, isLiveUp
       // Re-attach event listeners to highlighted text after content update
       refreshHighlightEventListeners();
     } else {
+      console.error(`[${windowId}] 🔍 DEBUG: Template execution failed:`, data.error);
       setExecutionStatus('Execution failed', 'error');
       const previewContent = getElements.previewContent;
       if (previewContent) {
@@ -182,7 +384,6 @@ async function executeTemplateRequest(templateText, clearCache = false, isLiveUp
       refreshHighlightEventListeners();
     }
   } catch (error) {
-    console.error('Error executing template:', error);
     setExecutionStatus('Execution failed', 'error');
     const previewContent = getElements.previewContent;
     if (previewContent) {
@@ -313,18 +514,13 @@ async function handleDiffViewResponse(data) {
 // Create AI suggestion as a comment with inline diff
 async function createAISuggestionComment(lineDiffs, currentTemplate, suggestedTemplate, aiMessage) {
   try {
-    console.log('Creating AI suggestion comment with', lineDiffs?.length || 0, 'diffs');
-    
     // Validate input parameters
     if (!lineDiffs || !Array.isArray(lineDiffs)) {
       console.error('Invalid lineDiffs provided:', lineDiffs);
-      addMessageToUI('system', '❌ Invalid AI suggestion data received');
       return;
     }
     
     if (lineDiffs.length === 0) {
-      console.log('No changes suggested by AI');
-      addMessageToUI('system', '💡 AI reviewed the code but suggested no changes');
       return;
     }
     
@@ -405,7 +601,6 @@ async function createAISuggestionComment(lineDiffs, currentTemplate, suggestedTe
     // Store in comments state
     state.comments[commentId] = commentData;
     
-    console.log('Applying inline diff highlighting...');
     // Apply inline diff highlighting in the code editor with timeout protection
     const highlightPromise = new Promise((resolve, reject) => {
       try {
@@ -423,7 +618,6 @@ async function createAISuggestionComment(lineDiffs, currentTemplate, suggestedTe
       )
     ]);
     
-    console.log('Creating AI suggestion annotation...');
     // Create floating annotation with accept/reject buttons
     const { createAISuggestionAnnotation } = await import('./annotations.js');
     createAISuggestionAnnotation(commentData);
@@ -436,12 +630,7 @@ async function createAISuggestionComment(lineDiffs, currentTemplate, suggestedTe
       window.documentManager.onContentChange();
     }
     
-    console.log('AI suggestion comment created successfully');
-    
-  } catch (error) {
-    console.error('Error creating AI suggestion comment:', error);
-    addMessageToUI('system', `❌ Failed to create AI suggestion: ${error.message}`);
-    
+  } catch (error) {    
     // Remove waiting indicator in case of error
     try {
       removeWaitingIndicator();
@@ -839,20 +1028,17 @@ export function initTemplateExecution() {
   // Check if user can execute templates
   const currentUser = getCurrentUser();
   if (currentUser && currentUser.role === 'Report Consumer') {
-    console.log(`[${windowId}] Hiding execute template button for consumer: ${currentUser.name}`);
     executeTemplateBtn.style.display = 'none';
     return; // Don't add event listeners for consumers
   }
   
   // Remove existing event listener from the previous button if it exists
   if (templateExecData.executeHandler && templateExecData.currentExecuteBtn) {
-    console.log(`[${windowId}] Removing event listener from previous execute template button`);
     templateExecData.currentExecuteBtn.removeEventListener('click', templateExecData.executeHandler);
   }
   
   // Create new event handler
   templateExecData.executeHandler = async () => {
-    console.log(`[${windowId}] Execute template clicked`);
     await executeTemplate();
   };
   
@@ -862,7 +1048,10 @@ export function initTemplateExecution() {
   // Track which button currently has the listener
   templateExecData.currentExecuteBtn = executeTemplateBtn;
   
-  console.log(`[${windowId}] Template execution initialized, button:`, executeTemplateBtn);
+  // Expose operator execution indicator functions to window for use by operators module
+  window.showOperatorExecutionIndicator = showOperatorExecutionIndicator;
+  window.hideOperatorExecutionIndicator = hideOperatorExecutionIndicator;
+  window.updateOperatorExecutionProgress = updateOperatorExecutionProgress;
   
   // Mark as initialized
   templateExecData.templateExecutionInitialized = true;
@@ -873,7 +1062,6 @@ export function initTemplateExecution() {
 export function resetTemplateExecutionInitialization() {
   // Clean up existing event listener before resetting
   if (templateExecData.executeHandler && templateExecData.currentExecuteBtn) {
-    console.log(`[${windowId}] Cleaning up execute event listener during reset`);
     templateExecData.currentExecuteBtn.removeEventListener('click', templateExecData.executeHandler);
   }
   
