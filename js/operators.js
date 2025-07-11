@@ -76,7 +76,7 @@ class DependencyHandler {
   /**
    * Execute code with dependency values as function arguments (consistent with variable-operator-generator)
    */
-  static async executeCodeWithDependencies(code, dataSource, dependencyValues, variableName) {
+  static async executeCodeWithDependencies(code, dataSource, dependencyValues) {
     try {
       // Prepare the execution context with dependencies
       let executionCode = code;
@@ -113,7 +113,6 @@ class DependencyHandler {
                 try {
                   const jsonValue = JSON.stringify(value);
                   args.push(`json.loads('${jsonValue.replace(/'/g, "\\'")}')`);
-                  console.log(`✅ Serialized object ${depName} as JSON:`, jsonValue);
                 } catch (error) {
                   console.error(`❌ Failed to serialize ${depName}:`, error);
                   args.push('None');
@@ -145,11 +144,11 @@ class DependencyHandler {
         }
       }
       
-      // Use the same execution method but with enhanced code
+      // Use the same execution method but without variable storage (operators handle this separately)
       const result = await executeCodeForAuthorLocal(
         executionCode, 
         dataSource, 
-        variableName, 
+        null, // Don't store in variable - operators handle this
         window.documentManager?.activeDocumentId || 'default',
         true // Skip propagation to avoid infinite loops during dependency execution
       );
@@ -421,8 +420,7 @@ class OperatorManager {
         result = await DependencyHandler.executeCodeWithDependencies(
           plainTextCode,
           dataSource,
-          dependencyValues,
-          instance.name
+          dependencyValues
         );
       } else {
         // Execute without dependencies (original approach)
