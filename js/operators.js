@@ -2656,13 +2656,13 @@ async function executeRequiredOperatorsForTemplate(templateContent) {
       return { success: true, executedOperators: [] };
     }
     
-    // 3. Execute operators in sequence
-    const executionResults = await executeOperatorsSequence(requiredOperators);
+    // 3. Execute operators with cascading dependency updates
+    const executionResults = await executeOperatorsWithCascadingUpdates(requiredOperators);
     
     return {
       success: true,
-      executedOperators: requiredOperators.map(op => op.name),
-      results: executionResults
+      executedOperators: executionResults.executedOperators || [],
+      results: executionResults.results || []
     };
     
   } catch (error) {
@@ -2727,6 +2727,527 @@ function getOperatorOutputVariables(operator) {
   }
   
   return outputVars;
+}
+
+// Store to track previous dependency values for change detection
+let previousDependencyValues = new Map();
+
+/**
+ * Clear dependency cache to force re-execution of all operators
+ */
+function clearDependencyCache() {
+  previousDependencyValues.clear();
+  console.log(`[${windowId}] Dependency cache cleared - next execution will run all operators with cascading updates`);
+}
+
+/**
+ * Identify operators that need re-execution due to changed dependencies
+ */
+async function identifyOperatorsWithChangedDependencies(operators) {
+  try {
+    // Load variables manager to get variable values
+    const { variablesManager } = await import('./variables.js');
+    
+    if (!variablesManager) {
+      console.warn('Variables manager not available, executing all operators');
+      return operators;
+    }
+    
+    // Use current variables in memory - don't reload to preserve dependency information
+    // Variables should already be loaded when the application starts
+    
+    const operatorsToExecute = [];
+    const changedOperators = new Set();
+    
+    // First, check if any operator has dependencies that have changed
+    for (const operator of operators) {
+      const outputVars = getOperatorOutputVariables(operator);
+      
+      for (const varName of outputVars) {
+        const variable = variablesManager.variables.get(varName);
+        if (variable && variable.dependencies && variable.dependencies.length > 0) {
+          const operatorKey = `${operator.id}-${varName}`;
+          
+          // Get current dependency values
+          const currentDependencyValues = {};
+          for (const depName of variable.dependencies) {
+            const depVariable = variablesManager.variables.get(depName);
+            currentDependencyValues[depName] = depVariable ? depVariable.value : null;
+          }
+          
+          // Compare with previous values
+          const previousValues = previousDependencyValues.get(operatorKey) || {};
+          const hasChanged = variable.dependencies.some(depName => 
+            previousValues[depName] !== currentDependencyValues[depName]
+          );
+          
+          if (hasChanged || !previousDependencyValues.has(operatorKey)) {
+            console.log(`[${windowId}] Operator "${operator.name}" needs re-execution due to changed dependencies`);
+            changedOperators.add(operator.id);
+            
+            // Update stored values
+            previousDependencyValues.set(operatorKey, currentDependencyValues);
+          }
+        } else {
+          // Operator has no dependencies, check if it was executed before
+          const operatorKey = `${operator.id}-${varName}`;
+          if (!previousDependencyValues.has(operatorKey)) {
+            console.log(`[${windowId}] Operator "${operator.name}" needs initial execution`);
+            changedOperators.add(operator.id);
+            previousDependencyValues.set(operatorKey, {});
+          }
+        }
+      }
+    }
+    
+    // If any operator needs re-execution, we need to identify all dependent operators
+    if (changedOperators.size > 0) {
+      const dependentOperators = await findDependentOperators(operators, changedOperators);
+      operatorsToExecute.push(...dependentOperators);
+    }
+    
+    return operatorsToExecute;
+    
+  } catch (error) {
+    console.error(`[${windowId}] Error identifying operators with changed dependencies:`, error);
+    return operators; // Fall back to executing all operators
+  }
+}
+
+/**
+ * Find all operators that depend on the changed operators (recursive dependency resolution)
+ */
+async function findDependentOperators(allOperators, changedOperatorIds) {
+  try {
+    const { variablesManager } = await import('./variables.js');
+    
+    if (!variablesManager) {
+      return allOperators.filter(op => changedOperatorIds.has(op.id));
+    }
+    
+    // Get all variables and their dependencies
+    const affectedVariables = new Set();
+    const operatorToVariables = new Map();
+    
+    // Map operators to their output variables
+    for (const operator of allOperators) {
+      const outputVars = getOperatorOutputVariables(operator);
+      operatorToVariables.set(operator.id, outputVars);
+      
+      // If this operator changed, mark its output variables as affected
+      if (changedOperatorIds.has(operator.id)) {
+        outputVars.forEach(varName => affectedVariables.add(varName));
+      }
+    }
+    
+    // Find all variables that depend on affected variables (recursive)
+    const findDependentVariables = (varName) => {
+      const dependents = variablesManager.findDependentVariables(varName);
+      for (const dependent of dependents) {
+        if (!affectedVariables.has(dependent)) {
+          affectedVariables.add(dependent);
+          findDependentVariables(dependent); // Recursive call
+        }
+      }
+    };
+    
+    // Find all dependent variables
+    for (const varName of affectedVariables) {
+      findDependentVariables(varName);
+    }
+    
+    // Find operators that output affected variables
+    const operatorsToExecute = [];
+    for (const operator of allOperators) {
+      const outputVars = getOperatorOutputVariables(operator);
+      const hasAffectedOutput = outputVars.some(varName => affectedVariables.has(varName));
+      
+      if (hasAffectedOutput) {
+        operatorsToExecute.push(operator);
+      }
+    }
+    
+    return operatorsToExecute;
+    
+  } catch (error) {
+    console.error(`[${windowId}] Error finding dependent operators:`, error);
+    return allOperators.filter(op => changedOperatorIds.has(op.id));
+  }
+}
+
+/**
+ * Execute operators with cascading dependency updates
+ * This ensures that when an operator executes and updates variables,
+ * all operators that depend on those variables are also re-executed
+ */
+async function executeOperatorsWithCascadingUpdates(initialOperators) {
+  const results = [];
+  const executedOperators = [];
+  let totalOperatorsExecuted = 0;
+  
+  // Set flag to prevent template auto-refresh loop
+  operatorsData.isExecutingForTemplate = true;
+  
+  try {
+    // Show progress message
+    if (window.showOperatorExecutionIndicator) {
+      window.showOperatorExecutionIndicator(`Starting cascading execution...`);
+    }
+    
+    // Initialize execution queue with operators that have changed dependencies
+    const executionQueue = [];
+    const operatorExecutionCount = new Map(); // Track how many times each operator has been executed
+    const maxExecutionsPerOperator = 10; // Prevent infinite loops
+    
+    // Find initially changed operators
+    const initialChangedOperators = await identifyOperatorsWithChangedDependencies(initialOperators);
+    
+    if (initialChangedOperators.length === 0) {
+      console.log(`[${windowId}] No operators need re-execution - all dependencies unchanged`);
+      return { executedOperators: [], results: [], skippedDueToNoChanges: true };
+    }
+    
+    // Add initial operators to queue in dependency order
+    const orderedInitialOperators = await getOperatorsInDependencyOrder(initialChangedOperators);
+    executionQueue.push(...orderedInitialOperators);
+    
+    // Process execution queue with cascading updates
+    while (executionQueue.length > 0) {
+      const operator = executionQueue.shift();
+      
+      console.log(`[${windowId}] Processing operator "${operator.name}" from queue. Queue size: ${executionQueue.length}`);
+      
+      // Check if this operator has been executed too many times (infinite loop protection)
+      const executionCount = operatorExecutionCount.get(operator.id) || 0;
+      if (executionCount >= maxExecutionsPerOperator) {
+        console.log(`[${windowId}] Skipping operator "${operator.name}" - maximum executions reached (${maxExecutionsPerOperator})`);
+        continue;
+      }
+      
+      try {
+        totalOperatorsExecuted++;
+        
+        // Update progress indicator
+        if (window.updateOperatorExecutionProgress) {
+          window.updateOperatorExecutionProgress(
+            `Executing operator ${totalOperatorsExecuted} (cascading): ${operator.name}`, 
+            operator.name, 
+            null
+          );
+        }
+        
+        // Store pre-execution variable values to detect changes
+        const preExecutionValues = await captureVariableValues(operator);
+        
+        // Execute the operator
+        const substitutedOperator = await substituteOperatorDependencies(operator);
+        const result = await operatorManager.executeInstance(substitutedOperator.id);
+        
+        // Store execution result
+        results.push({
+          operatorId: operator.id,
+          operatorName: operator.name,
+          success: true,
+          result: result
+        });
+        
+        executedOperators.push(operator.name);
+        operatorExecutionCount.set(operator.id, executionCount + 1);
+        
+        // Update progress indicator for completion
+        if (window.updateOperatorExecutionProgress) {
+          window.updateOperatorExecutionProgress(`Completed: ${operator.name}`, operator.name, null);
+        }
+        
+        // Check if this operator's execution caused other variables to change
+        // Note: We don't need to reload variables here because the operator execution
+        // already properly updates them via setVariableValue()
+        const postExecutionValues = await captureVariableValues(operator);
+        const changedVariables = detectChangedVariables(preExecutionValues, postExecutionValues);
+        
+        // Update dependency cache with new values
+        await updateDependencyCacheForOperator(operator, postExecutionValues);
+        
+        if (changedVariables.length > 0) {
+          console.log(`[${windowId}] Operator "${operator.name}" changed variables: ${changedVariables.join(', ')}`);
+          
+          // Find operators that depend on the newly changed variables (search ALL operators, not just initial ones)
+          const allOperators = operatorManager.getCurrentDocumentInstances();
+          console.log(`[${windowId}] Searching ${allOperators.length} total operators for dependencies on changed variables`);
+          
+          const dependentOperators = await findOperatorsDependingOnVariables(allOperators, changedVariables);
+          console.log(`[${windowId}] Found ${dependentOperators.length} dependent operators: ${dependentOperators.map(op => op.name).join(', ')}`);
+          
+          // Add dependent operators to queue (if not already in queue)
+          for (const depOperator of dependentOperators) {
+            if (!executionQueue.find(op => op.id === depOperator.id)) {
+              console.log(`[${windowId}] Adding dependent operator "${depOperator.name}" to execution queue`);
+              executionQueue.push(depOperator);
+            } else {
+              console.log(`[${windowId}] Skipping operator "${depOperator.name}" - already in queue`);
+            }
+          }
+        } else {
+          console.log(`[${windowId}] Operator "${operator.name}" did not change any variables`);
+        }
+        
+      } catch (error) {
+        console.error(`[${windowId}] ❌ Error executing operator "${operator.name}":`, error);
+        
+        results.push({
+          operatorId: operator.id,
+          operatorName: operator.name,
+          success: false,
+          error: error.message
+        });
+        
+        operatorExecutionCount.set(operator.id, executionCount + 1);
+        
+        // Update progress indicator for error
+        if (window.updateOperatorExecutionProgress) {
+          window.updateOperatorExecutionProgress(`Failed: ${operator.name}`, operator.name, null);
+        }
+      }
+    }
+    
+    console.log(`[${windowId}] Cascading execution completed. Total operators executed: ${totalOperatorsExecuted}`);
+    
+  } finally {
+    // Always clear flag after execution is complete
+    operatorsData.isExecutingForTemplate = false;
+    
+    // Hide the floating indicator
+    if (window.hideOperatorExecutionIndicator) {
+      window.hideOperatorExecutionIndicator();
+    }
+  }
+  
+  return { executedOperators, results };
+}
+
+/**
+ * Capture variable values before operator execution
+ * Now captures ALL variables to detect any changes, not just operator outputs
+ */
+async function captureVariableValues(operator) {
+  try {
+    const { variablesManager } = await import('./variables.js');
+    if (!variablesManager) return {};
+    
+    // Don't reload variables here - use the current state in memory
+    // Loading variables would clear the in-memory state and potentially lose dependency info
+    const values = {};
+    
+    // Capture ALL variables in the system to detect any changes
+    variablesManager.variables.forEach((variable, varName) => {
+      values[varName] = variable ? variable.value : null;
+    });
+    
+    return values;
+  } catch (error) {
+    console.error(`[${windowId}] Error capturing variable values:`, error);
+    return {};
+  }
+}
+
+/**
+ * Detect which variables changed after operator execution
+ */
+function detectChangedVariables(preValues, postValues) {
+  const changedVariables = [];
+  
+  console.log(`[${windowId}] Comparing pre-execution values:`, preValues);
+  console.log(`[${windowId}] Comparing post-execution values:`, postValues);
+  
+  for (const [varName, preValue] of Object.entries(preValues)) {
+    const postValue = postValues[varName];
+    const preStr = JSON.stringify(preValue);
+    const postStr = JSON.stringify(postValue);
+    
+    if (preStr !== postStr) {
+      console.log(`[${windowId}] Variable "${varName}" changed from ${preStr} to ${postStr}`);
+      changedVariables.push(varName);
+    }
+  }
+  
+  // Check for new variables that weren't in preValues
+  for (const [varName, postValue] of Object.entries(postValues)) {
+    if (!(varName in preValues)) {
+      console.log(`[${windowId}] New variable "${varName}" appeared with value ${JSON.stringify(postValue)}`);
+      changedVariables.push(varName);
+    }
+  }
+  
+  return changedVariables;
+}
+
+/**
+ * Find operators that depend on specific variables
+ */
+async function findOperatorsDependingOnVariables(allOperators, changedVariables) {
+  try {
+    const { variablesManager } = await import('./variables.js');
+    if (!variablesManager) return [];
+    
+    // Don't reload variables here - use the current state in memory
+    // Loading variables would clear dependency information that we need to preserve
+    const dependentOperators = [];
+    
+    console.log(`[${windowId}] Looking for operators that depend on changed variables: ${changedVariables.join(', ')}`);
+    
+    for (const operator of allOperators) {
+      const outputVars = getOperatorOutputVariables(operator);
+      
+      for (const varName of outputVars) {
+        const variable = variablesManager.variables.get(varName);
+        if (variable && variable.dependencies) {
+          console.log(`[${windowId}] Checking operator "${operator.name}" output variable "${varName}" with dependencies: ${variable.dependencies.join(', ')}`);
+          
+          // Check if this operator depends on any of the changed variables
+          const dependsOnChanged = variable.dependencies.some(dep => changedVariables.includes(dep));
+          if (dependsOnChanged) {
+            console.log(`[${windowId}] ✓ Operator "${operator.name}" depends on changed variables`);
+            dependentOperators.push(operator);
+            break; // Don't add the same operator multiple times
+          }
+        } else {
+          console.log(`[${windowId}] Operator "${operator.name}" output variable "${varName}" has no dependencies`);
+        }
+      }
+    }
+    
+    return dependentOperators;
+  } catch (error) {
+    console.error(`[${windowId}] Error finding dependent operators:`, error);
+    return [];
+  }
+}
+
+/**
+ * Update dependency cache for an operator after execution
+ */
+async function updateDependencyCacheForOperator(operator, newValues) {
+  try {
+    const { variablesManager } = await import('./variables.js');
+    if (!variablesManager) return;
+    
+    // Don't reload variables here - use the current state in memory
+    // Loading variables would clear dependency information that we need to preserve
+    const outputVars = getOperatorOutputVariables(operator);
+    
+    for (const varName of outputVars) {
+      const variable = variablesManager.variables.get(varName);
+      if (variable && variable.dependencies && variable.dependencies.length > 0) {
+        const operatorKey = `${operator.id}-${varName}`;
+        
+        // Get current dependency values
+        const currentDependencyValues = {};
+        for (const depName of variable.dependencies) {
+          const depVariable = variablesManager.variables.get(depName);
+          currentDependencyValues[depName] = depVariable ? depVariable.value : null;
+        }
+        
+        // Update the cache with current dependency values
+        previousDependencyValues.set(operatorKey, currentDependencyValues);
+        
+        console.log(`[${windowId}] Updated dependency cache for operator "${operator.name}" variable "${varName}"`);
+      }
+    }
+  } catch (error) {
+    console.error(`[${windowId}] Error updating dependency cache:`, error);
+  }
+}
+
+/**
+ * Execute operators in proper dependency order (topological sort)
+ */
+async function executeOperatorsInDependencyOrder(operators) {
+  const results = [];
+  let successCount = 0;
+  let errorCount = 0;
+  
+  // Set flag to prevent template auto-refresh loop
+  operatorsData.isExecutingForTemplate = true;
+  
+  try {
+    // Show progress message
+    if (window.showOperatorExecutionIndicator) {
+      window.showOperatorExecutionIndicator(`Starting execution of ${operators.length} operators...`);
+    }
+    
+    // Execute operators in dependency order
+    const orderedOperators = await getOperatorsInDependencyOrder(operators);
+    
+    for (let i = 0; i < orderedOperators.length; i++) {
+      const operator = orderedOperators[i];
+      try {
+        // Update progress indicator for individual operator
+        if (window.updateOperatorExecutionProgress) {
+          const progress = ((i + 1) / orderedOperators.length) * 100;
+          window.updateOperatorExecutionProgress(`Executing operator ${i + 1} of ${orderedOperators.length}`, operator.name, progress);
+        }
+        
+        // Set up timeout for slow operations
+        const slowOperationMessage = setTimeout(() => {
+          if (window.updateOperatorExecutionProgress) {
+            window.updateOperatorExecutionProgress(`Still processing: ${operator.name} (this may take a moment for data downloads)`, operator.name);
+          }
+        }, 5000);
+        
+        // Substitute dependency values in operator parameters before execution
+        const substitutedOperator = await substituteOperatorDependencies(operator);
+        
+        const result = await operatorManager.executeInstance(substitutedOperator.id);
+        
+        // Clear the slow operation timeout
+        clearTimeout(slowOperationMessage);
+        
+        results.push({
+          operatorId: operator.id,
+          operatorName: operator.name,
+          success: true,
+          result: result
+        });
+        
+        successCount++;
+        
+        // Update progress indicator for completion
+        if (window.updateOperatorExecutionProgress) {
+          const progress = ((i + 1) / orderedOperators.length) * 100;
+          window.updateOperatorExecutionProgress(`Completed: ${operator.name}`, operator.name, progress);
+        }
+        
+      } catch (error) {
+        console.error(`[${windowId}] ❌ Error executing operator "${operator.name}":`, error);
+        
+        results.push({
+          operatorId: operator.id,
+          operatorName: operator.name,
+          success: false,
+          error: error.message
+        });
+        
+        errorCount++;
+        
+        // Update progress indicator for error
+        if (window.updateOperatorExecutionProgress) {
+          const progress = ((i + 1) / orderedOperators.length) * 100;
+          window.updateOperatorExecutionProgress(`Failed: ${operator.name}`, operator.name, progress);
+        }
+      }
+    }
+    
+  } finally {
+    // Always clear flag after execution is complete
+    operatorsData.isExecutingForTemplate = false;
+    
+    // Hide the floating indicator
+    if (window.hideOperatorExecutionIndicator) {
+      window.hideOperatorExecutionIndicator();
+    }
+  }
+  
+  return results;
 }
 
 async function executeOperatorsSequence(operators) {
@@ -2833,8 +3354,7 @@ async function getOperatorsInDependencyOrder(operators) {
       return operators;
     }
     
-    // Load latest variables
-    await variablesManager.loadVariables();
+    // Use current variables in memory - don't reload to preserve dependency information
     
     // Create a map of variable to operator for easy lookup
     const variableToOperator = new Map();
@@ -2892,8 +3412,7 @@ async function substituteOperatorDependencies(operator) {
       return operator;
     }
     
-    // Load latest variables
-    await variablesManager.loadVariables();
+    // Use current variables in memory - don't reload to preserve dependency information
     
     // Get the output variables for this operator
     const outputVars = getOperatorOutputVariables(operator);
@@ -3195,5 +3714,6 @@ window.operatorsModule = {
   populateSuggestedFields,
   showOperatorLoadingIndicator,
   hideOperatorLoadingIndicator,
-  getOperatorForVariable: (variableName) => operatorManager?.getInstanceByOutputVariable(variableName)
+  getOperatorForVariable: (variableName) => operatorManager?.getInstanceByOutputVariable(variableName),
+  clearDependencyCache
 }; 

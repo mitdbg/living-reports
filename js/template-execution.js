@@ -33,11 +33,16 @@ function createDocumentAnnotationId(baseId) {
 }
 
 // Operators Integration - Execute required operators before template processing
-async function executeRequiredOperatorsBeforeTemplate(templateText, isLiveUpdate = false) {
+async function executeRequiredOperatorsBeforeTemplate(templateText, isLiveUpdate = false, clearCache = false) {
   try {
     // Only execute operators if operators module is available
     if (!window.operatorsModule || !window.operatorsModule.executeRequiredOperatorsForTemplate) {
       return;
+    }
+
+    // Clear dependency cache if requested
+    if (clearCache && window.operatorsModule.clearDependencyCache) {
+      window.operatorsModule.clearDependencyCache();
     }
 
     // Show loading indicator for operator execution
@@ -272,7 +277,7 @@ export async function executeTemplate(clearCache = false, isLiveUpdate = false) 
           setExecutionStatus('Preparing template execution...', 'loading');
         }
         
-        await executeRequiredOperatorsBeforeTemplate(templateText, isLiveUpdate);
+        await executeRequiredOperatorsBeforeTemplate(templateText, isLiveUpdate, clearCache);
         
         if (!isLiveUpdate) {
           setExecutionStatus(clearCache ? 'Executing template (no cache)...' : 'Executing template...', 'loading');
@@ -312,7 +317,7 @@ export async function executeTemplate(clearCache = false, isLiveUpdate = false) 
   }
 
   // Execute required operators before template processing
-  await executeRequiredOperatorsBeforeTemplate(templateText, isLiveUpdate);
+  await executeRequiredOperatorsBeforeTemplate(templateText, isLiveUpdate, clearCache);
 
   if (!isLiveUpdate) {
     setExecutionStatus(clearCache ? 'Executing template (no cache)...' : 'Executing template...', 'loading');

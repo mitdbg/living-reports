@@ -2530,7 +2530,7 @@ def generate_variable_code():
 
         # Create LLM prompt for code generation
         prompt_parts = [
-            f"Generate Python code to extract data for a variable.",
+            f"Generate Python code to compute data for a variable.",
             "",
             "Variable Details:",
             f"- Name: {variable_name}",
@@ -2708,7 +2708,7 @@ output = extract_{variable_name}(parameters['data_source'])
 
         # Call LLM
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-4o",
             messages=[
                 {
                     "role": "system",
