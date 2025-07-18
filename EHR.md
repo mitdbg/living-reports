@@ -1,18 +1,4 @@
-caseid: 419639-010183, 419639-017559
-
-case id = case id
-patient data = patient data
-age = age
-x_ray_image = x_ray_image
-annotations = annotations
-
-case id = Case ID of a patient
-patient data = JSON dictionary containing the data about patient with caseid. This includes age, sex, and file paths to x-ray images of the patient.
-age = Age of the patient
-x_ray_image = Rendering of the last X-Ray image of the patient
-annotations = Annotations of the the rendering of the last X-Ray image of the patient
-
-**ELECTRONIC HEALTH RECORD (EHR)**
+## **ELECTRONIC HEALTH RECORD (EHR)**
 **Patient ID:** patient_id
 **Date of Record:** today
 
@@ -28,7 +14,7 @@ annotations = Annotations of the the rendering of the last X-Ray image of the pa
 * **Weight:** weight
 * **Smoking Status:** Former smoker (20 pack-years, quit in 2015)
 * **Occupation:** Retired construction worker
-* **Insurance Provider:** \[Placeholder Insurance Co.]
+* **Insurance Provider:** \[Insurance Co.\]
 
 ---
 
@@ -134,3 +120,58 @@ annotations = Annotations of the the rendering of the last X-Ray image of the pa
 Pulmonologist
 License #: 12345
 Contact: [abc@hospital.com](mailto:abc@hospital.com)
+
+---
+
+## **Billing Information** 
+
+**MEDICAL BILLING REPORT**
+**Patient ID:** P-002947
+**Patient Name:** John Doe
+**Date of Service:** 2025-07-13
+**Provider:** Dr. Abby Cee, MD
+**NPI #:** 1234567
+**Facility:** General Pulmonary Clinic
+**Insurance Provider:** Insurance Co.
+
+---
+
+### **Billing Summary**
+
+| **CPT/ICD Code** | **Description**                            | **Units** | **Charge/Unit** | **Total** |
+| ---------------- | ------------------------------------------ | --------- | --------------- | --------- |
+| **99214**        | Office Visit - Established Patient, 25 min | 1         | \$145.00        | \$145.00  |
+| **71045**        | Chest X-Ray, single view                   | 1         | \$80.00         | \$80.00   |
+| **94010**        | Spirometry (Pulmonary Function Test)       | 1         | \$125.00        | \$125.00  |
+| **J7620**        | Albuterol inhalation treatment             | 1         | \$35.00         | \$35.00   |
+| **G0439**        | Annual Wellness Visit (Medicare)           | 1         | \$160.00        | \$160.00  |
+| **ICD-10 J44.9** | COPD, unspecified                          | -         | -               | -         |
+| **ICD-10 I10**   | Essential (Primary) Hypertension           | -         | -               | -         |
+| **ICD-10 K21.9** | GERD, unspecified                          | -         | -               | -         |
+
+---
+
+### **Total Charges**
+
+* **Subtotal:** \$545.00
+* **Insurance Adjustment:** -\$145.00
+* **Patient Responsibility:** \$50.00 (Co-pay)
+* **Amount Billed to Insurance:** \$350.00
+
+---
+
+### **Notes**
+
+* Preauthorization not required for CPT 99214.
+* ICD-10 codes included for diagnosis justification.
+* All services provided are medically necessary and documented in the EHR.
+
+---
+
+### **Submission Information**
+
+**Billing Department Contact:** [billing@generalpulmclinic.org](mailto:billing@generalpulmclinic.org)
+**Phone:** (555) 123-4567
+**Fax:** (555) 123-4568
+**EIN:** 12-3456789
+**Claim Form Used:** CMS-1500
