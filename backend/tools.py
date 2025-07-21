@@ -74,6 +74,8 @@ def GetPatientData(case_id: str) -> Dict[str, Any]:
             case_data = case_info[0]
             result['age'] = case_data.get('age_at_index')
             result['sex'] = case_data.get('sex')
+            result['measurements'] = case_data.get('measurements', [])
+            result['medications'] = case_data.get('medications', [])
             logger.info(f"Found patient demographics - Age: {result['age']}, Sex: {result['sex']}")
             
         if len(case_info) > 0 and "submitter_id" in case_info[0]:
@@ -99,11 +101,6 @@ def GetPatientData(case_id: str) -> Dict[str, Any]:
             logger.info(f"Found {len(x_ray_files)} X-ray files")
             
             # Create a simple app-like object for download tracking
-            class DownloadTracker:
-                def __init__(self):
-                    self.download_statuses = {}
-            
-            app = DownloadTracker()
             cred_path = os.environ.get('MIDRC_CREDENTIALS_PATH')
             
             for file_info in x_ray_files:
@@ -376,7 +373,7 @@ def RenderImage(x_ray_image: str) -> str:
         # Return just the image URL instead of full HTML to avoid template processing issues
         # The template system will handle the HTML rendering
         logger.info(f"Successfully rendered image: {file_name}")
-        return f'<img src="{image_url}" alt="{file_name}" style="max-width: 100%; height: auto;" />'
+        return f'<img src="{image_url}" alt="{file_name}" style="max-width: 100%; height: 200px;" />'
     
     except Exception as e:
         logger.error(f"Error rendering image {x_ray_image}: {str(e)}")
@@ -393,9 +390,9 @@ def GenerateAnnotations(x_ray_image: str) -> str:
 
     prompt = """ Examine this image and look for any important clinical findings. 
 Provide a summary in a table format where the positive clinical conditions are 1 and the negative clinical conditions are 0.
-Designate each condition as left side, right side, or bilateral. Provide an ICD-10 code in a separate column for positive findings only or N/A if not applicable.
+Designate each condition as left side, right side, or bilateral. Provide an SNOMED_CT code in a separate column for positive findings only or N/A if not applicable.
 
-Table columns include: [Exam no., Finding No., Clinical Finding, Left Side, Right Side, Bilateral, ICD-10 Code, ICD-10 Description]
+Table columns include: [Exam no., Finding No., Clinical Finding, Left Side, Right Side, Bilateral, SNOMED_CT Code, SNOMED_CT Description]
 
 Additional instructions:
 1. Normal findings should be excluded from the each table.
