@@ -20,18 +20,27 @@ if [ ! -f ".env" ]; then
     exit 1
 fi
 
-# Set venv directory name
-VENV_DIR="venv"
-
-# Check if venv exists
-if [ ! -d "$VENV_DIR" ]; then
-    echo "❌ Virtual environment not found!"
-    echo "📦 Please run ./install-deps.sh first to install dependencies."
-    exit 1
+# Check if we're already in a virtual environment
+if [ -n "$VIRTUAL_ENV" ]; then
+    echo "✅ Using active virtual environment: $VIRTUAL_ENV"
+    PYTHON_CMD="python"
+else
+    # Fall back to local venv if not already in one
+    VENV_DIR="venv"
+    
+    # Check if local venv exists
+    if [ ! -d "$VENV_DIR" ]; then
+        echo "❌ No active virtual environment found and local venv directory not found!"
+        echo "📦 Please either:"
+        echo "   1. Activate your virtual environment before running this script, or"
+        echo "   2. Run ./install-deps.sh to create a local virtual environment."
+        exit 1
+    fi
+    
+    echo "🔄 Activating local virtual environment..."
+    source "$VENV_DIR/bin/activate"
+    PYTHON_CMD="../$VENV_DIR/bin/python"
 fi
-
-# Activate venv
-source "$VENV_DIR/bin/activate"
 
 # Function to cleanup background processes
 cleanup() {
@@ -155,7 +164,7 @@ echo "✅ Ready to start fresh backend and MCP processes"
 
 # Start Python backend
 echo "🐍 Starting Python backend..."
-cd backend && ../$VENV_DIR/bin/python python_backend.py &
+cd backend && $PYTHON_CMD python_backend.py &
 BACKEND_PID=$!
 cd "$SCRIPT_DIR"
 sleep 2

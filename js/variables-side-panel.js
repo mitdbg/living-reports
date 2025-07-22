@@ -13,6 +13,7 @@ class VariablesSidePanel {
     this.editingVariableName = null;
     this.selectedText = null;
     this.selectedRange = null;
+    this.currentValueOption = null; // 'manual' or 'code'
     this.initialized = false;
   }
 
@@ -72,6 +73,9 @@ class VariablesSidePanel {
     // Variable form handling
     this.setupFormEventListeners();
 
+    // Value options management
+    this.setupValueOptionsEventListeners();
+
     // Value management
     this.setupValueEventListeners();
 
@@ -110,6 +114,50 @@ class VariablesSidePanel {
     dataSourceSelect?.addEventListener('change', (e) => {
       this.handleDataSourceChange(e.target.value);
     });
+  }
+
+  /**
+   * Set up value options event listeners
+   */
+  setupValueOptionsEventListeners() {
+    const manualValueBtn = this.panel.querySelector('#choose-manual-value');
+    const codeGenerationBtn = this.panel.querySelector('#choose-code-generation');
+    
+    manualValueBtn?.addEventListener('click', () => {
+      this.selectValueOption('manual');
+    });
+    
+    codeGenerationBtn?.addEventListener('click', () => {
+      this.selectValueOption('code');
+    });
+  }
+
+  /**
+   * Select value option (manual or code generation)
+   */
+  selectValueOption(option) {
+    const manualValueBtn = this.panel.querySelector('#choose-manual-value');
+    const codeGenerationBtn = this.panel.querySelector('#choose-code-generation');
+    const manualSection = this.panel.querySelector('#manual-value-section');
+    const codeSection = this.panel.querySelector('#code-generation-inline');
+    
+    // Reset button states
+    manualValueBtn?.classList.remove('active');
+    codeGenerationBtn?.classList.remove('active');
+    
+    // Hide both sections
+    if (manualSection) manualSection.style.display = 'none';
+    if (codeSection) codeSection.style.display = 'none';
+    
+    if (option === 'manual') {
+      manualValueBtn?.classList.add('active');
+      if (manualSection) manualSection.style.display = 'block';
+      this.currentValueOption = 'manual';
+    } else if (option === 'code') {
+      codeGenerationBtn?.classList.add('active');
+      if (codeSection) codeSection.style.display = 'block';
+      this.currentValueOption = 'code';
+    }
   }
 
   /**
@@ -556,10 +604,12 @@ class VariablesSidePanel {
     if (requiredCheck) requiredCheck.checked = true;
     if (preview) preview.style.display = 'none';
 
+    // Reset value options
+    this.resetValueOptions();
+    
     // Reset other sections
     this.resetValueDisplay();
     this.resetDependencies();
-    this.hideCodeGeneration();
   }
 
   /**
@@ -594,13 +644,24 @@ class VariablesSidePanel {
       const item = document.createElement('div');
       item.className = 'variable-quick-item';
       item.innerHTML = `
-        <span class="variable-name">${variable.name}</span>
-        <span class="variable-type">${variable.type || 'text'}</span>
+        <div class="variable-info">
+          <span class="variable-name">${variable.name}</span>
+          <span class="variable-type">${variable.type || 'text'}</span>
+        </div>
+        <button class="delete-variable-btn" data-variable-name="${name}" title="Delete Variable">🗑️</button>
       `;
       
-      // Click to edit variable
-      item.addEventListener('click', () => {
+      // Click to edit variable (but not on delete button)
+      const infoDiv = item.querySelector('.variable-info');
+      infoDiv.addEventListener('click', () => {
         this.editVariable(name);
+      });
+      
+      // Delete button click handler
+      const deleteBtn = item.querySelector('.delete-variable-btn');
+      deleteBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.deleteVariable(name);
       });
       
       listContainer.appendChild(item);
@@ -645,11 +706,44 @@ class VariablesSidePanel {
       }
     }
 
-    // Update value display
+    // Update value display and value options
     this.updateValueDisplay(variable.value);
+    
+    // Set the value option based on what was saved
+    if (variable.valueOption) {
+      this.selectValueOption(variable.valueOption);
+      
+      // If it was code generation, show the generated code
+      if (variable.valueOption === 'code' && variable.generatedCode) {
+        this.showGeneratedCode(variable.generatedCode);
+      }
+    }
     
     // Update dependencies
     this.updateDependenciesDisplay(variable.dependencies || []);
+  }
+
+  /**
+   * Delete a variable
+   */
+  deleteVariable(variableName) {
+    if (!variablesManager || typeof variablesManager.removeVariable !== 'function') {
+      console.error('Variables manager not available or removeVariable method not found');
+      alert('Error: Unable to delete variable');
+      return;
+    }
+
+    // Use the existing removeVariable method from variablesManager
+    variablesManager.removeVariable(variableName);
+    
+    // Refresh the variables list
+    this.updateVariablesList();
+    
+    // If we're currently editing this variable, go back to overview
+    if (this.editingVariableName === variableName) {
+      this.showOverview();
+      this.editingVariableName = null;
+    }
   }
 
   /**
@@ -693,13 +787,24 @@ class VariablesSidePanel {
     const formatInput = this.panel.querySelector('#var-format');
     const requiredCheck = this.panel.querySelector('#var-required');
 
+    // Get current value from manual input
+    const valueDisplay = this.panel.querySelector('#var-value-display');
+    const currentValue = valueDisplay?.textContent !== 'Click to set value' ? valueDisplay?.textContent : '';
+
+    // Get generated code if using code option
+    const codeEditor = this.panel.querySelector('#generated-code-editor');
+    const generatedCode = codeEditor?.textContent || '';
+
     return {
       name: nameInput?.value?.trim() || '',
       description: descInput?.value?.trim() || '',
       type: typeSelect?.value || 'text',
       format: formatInput?.value?.trim() || '',
       required: requiredCheck?.checked || false,
-      dependencies: this.getCurrentDependencies()
+      dependencies: this.getCurrentDependencies(),
+      valueOption: this.currentValueOption,
+      value: currentValue,
+      generatedCode: generatedCode
     };
   }
 
@@ -717,6 +822,11 @@ class VariablesSidePanel {
       return false;
     }
     
+    if (!formData.description) {
+      alert('Variable description is required');
+      return false;
+    }
+    
     const existingVariables = variablesManager.getVariables();
     if (!this.editingVariableName && existingVariables[formData.name]) {
       alert('Variable name already exists');
@@ -725,6 +835,24 @@ class VariablesSidePanel {
     
     if (this.editingVariableName && formData.name !== this.editingVariableName && existingVariables[formData.name]) {
       alert('Variable name already exists');
+      return false;
+    }
+
+    // Validate that either manual value or code generation is selected
+    if (!formData.valueOption) {
+      alert('Please choose how to set the variable value: either set it manually or generate it with code');
+      return false;
+    }
+
+    // If manual value is selected, check that a value is provided
+    if (formData.valueOption === 'manual' && !formData.value) {
+      alert('Please set a value for the variable or choose the code generation option');
+      return false;
+    }
+
+    // If code generation is selected, check that code exists
+    if (formData.valueOption === 'code' && !formData.generatedCode) {
+      alert('Please generate code for the variable or set a manual value');
       return false;
     }
     
@@ -745,7 +873,10 @@ class VariablesSidePanel {
       dependencies: formData.dependencies,
       originalText: this.selectedText,
       placeholder: `{{${formData.name}}}`,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      valueOption: formData.valueOption,
+      value: formData.value,
+      generatedCode: formData.generatedCode
     };
 
     // Use variables manager to create the variable
@@ -777,7 +908,10 @@ class VariablesSidePanel {
       format: formData.format,
       required: formData.required,
       dependencies: formData.dependencies,
-      placeholder: `{{${formData.name}}}`
+      placeholder: `{{${formData.name}}}`,
+      valueOption: formData.valueOption,
+      value: formData.value,
+      generatedCode: formData.generatedCode
     };
 
     // Handle variable name change
@@ -867,15 +1001,8 @@ class VariablesSidePanel {
   }
 
   handleDataSourceChange(selectedValue) {
-    if (selectedValue === 'manual') {
-      this.startValueEditing();
-      // Reset select
-      const select = this.panel.querySelector('#var-data-source');
-      if (select) select.value = '';
-    } else if (selectedValue) {
-      // Handle data source selection
-      this.updateValueDisplay(`[${selectedValue}]`);
-    }
+    // This method is deprecated in the new UI
+    // Data source selection is now handled through the value options UI
   }
 
   /**
@@ -1015,24 +1142,32 @@ class VariablesSidePanel {
   }
 
   /**
+   * Reset value options UI
+   */
+  resetValueOptions() {
+    const manualValueBtn = this.panel.querySelector('#choose-manual-value');
+    const codeGenerationBtn = this.panel.querySelector('#choose-code-generation');
+    const manualSection = this.panel.querySelector('#manual-value-section');
+    const codeSection = this.panel.querySelector('#code-generation-inline');
+    
+    // Reset button states
+    manualValueBtn?.classList.remove('active');
+    codeGenerationBtn?.classList.remove('active');
+    
+    // Hide both sections
+    if (manualSection) manualSection.style.display = 'none';
+    if (codeSection) codeSection.style.display = 'none';
+    
+    // Reset current option
+    this.currentValueOption = null;
+  }
+
+  /**
    * Code Generation Methods
    */
   toggleCodeGeneration() {
-    const section = this.panel.querySelector('#code-generation-section');
-    if (!section) return;
-
-    if (section.style.display === 'none') {
-      section.style.display = 'block';
-      // Populate data source options when showing code generation
-      this.populateCodeGenDataSources();
-    } else {
-      section.style.display = 'none';
-    }
-  }
-
-  hideCodeGeneration() {
-    const section = this.panel.querySelector('#code-generation-section');
-    if (section) section.style.display = 'none';
+    // This method is deprecated - use selectValueOption('code') instead
+    this.selectValueOption('code');
   }
 
   /**

@@ -8994,12 +8994,19 @@ p {
   background: #f8f9fa;
   border: 1px solid #e0e0e0;
   border-radius: 4px;
-  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   transition: background-color 0.2s ease;
 }
 
 .variable-quick-item:hover {
   background: #e9ecef;
+}
+
+.variable-quick-item .variable-info {
+  flex: 1;
+  cursor: pointer;
 }
 
 .variable-quick-item .variable-name {
@@ -9012,7 +9019,80 @@ p {
 .variable-quick-item .variable-type {
   font-size: 11px;
   color: #666;
-  margin-top: 2px;
+}
+
+.delete-variable-btn {
+  background: none;
+  border: none;
+  color: #dc3545;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 14px;
+  opacity: 0.7;
+  transition: all 0.2s ease;
+  margin-left: 8px;
+}
+
+.delete-variable-btn:hover {
+  opacity: 1;
+  background-color: rgba(220, 53, 69, 0.1);
+  transform: scale(1.1);
+}
+
+/* Value Options Styles */
+.value-options {
+  margin-bottom: 15px;
+}
+
+.option-note {
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 10px;
+}
+
+.value-option-buttons {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+.option-btn {
+  flex: 1;
+  padding: 10px 15px;
+  border: 2px solid #e0e0e0;
+  background: #f8f9fa;
+  color: #333;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s ease;
+}
+
+.option-btn:hover {
+  border-color: #007bff;
+  background: #e3f2fd;
+}
+
+.option-btn.active {
+  border-color: #007bff;
+  background: #007bff;
+  color: white;
+}
+
+.manual-value-section,
+.code-generation-section {
+  padding: 15px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  background: #f8f9fa;
+}
+
+.manual-value-section h5,
+.code-generation-section h5 {
+  margin: 0 0 10px 0;
+  font-size: 14px;
+  color: #333;
 }
 
 .no-variables-message {

@@ -41,7 +41,7 @@ from pdf_processor import process_pdf_file
 from local_code_executor.code_executor import execute_code_locally
 from task_manager import TaskManager
 from pathlib import Path
-from tools import GetPatientData, GenerateAnnotations
+from tools import GetPatientData, GenerateAnnotations, GetPatientAgePlot
 
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -2400,9 +2400,9 @@ def delete_tools():
 def get_available_tools():
     """
     Get list of available tools for LLM code generation.
-    
+
     Returns:
-        List of dictionaries containing tool information including name, description, 
+        List of dictionaries containing tool information including name, description,
         function signature, and usage examples.
     """
     tools = [
@@ -2413,20 +2413,22 @@ def get_available_tools():
             "parameters": [
                 {
                     "name": "case_id",
-                    "type": "str", 
-                    "description": "The MIDRC case ID to download data for"
+                    "type": "str",
+                    "description": "The MIDRC case ID to download data for",
                 }
             ],
             "returns": {
                 "type": "Dict[str, Any]",
-                "description": "Dictionary containing age (int or None), sex (str or None), and x_ray (list of X-ray image file paths in JPEG format)"
+                "description": "Dictionary containing age (int or None), sex (str or None), and x_ray (list of X-ray image file paths in JPEG format)",
             },
             "usage_example": """# Example usage:
 patient_data = GetPatientData("MIDRC-RICORD-1A-419635-000025")
 age = patient_data['age']
 sex = patient_data['sex'] 
-x_ray_images = patient_data['x_ray']  # List of JPEG file paths""",
-            "import_statement": "from tools import GetPatientData"
+x_ray_jpeg = patient_data['x_ray_jpeg']  # List of JPEG file paths,
+x_ray_dicom = patient_data['x_ray_dicom']  # List of DICOM file paths
+""",
+            "import_statement": "from tools import GetPatientData",
         },
         {
             "name": "GenerateAnnotations",
@@ -2436,17 +2438,17 @@ x_ray_images = patient_data['x_ray']  # List of JPEG file paths""",
                 {
                     "name": "x_ray_image",
                     "type": "str",
-                    "description": "The path to the X-ray image to generate annotations for"
+                    "description": "The path to the X-ray image to generate annotations for",
                 }
             ],
             "returns": {
                 "type": "str",
-                "description": "The annotations for the X-ray image"
+                "description": "The annotations for the X-ray image",
             },
             "usage_example": """# Example usage:
 annotations = GenerateAnnotations("/var/folders/midrc_download_goy6na3v/1.2.826.0.1.3680043.10.474.419639.234031360761458340322601917251.jpg")
 """,
-            "import_statement": "from tools import GenerateAnnotations"
+            "import_statement": "from tools import GenerateAnnotations",
         },
         {
             "name": "RenderImage",
@@ -2456,20 +2458,40 @@ annotations = GenerateAnnotations("/var/folders/midrc_download_goy6na3v/1.2.826.
                 {
                     "name": "x_ray_image",
                     "type": "str",
-                    "description": "The path to the X-ray image to render"
+                    "description": "The path to the X-ray image to render",
                 }
             ],
             "returns": {
                 "type": "str",
-                "description": "The container to display the image in html"
+                "description": "The container to display the image in html",
             },
             "usage_example": """# Example usage:
 image_container = RenderImage("/var/folders/midrc_download_goy6na3v/1.2.826.0.1.3680043.10.474.419639.234031360761458340322601917251.jpg")
 """,
-            "import_statement": "from tools import RenderImage"
-        }
+            "import_statement": "from tools import RenderImage",
+        },
+        {
+            "name": "GetPatientAgePlot",
+            "description": "Generate a visualization plot showing patient age distribution from a list of DICOM files.",
+            "function_signature": "GetPatientAgePlot(x_ray_dicom_files: List[str]) -> str",
+            "parameters": [
+                {
+                    "name": "x_ray_dicom_files",
+                    "type": "List[str]",
+                    "description": "List of paths to DICOM files containing patient data",
+                }
+            ],
+            "returns": {
+                "type": "str",
+                "description": "HTML string containing the rendered visualization plot image. The plot shows patient age distribution grouped by modality and sex.",
+            },
+            "usage_example": """# Example usage:
+html_plot = GetPatientAgePlot([\"/path/to/file1.dcm\", \"/path/to/file2.dcm\"])
+""",
+            "import_statement": "from tools import GetPatientAgePlot",
+        },
     ]
-    
+
     return tools
 
 
@@ -2542,31 +2564,37 @@ def generate_variable_code():
         # Add available tools information
         available_tools = get_available_tools()
         if available_tools:
-            prompt_parts.extend([
-                "Available Tools:",
-                "You have access to the following tools/functions that you can use in your code:",
-                ""
-            ])
-            
+            prompt_parts.extend(
+                [
+                    "Available Tools:",
+                    "You have access to the following tools/functions that you can use in your code:",
+                    "",
+                ]
+            )
+
             for tool in available_tools:
-                prompt_parts.extend([
-                    f"Tool: {tool['name']}",
-                    f"Description: {tool['description']}",
-                    f"Function Signature: {tool['function_signature']}",
-                    f"Import: {tool['import_statement']}",
+                prompt_parts.extend(
+                    [
+                        f"Tool: {tool['name']}",
+                        f"Description: {tool['description']}",
+                        f"Function Signature: {tool['function_signature']}",
+                        f"Import: {tool['import_statement']}",
+                        "",
+                        "Usage Example:",
+                        tool["usage_example"],
+                        "",
+                        "---",
+                        "",
+                    ]
+                )
+
+            prompt_parts.extend(
+                [
+                    "IMPORTANT: You can use these tools by importing them and calling them in your generated code.",
+                    "Make sure to include the appropriate import statements at the top of your code.",
                     "",
-                    "Usage Example:",
-                    tool['usage_example'],
-                    "",
-                    "---",
-                    ""
-                ])
-            
-            prompt_parts.extend([
-                "IMPORTANT: You can use these tools by importing them and calling them in your generated code.",
-                "Make sure to include the appropriate import statements at the top of your code.",
-                ""
-            ])
+                ]
+            )
 
         # Add data source information if available
         if selected_data_source:
@@ -2994,13 +3022,13 @@ def serve_midrc_file():
     """Serve MIDRC files from absolute paths (for temporary downloaded files)"""
     try:
         # Get the file path from query parameter
-        file_path = request.args.get('path')
+        file_path = request.args.get("path")
         if not file_path:
             return jsonify({"error": "Path parameter is required"}), 400
-            
+
         # URL-decode the file path to handle encoded absolute paths
         decoded_path = urllib.parse.unquote(file_path)
-        
+
         # Security check: ensure the path is within allowed directories
         safe_path = os.path.normpath(decoded_path)
         if ".." in safe_path:
@@ -3020,13 +3048,15 @@ def serve_midrc_file():
         # Additional security: only allow files from temp directories or specific paths
         allowed_prefixes = [
             "/var/folders/",  # macOS temp directories
-            "/tmp/",          # Linux temp directories
+            "/tmp/",  # Linux temp directories
             tempfile.gettempdir() + "/",  # System temp directory
         ]
-        
+
         is_allowed = any(safe_path.startswith(prefix) for prefix in allowed_prefixes)
         if not is_allowed:
-            logger.warning(f"🚫 Blocked access to file outside allowed directories: {safe_path}")
+            logger.warning(
+                f"🚫 Blocked access to file outside allowed directories: {safe_path}"
+            )
             return jsonify({"error": "Access denied"}), 403
 
         logger.info(f"📎 Serving MIDRC file: {safe_path}")

@@ -482,25 +482,24 @@ def calculate():
           <input type="text" id="var-description" class="form-input" placeholder="e.g., Q1 Revenue Amount">
         </div>
         
-        <div class="form-row">
-          <div class="form-group">
-            <label for="var-type">Data Type:</label>
-            <select id="var-type" class="form-select">
-              <option value="currency">Currency</option>
-              <option value="number">Number</option>
-              <option value="percentage">Percentage</option>
-              <option value="date">Date</option>
-              <option value="text">Text</option>
-            </select>
-          </div>
-          
-          <div class="form-group">
-            <label for="var-format">Format:</label>
-            <input type="text" id="var-format" class="form-input" placeholder="e.g., $#,##0">
-          </div>
+        <div class="form-group">
+          <label for="var-type">Data Type:</label>
+          <select id="var-type" class="form-select">
+            <option value="currency">Currency</option>
+            <option value="number">Number</option>
+            <option value="percentage">Percentage</option>
+            <option value="date">Date</option>
+            <option value="text">Text</option>
+          </select>
         </div>
         
-        <div class="form-group">
+        <!-- Hidden fields for compatibility -->
+        <div class="form-group" style="display: none;">
+          <label for="var-format">Format:</label>
+          <input type="text" id="var-format" class="form-input" placeholder="e.g., $#,##0">
+        </div>
+        
+        <div class="form-group" style="display: none;">
           <label class="checkbox-label">
             <input type="checkbox" id="var-required" checked>
             Required Variable
@@ -508,28 +507,53 @@ def calculate():
         </div>
       </div>
       
-      <!-- Value Management Section -->
-      <div class="panel-section value-management">
-        <h4>Variable Value</h4>
-        <div class="value-display-container">
-          <div class="value-display no-value" id="var-value-display">
-            Click to set value
-          </div>
-          <div class="value-input-container" id="value-input-container" style="display: none;">
-            <input type="text" class="value-input" id="var-value-input" placeholder="Enter value...">
-            <div class="value-input-actions">
-              <button class="save-value-btn" id="save-var-value">Save</button>
-              <button class="cancel-value-btn" id="cancel-var-value">Cancel</button>
+      <!-- Variable Value Options -->
+      <div class="panel-section value-options">
+        <h4>Variable Value Options</h4>
+        <p class="option-note">Choose one option to set the variable value:</p>
+        
+        <div class="value-option-buttons">
+          <button type="button" class="option-btn" id="choose-manual-value">📝 Set Value Manually</button>
+          <button type="button" class="option-btn" id="choose-code-generation">🔧 Generate with Code</button>
+        </div>
+        
+        <!-- Manual Value Section -->
+        <div class="manual-value-section" id="manual-value-section" style="display: none;">
+          <h5>Manual Value Entry</h5>
+          <div class="value-display-container">
+            <div class="value-display no-value" id="var-value-display">
+              Click to set value
+            </div>
+            <div class="value-input-container" id="value-input-container" style="display: none;">
+              <input type="text" class="value-input" id="var-value-input" placeholder="Enter value...">
+              <div class="value-input-actions">
+                <button class="save-value-btn" id="save-var-value">Save</button>
+                <button class="cancel-value-btn" id="cancel-var-value">Cancel</button>
+              </div>
             </div>
           </div>
         </div>
         
-        <div class="data-source-section">
-          <label for="var-data-source">📊 Data Source:</label>
-          <select id="var-data-source" class="data-source-select">
-            <option value="">-- Select a data source --</option>
-            <option value="manual">📝 Manual Input</option>
-          </select>
+        <!-- Code Generation Section -->
+        <div class="code-generation-section" id="code-generation-inline" style="display: none;">
+          <h5>🔧 Generate Code</h5>
+          <div class="code-gen-content">
+            <div class="form-group">
+              <label>Instructions:</label>
+              <textarea id="code-instructions" class="form-textarea" rows="3" 
+                placeholder="Describe how to calculate this variable..."></textarea>
+            </div>
+            
+            <div class="generated-code-container" id="generated-code-container" style="display: none;">
+              <label>Generated Code:</label>
+              <div class="code-editor" id="generated-code-editor" contenteditable="true"></div>
+            </div>
+            
+            <div class="code-actions">
+              <button class="generate-code-btn" id="generate-var-code">Generate Code</button>
+              <button class="test-code-btn" id="test-var-code" style="display: none;">Test Code</button>
+            </div>
+          </div>
         </div>
       </div>
       
@@ -552,32 +576,9 @@ def calculate():
         </div>
       </div>
       
-      <!-- Code Generation Section -->
-      <div class="panel-section code-generation" id="code-generation-section" style="display: none;">
-        <h4>🔧 Generate Code</h4>
-        <div class="code-gen-content">
-          <div class="form-group">
-            <label>Instructions:</label>
-            <textarea id="code-instructions" class="form-textarea" rows="3" 
-              placeholder="Describe how to calculate this variable..."></textarea>
-          </div>
-          
-          <div class="generated-code-container" id="generated-code-container" style="display: none;">
-            <label>Generated Code:</label>
-            <div class="code-editor" id="generated-code-editor" contenteditable="true"></div>
-          </div>
-          
-          <div class="code-actions">
-            <button class="generate-code-btn" id="generate-var-code">Generate Code</button>
-            <button class="test-code-btn" id="test-var-code" style="display: none;">Test Code</button>
-          </div>
-        </div>
-      </div>
-      
       <!-- Action Buttons -->
       <div class="panel-actions">
         <button class="btn-primary" id="save-variable">Save Variable</button>
-        <button class="btn-secondary" id="show-code-generator">🔧 Generate Tool</button>
         <button class="btn-secondary" id="cancel-variable">Cancel</button>
       </div>
     </div>

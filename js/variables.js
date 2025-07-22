@@ -1383,6 +1383,12 @@ class VariablesManager {
     // Debug: Check what document ID we're using
     const currentDocId = window.documentManager?.activeDocumentId;
     
+    // Check if variables panel exists before trying to update it
+    if (!this.variablesPanel) {
+      console.log('Variables panel not initialized, skipping list update');
+      return;
+    }
+    
     // Get the variables list element
     const variablesList = this.variablesPanel.querySelector('.variables-list');
     
@@ -1585,8 +1591,10 @@ class VariablesManager {
        // Remove from variables map
        this.variables.delete(variableName);
        
-       // Update the UI
-       this.updateVariablesList();
+       // Update the UI only if the old panels exist
+       if (this.variablesPanel) {
+         this.updateVariablesList();
+       }
        this.updateVariablesUI();
        
        // Save changes to backend
