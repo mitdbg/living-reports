@@ -21,6 +21,7 @@
   <script type="module" src="js/state.js"></script>
   <script type="module" src="js/utils.js"></script>
   <script type="module" src="js/variables.js"></script>
+  <script type="module" src="js/variables-side-panel.js"></script>
   <script type="module" src="js/verification.js"></script>
   
  </head>
@@ -389,7 +390,7 @@ def calculate():
         </div>
       </div>
       
-      <div class="chat-panel">
+      <div class="chat-panel" id="chat-panel">
         <div class="panel-header">
           <h3>Chat Assistant</h3>
           <div class="action-buttons">
@@ -419,6 +420,11 @@ def calculate():
       </div>
     </div>
     
+    <!-- Chat Toggle Widget -->
+    <button class="chat-toggle-widget" id="chat-toggle-widget" title="Open Chat">
+      <span class="icon">💬</span>
+    </button>
+    
     <div class="floating-comment">
       <div class="floating-comment-header">
         <h3 class="floating-comment-title">Add Comment</h3>
@@ -430,6 +436,149 @@ def calculate():
           <button class="add-comment">Add Comment</button>
           <button class="cancel-comment">Cancel</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Global Variables Side Panel -->
+  <div class="variables-side-panel" id="variables-side-panel">
+    <div class="panel-header">
+      <h3>📊 Variables</h3>
+      <button class="close-panel-btn" id="close-variables-panel">✕</button>
+    </div>
+    
+    <!-- Variables Overview Section -->
+    <div class="panel-section variables-overview">
+      <div class="section-header">
+        <h4>Current Variables</h4>
+        <button class="add-variable-btn" id="add-new-variable">+ Add Variable</button>
+      </div>
+      <div class="variables-quick-list" id="variables-quick-list">
+        <div class="no-variables-message">No variables defined yet.</div>
+      </div>
+    </div>
+    
+    <!-- Variable Editor Section -->
+    <div class="panel-section variable-editor" id="variable-editor" style="display: none;">
+      <div class="section-header">
+        <h4 id="editor-title">Create Variable</h4>
+        <button class="back-to-overview-btn" id="back-to-overview">← Back</button>
+      </div>
+      
+      <div class="selected-text-preview" id="selected-text-preview" style="display: none;">
+        <label>Selected Text:</label>
+        <div class="selected-text-display" id="selected-text-display"></div>
+      </div>
+      
+      <!-- Variable Form -->
+      <div class="variable-form-section">
+        <div class="form-group">
+          <label for="var-name">Variable Name:</label>
+          <input type="text" id="var-name" class="form-input" placeholder="e.g., q1_revenue">
+        </div>
+        
+        <div class="form-group">
+          <label for="var-description">Description:</label>
+          <input type="text" id="var-description" class="form-input" placeholder="e.g., Q1 Revenue Amount">
+        </div>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label for="var-type">Data Type:</label>
+            <select id="var-type" class="form-select">
+              <option value="currency">Currency</option>
+              <option value="number">Number</option>
+              <option value="percentage">Percentage</option>
+              <option value="date">Date</option>
+              <option value="text">Text</option>
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label for="var-format">Format:</label>
+            <input type="text" id="var-format" class="form-input" placeholder="e.g., $#,##0">
+          </div>
+        </div>
+        
+        <div class="form-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="var-required" checked>
+            Required Variable
+          </label>
+        </div>
+      </div>
+      
+      <!-- Value Management Section -->
+      <div class="panel-section value-management">
+        <h4>Variable Value</h4>
+        <div class="value-display-container">
+          <div class="value-display no-value" id="var-value-display">
+            Click to set value
+          </div>
+          <div class="value-input-container" id="value-input-container" style="display: none;">
+            <input type="text" class="value-input" id="var-value-input" placeholder="Enter value...">
+            <div class="value-input-actions">
+              <button class="save-value-btn" id="save-var-value">Save</button>
+              <button class="cancel-value-btn" id="cancel-var-value">Cancel</button>
+            </div>
+          </div>
+        </div>
+        
+        <div class="data-source-section">
+          <label for="var-data-source">📊 Data Source:</label>
+          <select id="var-data-source" class="data-source-select">
+            <option value="">-- Select a data source --</option>
+            <option value="manual">📝 Manual Input</option>
+          </select>
+        </div>
+      </div>
+      
+      <!-- Dependencies Section -->
+      <div class="panel-section dependencies-management">
+        <h4>Dependencies</h4>
+        <div class="dependencies-list" id="var-dependencies-list">
+          <div class="no-dependencies-message">No dependencies selected</div>
+        </div>
+        <button type="button" class="add-dependency-btn" id="add-var-dependency">+ Add Dependency</button>
+        
+        <div class="dependency-selector" id="var-dependency-selector" style="display: none;">
+          <select id="var-dependency-select" class="form-select">
+            <option value="">Select a variable...</option>
+          </select>
+          <div class="selector-actions">
+            <button type="button" class="confirm-dependency-btn" id="confirm-var-dependency">Add</button>
+            <button type="button" class="cancel-dependency-btn" id="cancel-var-dependency">Cancel</button>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Code Generation Section -->
+      <div class="panel-section code-generation" id="code-generation-section" style="display: none;">
+        <h4>🔧 Generate Code</h4>
+        <div class="code-gen-content">
+          <div class="form-group">
+            <label>Instructions:</label>
+            <textarea id="code-instructions" class="form-textarea" rows="3" 
+              placeholder="Describe how to calculate this variable..."></textarea>
+          </div>
+          
+          <div class="generated-code-container" id="generated-code-container" style="display: none;">
+            <label>Generated Code:</label>
+            <div class="code-editor" id="generated-code-editor" contenteditable="true"></div>
+          </div>
+          
+          <div class="code-actions">
+            <button class="generate-code-btn" id="generate-var-code">Generate Code</button>
+            <button class="test-code-btn" id="test-var-code" style="display: none;">Test Code</button>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Action Buttons -->
+      <div class="panel-actions">
+        <button class="btn-primary" id="save-variable">Save Variable</button>
+        <button class="btn-secondary" id="show-code-generator">🔧 Generate Tool</button>
+        <button class="btn-secondary" id="cancel-variable">Cancel</button>
       </div>
     </div>
   </div>

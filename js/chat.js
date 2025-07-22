@@ -318,6 +318,61 @@ export async function sendChatMessage(userMessage) {
   }
 }
 
+// Global chat toggle functionality - should be called once when page loads
+export function initGlobalChatToggle() {
+  const chatToggleWidget = document.getElementById('chat-toggle-widget');
+  
+  if (!chatToggleWidget) {
+    console.error('Chat toggle widget not found!');
+    return;
+  }
+  
+  // Track chat state
+  let isChatOpen = false;
+  
+  function toggleChat() {
+    // Find the active chat panel dynamically
+    const chatPanel = getElements.chatPanel;
+    
+    if (!chatPanel) {
+      console.warn('No active chat panel found - create or switch to a document first');
+      return;
+    }
+    
+    isChatOpen = !isChatOpen;
+    
+    if (isChatOpen) {
+      chatPanel.classList.add('open');
+      chatToggleWidget.classList.add('chat-open');
+      chatToggleWidget.title = 'Close Chat';
+      chatToggleWidget.querySelector('.icon').textContent = '✕';
+    } else {
+      chatPanel.classList.remove('open');
+      chatToggleWidget.classList.remove('chat-open');
+      chatToggleWidget.title = 'Open Chat';
+      chatToggleWidget.querySelector('.icon').textContent = '💬';
+    }
+  }
+  
+  // Add click event listener
+  chatToggleWidget.addEventListener('click', toggleChat);
+  
+  console.log('Global chat toggle initialized');
+}
+
+// Document-specific chat toggle functionality
+function initChatToggle() {
+  // This is now just for document-specific setup if needed
+  const chatPanel = getElements.chatPanel;
+  
+  if (!chatPanel) {
+    console.warn(`[${windowId}] Chat panel not found for this document`);
+    return;
+  }
+  
+  console.log(`[${windowId}] Chat toggle ready for document`);
+}
+
 export function initChat() {
   // Get elements using clean getElements
   const sendButton = getElements.sendButton;

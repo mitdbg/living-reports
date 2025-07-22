@@ -405,9 +405,12 @@ class VariablesManager {
   }
 
   /**
-   * Create the floating "Suggest Variables" button
+   * Create the floating "Suggest Variables" button (DISABLED for side panel)
    */
   createFloatingButton() {
+    // DISABLED: Using side panel instead of floating button
+    return;
+    
     this.floatingButton = document.createElement('div');
     this.floatingButton.className = 'floating-variable-button';
     this.floatingButton.innerHTML = '<button class="suggest-variables-btn">🔧 Suggest Variables</button>';
@@ -436,9 +439,11 @@ class VariablesManager {
   }
 
   /**
-   * Setup text selection detection
+   * Setup text selection detection (DISABLED for side panel)
    */
   setupTextSelection() {
+    // DISABLED: Using side panel instead of floating button text selection
+    return;
     
     document.addEventListener('mouseup', (e) => {
 
@@ -767,9 +772,12 @@ class VariablesManager {
    }
 
   /**
-   * Set up Variables event listeners using event delegation
+   * Set up Variables event listeners using event delegation (DISABLED for side panel)
    */
   setupVariablesEventListeners() {
+    // DISABLED: Side panel handles Variables button clicks now
+    return;
+    
     // Listen for Variables buttons (using event delegation like Data Sources)
     document.addEventListener('click', async (event) => {
       if (event.target.matches('.variables-btn') || event.target.closest('.variables-btn')) {

@@ -3,6 +3,8 @@
 import { initDOMElements } from './state.js';
 import { initializeUser, isUserAuthenticated, getCurrentUser } from './auth.js';
 import { addSampleTools } from './sample-tools.js';
+import { initGlobalChatToggle } from './chat.js';
+import { variablesSidePanel } from './variables-side-panel.js';
 
 let documentManager;
 
@@ -65,6 +67,15 @@ async function initializeCoreModules() {
     
     // Add sample tools for demonstration (only if no tools exist)
     await addSampleTools(); // ✅ Only adds to global tool registry, no DOM
+    
+    // Initialize global chat toggle widget
+    initGlobalChatToggle(); // ✅ Global widget, not document-specific
+    
+    // Initialize global variables side panel
+    if (variablesSidePanel && !variablesSidePanel.initialized) {
+      variablesSidePanel.init();
+      console.log('Variables side panel initialized');
+    }
     
     console.log('Global modules initialized successfully');
     console.log('📋 ALL DOM-related modules will be initialized per document in document-manager');

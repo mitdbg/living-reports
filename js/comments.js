@@ -597,6 +597,10 @@ export function initTextSelection() {
 }
 
 function handleTextSelection(event) {
+  // DISABLED: Text selection now handled by variables side panel
+  // Return early to prevent comments popup from showing
+  return;
+  
   const selection = window.getSelection();
   
   // Get clean elements

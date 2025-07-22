@@ -16,6 +16,7 @@ import { getCurrentUser } from './auth.js';
 import { getTextContentWithLineBreaks } from './utils.js';
 import { clearAllComments } from './comments.js';
 import { resetVariablesInitialization, initVariablesForDocument, variablesManager } from './variables.js';
+import { variablesSidePanel } from './variables-side-panel.js';
 
 // Export the class instead of singleton instance
 export class DocumentManager {
@@ -391,9 +392,21 @@ export class DocumentManager {
         variablesManager.init();
       }
       
+      // Initialize variables side panel
+      if (variablesSidePanel && !variablesSidePanel.initialized) {
+        variablesSidePanel.init();
+      }
+      
       // Expose variables manager to window for global access
       if (variablesManager) {
         window.variablesManager = variablesManager;
+      }
+      
+      // Expose variables side panel to window for global access
+      if (variablesSidePanel) {
+        window.variablesSidePanel = variablesSidePanel;
+        // Notify side panel about document change
+        variablesSidePanel.onDocumentChange(documentId);
       }
       
       // Initialize variables for this specific document

@@ -34,6 +34,7 @@ export const getElements = {
   get clearChatBtn() { return getDocumentElement('clear-chat-btn'); },
   get messageInput() { return getDocumentElement('message-input'); },
   get chatMessages() { return getDocumentElement('chat-messages'); },
+  get chatPanel() { return getDocumentElement('chat-panel'); },
   
   // Content editors
   get previewContent() { return getDocumentElement('preview-content'); },
@@ -90,6 +91,7 @@ export const elements = {
   get clearChatBtn() { return getElements.clearChatBtn; },
   get messageInput() { return getElements.messageInput; },
   get chatMessages() { return getElements.chatMessages; },
+  get chatPanel() { return getElements.chatPanel; },
   get previewContent() { return getElements.previewContent; },
   get sourceEditor() { return getElements.sourceEditor; },
   get templateEditor() { return getElements.templateEditor; },
