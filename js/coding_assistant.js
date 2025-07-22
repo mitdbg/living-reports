@@ -14,7 +14,7 @@ class CodingAssistant {
       'code_writer'
     ];
     this.isProcessing = false;
-    this.apiBaseUrl = 'http://127.0.0.1:5000';
+    this.apiBaseUrl = 'http://127.0.0.1:5001';
   }
 
   init() {
@@ -207,7 +207,7 @@ class CodingAssistant {
       
       // Make API call to coding agent
       console.log('🚀 Making API call to /api/agents/coding');
-      const response = await fetch(`http://127.0.0.1:5000/api/agents/coding`, {
+      const response = await fetch(`http://127.0.0.1:5001/api/agents/coding`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

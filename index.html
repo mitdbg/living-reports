@@ -451,7 +451,10 @@ def calculate():
     <div class="panel-section variables-overview">
       <div class="section-header">
         <h4>Current Variables</h4>
-        <button class="add-variable-btn" id="add-new-variable">+ Add Variable</button>
+        <div class="header-buttons">
+          <button class="add-variable-btn" id="add-new-variable">+ Add Variable</button>
+          <button class="force-execute-btn" id="force-execute-all-btn" title="Re-execute all variables in dependency order">🔄 Re-execute All</button>
+        </div>
       </div>
       <div class="variables-quick-list" id="variables-quick-list">
         <div class="no-variables-message">No variables defined yet.</div>
@@ -507,6 +510,25 @@ def calculate():
         </div>
       </div>
       
+      <!-- Dependencies Section -->
+      <div class="panel-section dependencies-management">
+        <h4>Dependencies</h4>
+        <div class="dependencies-list" id="var-dependencies-list">
+          <div class="no-dependencies-message">No dependencies selected</div>
+        </div>
+        <button type="button" class="add-dependency-btn" id="add-var-dependency">+ Add Dependency</button>
+        
+        <div class="dependency-selector" id="var-dependency-selector" style="display: none;">
+          <select id="var-dependency-select" class="form-select">
+            <option value="">Select a variable...</option>
+          </select>
+          <div class="selector-actions">
+            <button type="button" class="confirm-dependency-btn" id="confirm-var-dependency">Add</button>
+            <button type="button" class="cancel-dependency-btn" id="cancel-var-dependency">Cancel</button>
+          </div>
+        </div>
+      </div>
+      
       <!-- Variable Value Options -->
       <div class="panel-section value-options">
         <h4>Variable Value Options</h4>
@@ -538,40 +560,23 @@ def calculate():
         <div class="code-generation-section" id="code-generation-inline" style="display: none;">
           <h5>🔧 Generate Code</h5>
           <div class="code-gen-content">
-            <div class="form-group">
-              <label>Instructions:</label>
-              <textarea id="code-instructions" class="form-textarea" rows="3" 
-                placeholder="Describe how to calculate this variable..."></textarea>
+            <div class="code-actions">
+              <button class="generate-code-btn" id="generate-var-code">🤖 Generate Python Code</button>
             </div>
             
             <div class="generated-code-container" id="generated-code-container" style="display: none;">
-              <label>Generated Code:</label>
-              <div class="code-editor" id="generated-code-editor" contenteditable="true"></div>
+              <label>Generated Python Code:</label>
+              <div class="python-code-editor">
+                <div class="code-editor-header">
+                  <span class="code-language">🐍 Python</span>
+                  <div class="code-controls">
+                    <button class="copy-code-btn" id="copy-code-btn" title="Copy Code">📋</button>
+                    <button class="test-code-btn" id="test-var-code" title="Execute Code">▶️ Execute</button>
+                  </div>
+                </div>
+                <pre class="code-editor" id="generated-code-editor" contenteditable="true" spellcheck="false"></pre>
+              </div>
             </div>
-            
-            <div class="code-actions">
-              <button class="generate-code-btn" id="generate-var-code">Generate Code</button>
-              <button class="test-code-btn" id="test-var-code" style="display: none;">Test Code</button>
-            </div>
-          </div>
-        </div>
-      </div>
-      
-      <!-- Dependencies Section -->
-      <div class="panel-section dependencies-management">
-        <h4>Dependencies</h4>
-        <div class="dependencies-list" id="var-dependencies-list">
-          <div class="no-dependencies-message">No dependencies selected</div>
-        </div>
-        <button type="button" class="add-dependency-btn" id="add-var-dependency">+ Add Dependency</button>
-        
-        <div class="dependency-selector" id="var-dependency-selector" style="display: none;">
-          <select id="var-dependency-select" class="form-select">
-            <option value="">Select a variable...</option>
-          </select>
-          <div class="selector-actions">
-            <button type="button" class="confirm-dependency-btn" id="confirm-var-dependency">Add</button>
-            <button type="button" class="cancel-dependency-btn" id="cancel-var-dependency">Cancel</button>
           </div>
         </div>
       </div>

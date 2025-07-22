@@ -898,7 +898,7 @@ class VariablesManager {
         document_id: window.documentManager?.activeDocumentId || 'default'
       };
 
-      const response = await fetch('http://127.0.0.1:5000/api/suggest-variable', {
+      const response = await fetch('http://127.0.0.1:5001/api/suggest-variable', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -1453,7 +1453,7 @@ class VariablesManager {
       const variablesObj = Object.fromEntries(this.variables);
       
       // Save to backend via API
-      const response = await fetch('http://127.0.0.1:5000/api/variables', {
+      const response = await fetch('http://127.0.0.1:5001/api/variables', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1504,7 +1504,7 @@ class VariablesManager {
       }
       
       // Load from backend via API
-      const response = await fetch(`http://127.0.0.1:5000/api/variables?documentId=${encodeURIComponent(documentId)}`, {
+      const response = await fetch(`http://127.0.0.1:5001/api/variables?documentId=${encodeURIComponent(documentId)}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -1998,7 +1998,7 @@ class VariablesManager {
         return;
       }
       
-      const response = await fetch(`http://127.0.0.1:5000/api/variables?documentId=${encodeURIComponent(documentId)}`, {
+      const response = await fetch(`http://127.0.0.1:5001/api/variables?documentId=${encodeURIComponent(documentId)}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -2035,7 +2035,7 @@ class VariablesManager {
         return;
       }
       
-      const response = await fetch(`http://127.0.0.1:5000/api/variables?documentId=${encodeURIComponent(documentId)}`, {
+      const response = await fetch(`http://127.0.0.1:5001/api/variables?documentId=${encodeURIComponent(documentId)}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',

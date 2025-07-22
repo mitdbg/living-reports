@@ -847,7 +847,7 @@ export class DocumentManager {
       
       try {
         // 1. Delete main document from backend (backend now handles cascading cleanup automatically)
-        const documentResponse = await fetch(`http://127.0.0.1:5000/api/documents/${documentId}`, {
+        const documentResponse = await fetch(`http://127.0.0.1:5001/api/documents/${documentId}`, {
           method: 'DELETE',
           headers: { 'Content-Type': 'application/json' }
         });
@@ -939,7 +939,7 @@ export class DocumentManager {
     if (!doc) return false;
 
     try {
-      const response = await fetch('http://127.0.0.1:5000/api/documents', {
+      const response = await fetch('http://127.0.0.1:5001/api/documents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -983,7 +983,7 @@ export class DocumentManager {
         return 0;
       }
       
-      const response = await fetch(`http://127.0.0.1:5000/api/documents/user/${currentUser.id}`, {
+      const response = await fetch(`http://127.0.0.1:5001/api/documents/user/${currentUser.id}`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -1128,7 +1128,7 @@ export class DocumentManager {
     }
 
     try {
-      const response = await fetch(`http://127.0.0.1:5000/api/documents/${this.activeDocumentId}`, {
+      const response = await fetch(`http://127.0.0.1:5001/api/documents/${this.activeDocumentId}`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -1656,7 +1656,7 @@ export class DocumentManager {
     console.log(`🔄 Loading document ${documentId} from backend...`);
     
     try {
-      const response = await fetch(`http://127.0.0.1:5000/api/documents/${documentId}`, {
+      const response = await fetch(`http://127.0.0.1:5001/api/documents/${documentId}`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' }
       });

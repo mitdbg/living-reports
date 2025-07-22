@@ -2514,14 +2514,8 @@ def generate_variable_code():
                 {"success": False, "error": "Variable name is required"}
             ), 400
 
-        # Either data source or dependencies are required
-        if not data_source and not dependencies:
-            return jsonify(
-                {
-                    "success": False,
-                    "error": "Either data source or dependencies are required",
-                }
-            ), 400
+        # Note: Allow code generation even without data sources or dependencies
+        # The LLM can generate simple variables based on name, type, and description
 
         # Check if LLM client is available
         if client is None:
@@ -2777,6 +2771,68 @@ output = extract_{variable_name}(parameters['data_source'])
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route("/api/generate-code", methods=["POST"])
+def generate_code():
+    """Fallback code generation endpoint for simple prompts"""
+    try:
+        data = request.get_json()
+        prompt = data.get("prompt", "")
+        context = data.get("context", "")
+        
+        if not prompt:
+            return jsonify({"success": False, "error": "Prompt is required"}), 400
+            
+        # Check if LLM client is available
+        if client is None:
+            return jsonify({
+                "success": False,
+                "error": "AI service not available (API key not configured)"
+            })
+        
+        # Create full prompt with context if available
+        full_prompt = prompt
+        if context:
+            full_prompt = f"{context}\n\n{prompt}"
+        
+        # Call LLM
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a helpful Python code generator. Generate clean, efficient Python code based on the requirements. Return only the code without markdown formatting.",
+                },
+                {"role": "user", "content": full_prompt},
+            ],
+            temperature=0.1,
+            max_tokens=2000,
+        )
+
+        generated_code = response.choices[0].message.content.strip()
+
+        # Clean up code (remove markdown formatting if present)
+        if generated_code.startswith("```python"):
+            generated_code = generated_code[9:]
+        elif generated_code.startswith("```"):
+            generated_code = generated_code[3:]
+
+        if generated_code.endswith("```"):
+            generated_code = generated_code[:-3]
+
+        generated_code = generated_code.strip()
+
+        logger.info("✅ Generated code using fallback endpoint")
+
+        return jsonify({
+            "success": True,
+            "code": generated_code
+        })
+
+    except Exception as e:
+        logger.error(f"❌ Error in fallback code generation: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route("/api/execute-code", methods=["POST"])
 def execute_code_endpoint():
     """Execute generated code in a safe environment"""
@@ -2793,8 +2849,19 @@ def execute_code_endpoint():
         print(result)
         print("================================================")
         if result.get("status") and result.get("status") == "success":
+            # The actual result is in result.result.result, not result.result.output
+            execution_result = result.get("result", {})
+            actual_output = execution_result.get("result")
+            
+            # Also get stdout for debugging if needed
+            stdout = execution_result.get("_stdout", "")
+            
             return jsonify(
-                {"success": True, "output": result.get("result").get("output")}
+                {
+                    "success": True, 
+                    "output": actual_output,
+                    "stdout": stdout
+                }
             )
         else:
             return jsonify({"success": False, "error": result})
@@ -3623,4 +3690,5 @@ def get_chat_mcp_status():
 
 if __name__ == "__main__":
     print("Starting Python backend server...")
-    app.run(host="127.0.0.1", port=5000, debug=True)
+    port = int(os.environ.get("FLASK_PORT", 5001))  # Default to 5001 to avoid AirPlay conflict
+    app.run(host="127.0.0.1", port=port, debug=True)

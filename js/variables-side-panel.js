@@ -1,5 +1,7 @@
 // Variables Side Panel Manager
 import { variablesManager } from './variables.js';
+import { executeCodeForAuthorLocal } from './execute_tool_util.js';
+import { variableDependencyExecutor } from './variable-dependency-executor.js';
 
 /**
  * Variables Side Panel Manager
@@ -64,7 +66,16 @@ class VariablesSidePanel {
 
     // Add new variable button
     const addBtn = this.panel.querySelector('#add-new-variable');
-    addBtn?.addEventListener('click', () => this.showEditor());
+    addBtn?.addEventListener('click', () => {
+      this.editingVariableName = null; // Clear any existing variable being edited
+      this.showEditor();
+    });
+
+    // Force execute all variables button
+    const forceExecuteBtn = this.panel.querySelector('#force-execute-all-btn');
+    forceExecuteBtn?.addEventListener('click', () => {
+      this.forceExecuteAllVariables();
+    });
 
     // Back to overview button
     const backBtn = this.panel.querySelector('#back-to-overview');
@@ -215,13 +226,9 @@ class VariablesSidePanel {
    * Set up code generation event listeners
    */
   setupCodeGenerationEventListeners() {
-    const showCodeBtn = this.panel.querySelector('#show-code-generator');
     const generateBtn = this.panel.querySelector('#generate-var-code');
     const testBtn = this.panel.querySelector('#test-var-code');
-
-    showCodeBtn?.addEventListener('click', () => {
-      this.toggleCodeGeneration();
-    });
+    const copyBtn = this.panel.querySelector('#copy-code-btn');
 
     generateBtn?.addEventListener('click', () => {
       this.generateCode();
@@ -230,6 +237,105 @@ class VariablesSidePanel {
     testBtn?.addEventListener('click', () => {
       this.testCode();
     });
+
+    copyBtn?.addEventListener('click', () => {
+      this.copyCode();
+    });
+
+    // Set up code editor listeners - simpler approach to avoid cursor issues
+    const codeEditor = this.panel.querySelector('#generated-code-editor');
+    
+    // Save changes on input but don't re-highlight immediately
+    codeEditor?.addEventListener('input', () => {
+      this.saveCodeEditorChanges();
+    });
+
+    // Apply syntax highlighting when user stops editing
+    codeEditor?.addEventListener('blur', () => {
+      this.applyDeferredSyntaxHighlighting();
+    });
+
+    codeEditor?.addEventListener('focus', () => {
+      this.prepareEditorForEditing();
+    });
+  }
+
+  /**
+   * Save code editor changes without applying syntax highlighting
+   */
+  saveCodeEditorChanges() {
+    const codeEditor = this.panel.querySelector('#generated-code-editor');
+    if (codeEditor) {
+      // Get the plain text content (strip HTML)
+      const plainText = codeEditor.textContent || '';
+      
+      // Update the stored code immediately
+      codeEditor.setAttribute('data-code', plainText);
+    }
+  }
+
+  /**
+   * Prepare editor for editing - convert to plain text
+   */
+  prepareEditorForEditing() {
+    const codeEditor = this.panel.querySelector('#generated-code-editor');
+    if (codeEditor) {
+      const currentCode = codeEditor.getAttribute('data-code') || codeEditor.textContent || '';
+      
+      // If the editor has syntax highlighting, convert to plain text for editing
+      if (codeEditor.innerHTML.includes('<span')) {
+        codeEditor.textContent = currentCode;
+        codeEditor.setAttribute('data-editing', 'true');
+      }
+    }
+  }
+
+  /**
+   * Apply syntax highlighting after editing is complete
+   */
+  applyDeferredSyntaxHighlighting() {
+    const codeEditor = this.panel.querySelector('#generated-code-editor');
+    if (codeEditor) {
+      const currentCode = codeEditor.getAttribute('data-code') || codeEditor.textContent || '';
+      
+      if (currentCode && codeEditor.getAttribute('data-editing') === 'true') {
+        // Apply syntax highlighting
+        const highlighted = this.applySyntaxHighlighting(currentCode);
+        codeEditor.innerHTML = highlighted;
+        codeEditor.setAttribute('data-last-highlighted', currentCode);
+        codeEditor.removeAttribute('data-editing');
+      }
+    }
+  }
+
+  /**
+   * Copy generated code to clipboard
+   */
+  async copyCode() {
+    const editor = this.panel.querySelector('#generated-code-editor');
+    const code = editor?.getAttribute('data-code') || editor?.textContent?.trim();
+    
+    if (!code) {
+      alert('No code to copy');
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(code);
+      
+      // Show feedback
+      const copyBtn = this.panel.querySelector('#copy-code-btn');
+      const originalText = copyBtn?.textContent;
+      if (copyBtn) {
+        copyBtn.textContent = '✅ Copied!';
+        setTimeout(() => {
+          copyBtn.textContent = originalText;
+        }, 2000);
+      }
+    } catch (error) {
+      console.error('Failed to copy code:', error);
+      alert('Failed to copy code to clipboard');
+    }
   }
 
   /**
@@ -461,7 +567,7 @@ class VariablesSidePanel {
         document_id: window.documentManager?.activeDocumentId || 'default'
       };
 
-      const response = await fetch('http://127.0.0.1:5000/api/suggest-variable', {
+      const response = await fetch('http://127.0.0.1:5001/api/suggest-variable', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -621,8 +727,98 @@ class VariablesSidePanel {
       await variablesManager.loadVariables();
     }
     
+    // Initialize all existing variables in the dependency executor
+    const variables = variablesManager.getVariables();
+    for (const [name, variable] of Object.entries(variables)) {
+      variableDependencyExecutor.addVariable(name, variable);
+    }
+    
+    console.log(`🔧 Loaded ${Object.keys(variables).length} variables into dependency executor`);
+    
     // Update the variables list
     this.updateVariablesList();
+  }
+
+  /**
+   * Execute all variables for template substitution
+   */
+  async executeAllVariablesForTemplate() {
+    try {
+      console.log('🚀 Executing all variables for template substitution...');
+      
+      // Execute all variables in dependency order
+      const results = await variableDependencyExecutor.executeVariables();
+      
+      console.log('✅ All variables executed successfully for template:', results);
+      
+      // Update variables manager with execution results
+      for (const [varName, result] of Object.entries(results)) {
+        const variable = variablesManager.variables.get(varName);
+        if (variable) {
+          variable.value = typeof result === 'object' ? JSON.stringify(result, null, 2) : String(result);
+        }
+      }
+      
+      await variablesManager.saveVariables();
+      return results;
+      
+    } catch (error) {
+      console.error('❌ Error executing variables for template:', error);
+      throw new Error(`Failed to execute variables: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get all variable values for template substitution
+   */
+  getAllVariableValuesForTemplate() {
+    return variableDependencyExecutor.getAllVariableValues();
+  }
+
+  /**
+   * Force re-execution of all variables
+   */
+  async forceExecuteAllVariables() {
+    try {
+      console.log('🚀 Force executing all variables...');
+      
+      // Show loading state
+      const button = document.querySelector('#force-execute-all-btn');
+      if (button) {
+        button.disabled = true;
+        button.textContent = '⏳ Executing All Variables...';
+      }
+      
+      // Execute all variables with force flag
+      const results = await variableDependencyExecutor.forceExecuteAllVariables();
+      
+      console.log('✅ Force execution completed:', results);
+      
+      // Update variables manager with execution results
+      for (const [varName, result] of Object.entries(results)) {
+        const variable = variablesManager.variables.get(varName);
+        if (variable) {
+          variable.value = typeof result === 'object' ? JSON.stringify(result, null, 2) : String(result);
+        }
+      }
+      
+      await variablesManager.saveVariables();
+      
+      // Show success message
+      const varCount = Object.keys(results).length;
+      alert(`✅ Successfully executed ${varCount} variables in dependency order!\n\nAll variables now have fresh values.`);
+      
+    } catch (error) {
+      console.error('❌ Error during force execution:', error);
+      alert(`❌ Error executing variables:\n\n${error.message}`);
+    } finally {
+      // Reset button state
+      const button = document.querySelector('#force-execute-all-btn');
+      if (button) {
+        button.disabled = false;
+        button.textContent = '🔄 Re-execute All Variables';
+      }
+    }
   }
 
   /**
@@ -733,8 +929,11 @@ class VariablesSidePanel {
       return;
     }
 
-    // Use the existing removeVariable method from variablesManager
+    // Remove from variables manager
     variablesManager.removeVariable(variableName);
+    
+    // Remove from dependency executor
+    variableDependencyExecutor.removeVariable(variableName);
     
     // Refresh the variables list
     this.updateVariablesList();
@@ -744,6 +943,8 @@ class VariablesSidePanel {
       this.showOverview();
       this.editingVariableName = null;
     }
+    
+    console.log(`✅ Deleted variable ${variableName} from dependency system`);
   }
 
   /**
@@ -787,13 +988,23 @@ class VariablesSidePanel {
     const formatInput = this.panel.querySelector('#var-format');
     const requiredCheck = this.panel.querySelector('#var-required');
 
-    // Get current value from manual input
-    const valueDisplay = this.panel.querySelector('#var-value-display');
-    const currentValue = valueDisplay?.textContent !== 'Click to set value' ? valueDisplay?.textContent : '';
+    // Get current value based on the selected value option
+    let currentValue = '';
+    
+    if (this.currentValueOption === 'manual') {
+      // Get value from manual input
+      const valueDisplay = this.panel.querySelector('#var-value-display');
+      currentValue = valueDisplay?.textContent !== 'Click to set value' ? valueDisplay?.textContent : '';
+    } else if (this.currentValueOption === 'code') {
+      // For code generation, get the value from execution results displayed in UI
+      const valueDisplay = this.panel.querySelector('#var-value-display');
+      currentValue = valueDisplay?.textContent !== 'Click to set value' ? valueDisplay?.textContent : '';
+      console.log('🔧 Getting code execution result for saving:', currentValue);
+    }
 
     // Get generated code if using code option
     const codeEditor = this.panel.querySelector('#generated-code-editor');
-    const generatedCode = codeEditor?.textContent || '';
+    const generatedCode = codeEditor?.getAttribute('data-code') || codeEditor?.textContent || '';
 
     return {
       name: nameInput?.value?.trim() || '',
@@ -846,14 +1057,20 @@ class VariablesSidePanel {
 
     // If manual value is selected, check that a value is provided
     if (formData.valueOption === 'manual' && !formData.value) {
-      alert('Please set a value for the variable or choose the code generation option');
+      alert('Please set a value for the variable using the "Set Value Manually" option');
       return false;
     }
 
-    // If code generation is selected, check that code exists
-    if (formData.valueOption === 'code' && !formData.generatedCode) {
-      alert('Please generate code for the variable or set a manual value');
-      return false;
+    // If code generation is selected, check that code exists and has been executed
+    if (formData.valueOption === 'code') {
+      if (!formData.generatedCode) {
+        alert('Please generate code for the variable using the "Generate Python Code" button');
+        return false;
+      }
+      if (!formData.value) {
+        alert('Please execute the generated code first by clicking the "Execute" button to get the variable value');
+        return false;
+      }
     }
     
     return true;
@@ -879,8 +1096,11 @@ class VariablesSidePanel {
       generatedCode: formData.generatedCode
     };
 
-    // Use variables manager to create the variable
+    // Add to variables manager
     variablesManager.variables.set(variable.name, variable);
+    
+    // Add to dependency executor
+    variableDependencyExecutor.addVariable(variable.name, variable);
     
     // Replace selected text with placeholder if available
     if (this.selectedRange && this.selectedText) {
@@ -889,6 +1109,8 @@ class VariablesSidePanel {
     
     await variablesManager.saveVariables();
     variablesManager.updateVariablesUI();
+    
+    console.log(`✅ Created variable ${variable.name} in dependency system`);
   }
 
   /**
@@ -914,16 +1136,25 @@ class VariablesSidePanel {
       generatedCode: formData.generatedCode
     };
 
-    // Handle variable name change
+    // Handle variable name change in variables manager
     if (formData.name !== this.editingVariableName) {
       variablesManager.variables.delete(this.editingVariableName);
       variablesManager.variables.set(formData.name, updatedVariable);
+      
+      // Handle name change in dependency executor
+      variableDependencyExecutor.removeVariable(this.editingVariableName);
+      variableDependencyExecutor.addVariable(formData.name, updatedVariable);
     } else {
       variablesManager.variables.set(this.editingVariableName, updatedVariable);
+      
+      // Update in dependency executor
+      variableDependencyExecutor.addVariable(formData.name, updatedVariable);
     }
 
     await variablesManager.saveVariables();
     variablesManager.updateVariablesUI();
+    
+    console.log(`✅ Updated variable ${formData.name} in dependency system`);
   }
 
   /**
@@ -997,7 +1228,23 @@ class VariablesSidePanel {
   }
 
   resetValueDisplay() {
-    this.updateValueDisplay('');
+    const valueDisplay = this.panel.querySelector('#var-value-display');
+    if (valueDisplay) {
+      valueDisplay.textContent = 'Click to set value';
+      valueDisplay.className = 'value-display no-value';
+    }
+    
+    // Also clear the input field
+    const valueInput = this.panel.querySelector('#var-value-input');
+    if (valueInput) {
+      valueInput.value = '';
+    }
+    
+    // Make sure input container is hidden
+    const inputContainer = this.panel.querySelector('#value-input-container');
+    if (inputContainer) {
+      inputContainer.style.display = 'none';
+    }
   }
 
   handleDataSourceChange(selectedValue) {
@@ -1149,6 +1396,8 @@ class VariablesSidePanel {
     const codeGenerationBtn = this.panel.querySelector('#choose-code-generation');
     const manualSection = this.panel.querySelector('#manual-value-section');
     const codeSection = this.panel.querySelector('#code-generation-inline');
+    const codeContainer = this.panel.querySelector('#generated-code-container');
+    const codeEditor = this.panel.querySelector('#generated-code-editor');
     
     // Reset button states
     manualValueBtn?.classList.remove('active');
@@ -1157,6 +1406,13 @@ class VariablesSidePanel {
     // Hide both sections
     if (manualSection) manualSection.style.display = 'none';
     if (codeSection) codeSection.style.display = 'none';
+    if (codeContainer) codeContainer.style.display = 'none';
+    
+    // Clear generated code
+    if (codeEditor) {
+      codeEditor.innerHTML = '';
+      codeEditor.removeAttribute('data-code');
+    }
     
     // Reset current option
     this.currentValueOption = null;
@@ -1190,21 +1446,14 @@ class VariablesSidePanel {
 
   async generateCode() {
     const formData = this.getFormData();
-    const instructions = this.panel.querySelector('#code-instructions')?.value?.trim();
     
     if (!formData.name) {
       alert('Please enter a variable name first');
       return;
     }
 
-    const dependencies = this.getCurrentDependencies();
-    const dataSourceSelect = this.panel.querySelector('#var-data-source');
-    const selectedDataSource = dataSourceSelect?.value || '';
-    const hasDataSource = selectedDataSource && selectedDataSource !== '' && selectedDataSource !== 'manual';
-    const hasDependencies = dependencies.length > 0;
-
-    if (!hasDataSource && !hasDependencies && !instructions) {
-      alert('Please select a data source, add dependencies, or enter code generation instructions');
+    if (!formData.description) {
+      alert('Please enter a variable description first');
       return;
     }
 
@@ -1215,6 +1464,7 @@ class VariablesSidePanel {
 
     try {
       // Get current dependency values
+      const dependencies = this.getCurrentDependencies();
       const dependencyValues = await this.getDependencyValues(dependencies);
       
       // Prepare request payload
@@ -1224,8 +1474,6 @@ class VariablesSidePanel {
         variable_description: formData.description,
         dependencies: dependencies,
         dependency_values: dependencyValues,
-        data_source: hasDataSource ? selectedDataSource : null,
-        instructions: instructions || '',
         document_id: window.documentManager?.activeDocumentId || 'default'
       };
 
@@ -1234,7 +1482,7 @@ class VariablesSidePanel {
 
       // Try primary endpoint first
       try {
-        response = await fetch('http://127.0.0.1:5000/api/generate-variable-code', {
+        response = await fetch('http://127.0.0.1:5001/api/generate-variable-code', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
@@ -1253,13 +1501,15 @@ class VariablesSidePanel {
         
         // Try fallback endpoint
         try {
-          response = await fetch('http://127.0.0.1:5000/api/generate-code', {
+          const prompt = `Generate Python code to calculate a variable named "${formData.name}" (type: ${formData.type}) with description: "${formData.description}". ${dependencies.length > 0 ? `The variable depends on: ${dependencies.join(', ')}.` : ''} Return clean, executable Python code.`;
+          
+          response = await fetch('http://127.0.0.1:5001/api/generate-code', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-              prompt: `Generate Python code for variable "${formData.name}" (${formData.type}): ${formData.description}. Instructions: ${instructions || 'Calculate the value from available data.'}`,
+              prompt: prompt,
               context: dependencies.length > 0 ? `Dependencies: ${dependencies.join(', ')}` : ''
             })
           });
@@ -1290,16 +1540,80 @@ class VariablesSidePanel {
   showGeneratedCode(code) {
     const container = this.panel.querySelector('#generated-code-container');
     const editor = this.panel.querySelector('#generated-code-editor');
-    const testBtn = this.panel.querySelector('#test-var-code');
 
     if (container && editor) {
       container.style.display = 'block';
-      editor.textContent = code;
       
-      if (testBtn) {
-        testBtn.style.display = 'inline-block';
-      }
+      // Store the original code
+      editor.setAttribute('data-code', code);
+      
+      // Apply syntax highlighting
+      const highlightedCode = this.applySyntaxHighlighting(code);
+      editor.innerHTML = highlightedCode;
+      editor.setAttribute('data-last-highlighted', code);
     }
+  }
+
+  /**
+   * Apply basic Python syntax highlighting
+   */
+  applySyntaxHighlighting(code) {
+    if (!code) return '';
+    
+    // Escape HTML entities first
+    let highlighted = code
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+    
+    // Split into lines to handle comments properly
+    const lines = highlighted.split('\n');
+    const processedLines = lines.map(line => {
+      let processedLine = line;
+      
+      // Handle comments (but not in strings)
+      const commentMatch = processedLine.match(/^([^#"']*(?:"[^"]*"[^#"']*|'[^']*'[^#"']*)*)(.*)$/);
+      if (commentMatch) {
+        const beforeComment = commentMatch[1];
+        const afterComment = commentMatch[2];
+        
+        // Check if there's a # that's not in a string
+        const hashIndex = afterComment.indexOf('#');
+        if (hashIndex !== -1) {
+          const commentPart = afterComment.substring(hashIndex);
+          const beforeHash = afterComment.substring(0, hashIndex);
+          processedLine = beforeComment + beforeHash + '<span class="comment">' + commentPart + '</span>';
+        }
+      }
+      
+      return processedLine;
+    });
+    
+    highlighted = processedLines.join('\n');
+    
+    // Strings (triple quotes first, then regular quotes)
+    // Handle multiline strings carefully
+    highlighted = highlighted.replace(/("""[\s\S]*?""")/g, '<span class="string">$1</span>');
+    highlighted = highlighted.replace(/('''[\s\S]*?''')/g, '<span class="string">$1</span>');
+    
+    // Single line strings (avoid already highlighted content)
+    highlighted = highlighted.replace(/("(?:[^"\\]|\\.)*")(?![^<]*<\/span>)/g, '<span class="string">$1</span>');
+    highlighted = highlighted.replace(/('(?:[^'\\]|\\.)*')(?![^<]*<\/span>)/g, '<span class="string">$1</span>');
+    
+    // Numbers (avoid those in strings)
+    highlighted = highlighted.replace(/\b(\d+(?:\.\d+)?)\b(?![^<]*<\/span>)/g, '<span class="number">$1</span>');
+    
+    // Python keywords (avoid matching parts of words or inside strings/comments)
+    const keywords = ['def', 'class', 'if', 'else', 'elif', 'for', 'while', 'return', 'import', 'from', 'as', 'try', 'except', 'finally', 'with', 'lambda', 'and', 'or', 'not', 'in', 'is', 'True', 'False', 'None'];
+    keywords.forEach(keyword => {
+      const regex = new RegExp(`\\b(${keyword})\\b(?![^<]*<\/span>)`, 'g');
+      highlighted = highlighted.replace(regex, '<span class="keyword">$1</span>');
+    });
+    
+    // Function calls (but not if already highlighted)
+    highlighted = highlighted.replace(/\b(\w+)(?=\s*\()(?![^<]*<\/span>)/g, '<span class="function">$1</span>');
+    
+    return highlighted;
   }
 
   /**
@@ -1309,7 +1623,18 @@ class VariablesSidePanel {
     const generateBtn = this.panel.querySelector('#generate-var-code');
     if (generateBtn) {
       generateBtn.disabled = show;
-      generateBtn.textContent = show ? '🤖 Generating...' : 'Generate Code';
+      generateBtn.textContent = show ? '🤖 Generating...' : '🤖 Generate Python Code';
+    }
+  }
+
+  /**
+   * Show/hide code execution loading state
+   */
+  showCodeExecutionLoading(show) {
+    const testBtn = this.panel.querySelector('#test-var-code');
+    if (testBtn) {
+      testBtn.disabled = show;
+      testBtn.textContent = show ? '⏳ Executing...' : '▶️ Execute';
     }
   }
 
@@ -1345,57 +1670,102 @@ class VariablesSidePanel {
   }
 
   async testCode() {
-    const editor = this.panel.querySelector('#generated-code-editor');
-    const code = editor?.textContent?.trim();
+    const formData = this.getFormData();
     
-    if (!code) {
-      alert('No code to test. Please generate code first.');
+    if (!formData.name) {
+      alert('Please enter a variable name first');
       return;
     }
 
-    const formData = this.getFormData();
-    console.log('Testing code for variable:', formData.name);
-
-    // Show loading state
-    const testBtn = this.panel.querySelector('#test-var-code');
-    if (testBtn) {
-      testBtn.disabled = true;
-      testBtn.textContent = '🧪 Testing...';
+    if (!formData.generatedCode) {
+      alert('No code to execute. Please generate code first.');
+      return;
     }
 
-    try {
-      // Get dependencies and data source
-      const dependencies = this.getCurrentDependencies();
-      const dependencyValues = await this.getDependencyValues(dependencies);
-      const dataSourceSelect = this.panel.querySelector('#var-data-source');
-      const selectedDataSource = dataSourceSelect?.value || '';
+    console.log('🧪 Testing code for variable:', formData.name);
 
-      // Execute the code using the existing tool execution utility
-      const result = await this.executeGeneratedCode(code, selectedDataSource, dependencyValues);
+    // Show loading state
+    this.showCodeExecutionLoading(true);
+
+    try {
+      // Create temporary variable for testing
+      const tempVariable = {
+        name: formData.name,
+        description: formData.description,
+        type: formData.type,
+        dependencies: formData.dependencies,
+        valueOption: 'code',
+        generatedCode: formData.generatedCode,
+        value: null
+      };
+
+      // Add to dependency executor temporarily
+      variableDependencyExecutor.addVariable(formData.name, tempVariable);
+
+      // Execute this variable (and its dependencies if needed)
+      const result = await variableDependencyExecutor.executeVariable(formData.name);
+      
+      console.log('🎯 Variable execution result:', result, 'Type:', typeof result);
+      
+      // Handle different types of results
+      let displayResult = null;
+      let success = false;
       
       if (result !== null && result !== undefined) {
-        // Update the variable value with the test result
-        this.updateValueDisplay(String(result));
-        
-        // If editing existing variable, save the value immediately
-        if (this.editingVariableName) {
-          await variablesManager.setVariableValue(this.editingVariableName, String(result));
+        // Convert result to string for display
+        if (typeof result === 'object') {
+          try {
+            displayResult = JSON.stringify(result, null, 2);
+          } catch (e) {
+            displayResult = String(result);
+          }
+        } else {
+          displayResult = String(result);
         }
         
-        alert(`Code test successful!\nResult: ${result}`);
+        // Check if we have meaningful content
+        if (displayResult && displayResult.trim() !== '' && displayResult !== '{}' && displayResult !== 'null' && displayResult !== 'undefined') {
+          success = true;
+        } else {
+          console.log('Result is empty or meaningless:', displayResult);
+          success = false;
+        }
       } else {
-        alert('Code test completed but returned no result');
+        console.log('Variable execution returned null/undefined');
+        displayResult = 'No result returned';
+        success = false;
+      }
+      
+      if (success && displayResult) {
+        // Update the variable value display
+        this.updateValueDisplay(displayResult);
+        
+        // Show success message
+        const shortResult = displayResult.length > 200 ? displayResult.substring(0, 200) + '...' : displayResult;
+        alert(`✅ Code execution successful!\n\nResult: ${shortResult}\n\n📝 Variable value has been set and ready to save.`);
+      } else {
+        console.warn('Code execution returned no usable result');
+        alert(`⚠️ Code executed but returned no result.\n\nThe code ran without errors, but didn't return a value that can be used as the variable value.\n\nTip: Make sure your code returns the final result.`);
       }
 
     } catch (error) {
-      console.error('Error testing code:', error);
-      alert('Error testing code: ' + error.message);
+      console.error('❌ Error executing variable:', error);
+      
+      let errorMessage = '❌ Error executing code:\n\n' + error.message;
+      
+      // Add helpful suggestions
+      if (error.message.includes('not been executed')) {
+        errorMessage += '\n\n💡 Make sure all dependency variables have been created and executed first.';
+      } else if (error.message.includes('Circular dependency')) {
+        errorMessage += '\n\n💡 Fix the circular dependency between variables.';
+      } else if (error.message.includes('syntax')) {
+        errorMessage += '\n\n💡 Check your Python syntax and indentation.';
+      }
+      
+      alert(errorMessage);
     } finally {
       // Reset button state
-      if (testBtn) {
-        testBtn.disabled = false;
-        testBtn.textContent = 'Test Code';
-      }
+      this.showCodeExecutionLoading(false);
     }
   }
 
@@ -1403,37 +1773,130 @@ class VariablesSidePanel {
    * Execute generated code with dependencies and data source
    */
   async executeGeneratedCode(code, dataSource, dependencyValues) {
-    // Import the execution utility if available
-    if (window.executeCodeForAuthorLocal) {
-      return await window.executeCodeForAuthorLocal(code, dataSource, dependencyValues);
-    }
+    console.log('🔧 Executing code with dependencies:', dependencyValues);
     
-    // Fallback: try to execute via API
+    // Convert dependency values to proper parameter format for backend
+    const parameters = this.convertDependencyValuesToParameters(dependencyValues);
+    console.log('🔄 Converted parameters for backend:', parameters);
+    
+    // Use direct API call with proper parameter format
     try {
-      const response = await fetch('http://127.0.0.1:5000/api/execute-code', {
+      const payload = {
+        code: code,
+        parameters: parameters,
+        document_id: window.documentManager?.activeDocumentId || 'default'
+      };
+      console.log('📤 Sending execution request with payload:', payload);
+
+      const response = await fetch('http://127.0.0.1:5001/api/execute-code', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          code: code,
-          data_source: dataSource,
-          dependencies: dependencyValues,
-          document_id: window.documentManager?.activeDocumentId || 'default'
-        })
+        body: JSON.stringify(payload)
       });
 
+      console.log('📥 Execution response status:', response.status);
+      
       if (response.ok) {
-        const result = await response.json();
-        return result.result;
+        const apiResult = await response.json();
+        console.log('📋 Full API response:', apiResult);
+        
+        let extractedResult = null;
+        
+        if (apiResult.success && apiResult.output !== undefined && apiResult.output !== null) {
+          extractedResult = apiResult.output;
+          console.log('✅ Found successful result in output:', extractedResult);
+          
+          // Log stdout if available for debugging
+          if (apiResult.stdout) {
+            console.log('📝 Execution stdout:', apiResult.stdout);
+          }
+        } else if (apiResult.success && apiResult.stdout) {
+          // If output is null but we have stdout, try to parse it
+          console.log('📝 Trying to extract result from stdout:', apiResult.stdout);
+          extractedResult = apiResult.stdout;
+        } else if (apiResult.result !== undefined) {
+          extractedResult = apiResult.result;
+          console.log('✅ Found result in result field:', extractedResult);
+        } else if (apiResult.success && (apiResult.output === null || apiResult.output === undefined)) {
+          // Special case: execution was "successful" but returned null/undefined
+          console.warn('⚠️ Code executed successfully but returned null/undefined result');
+          console.log('📝 This usually means the function executed but the final expression/return was null');
+          console.log('💡 Check that your code has a final expression or return statement that produces a value');
+          throw new Error('Code executed successfully but returned no value. Make sure your function returns a result and is called properly.');
+        } else if (!apiResult.success && apiResult.error) {
+          console.error('❌ Backend returned error:', apiResult.error);
+          throw new Error(typeof apiResult.error === 'object' ? JSON.stringify(apiResult.error) : apiResult.error);
+        } else {
+          console.warn('⚠️ Unexpected API response format:', apiResult);
+          throw new Error('Unexpected response format from backend');
+        }
+        
+        console.log('🎯 Final extracted result:', extractedResult, 'Type:', typeof extractedResult);
+        return extractedResult;
       } else {
-        throw new Error('Code execution API failed');
+        const errorText = await response.text();
+        console.error('❌ API execution failed:', response.status, errorText);
+        throw new Error(`Code execution API failed: ${response.status} - ${errorText}`);
       }
     } catch (error) {
-      console.error('Error executing code:', error);
+      console.error('❌ Error executing code via API:', error);
       throw error;
     }
   }
+
+  /**
+   * Convert dependency values object to backend parameters format
+   */
+  convertDependencyValuesToParameters(dependencyValues) {
+    const parameters = {};
+    
+    if (!dependencyValues || typeof dependencyValues !== 'object') {
+      console.log('🔧 No dependency values to convert');
+      return parameters;
+    }
+    
+    for (const [paramName, depInfo] of Object.entries(dependencyValues)) {
+      if (depInfo && typeof depInfo === 'object' && depInfo.value !== undefined) {
+        // Extract the actual value from the dependency info object
+        let paramValue = depInfo.value;
+        
+        // Check if the value is a JSON string that should be parsed into an object
+        if (typeof paramValue === 'string') {
+          try {
+            // Try to parse as JSON if it looks like JSON (starts with { or [)
+            const trimmedValue = paramValue.trim();
+            if ((trimmedValue.startsWith('{') && trimmedValue.endsWith('}')) || 
+                (trimmedValue.startsWith('[') && trimmedValue.endsWith(']'))) {
+              const parsedValue = JSON.parse(trimmedValue);
+              parameters[paramName] = parsedValue;
+              console.log(`🔗 Mapped JSON parameter: ${paramName} = [parsed object] (from ${depInfo.name})`);
+            } else {
+              // Regular string value
+              parameters[paramName] = paramValue;
+              console.log(`🔗 Mapped string parameter: ${paramName} = ${paramValue} (from ${depInfo.name})`);
+            }
+          } catch (error) {
+            // If JSON parsing fails, use the string value as-is
+            parameters[paramName] = paramValue;
+            console.log(`🔗 Mapped parameter (JSON parse failed): ${paramName} = ${paramValue} (from ${depInfo.name})`);
+          }
+        } else {
+          // Non-string value, use as-is
+          parameters[paramName] = paramValue;
+          console.log(`🔗 Mapped parameter: ${paramName} = ${paramValue} (from ${depInfo.name})`);
+        }
+      } else {
+        // Fallback: use the value directly if it's not in the expected format
+        parameters[paramName] = depInfo;
+        console.log(`🔗 Direct parameter: ${paramName} = ${depInfo}`);
+      }
+    }
+    
+    return parameters;
+  }
+
 }
 
 // Create and export singleton instance

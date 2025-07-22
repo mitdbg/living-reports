@@ -183,7 +183,7 @@ async function loadContextFile() {
 
         // Send file to backend for processing
         const documentId = window.documentManager?.activeDocumentId || null;
-        const response = await fetch('http://127.0.0.1:5000/api/process-file', {
+        const response = await fetch('http://127.0.0.1:5001/api/process-file', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
@@ -226,7 +226,7 @@ async function loadContextFile() {
     try {
       addMessageToUI('system', 'Saving context to backend...');
 
-      const response = await fetch('http://127.0.0.1:5000/api/file-context', {
+      const response = await fetch('http://127.0.0.1:5001/api/file-context', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -442,7 +442,7 @@ function showMIDRCInputDialog() {
   // Background download function
   const downloadMIDRCInBackground = async (caseId, documentId) => {
     try {
-      const response = await fetch('http://127.0.0.1:5000/api/download_midrc_file', {
+      const response = await fetch('http://127.0.0.1:5001/api/download_midrc_file', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -675,8 +675,8 @@ function renderPDF(content) {
     
     // Convert file path to HTTP URL for serving through backend
     const backgroundUrl = page.background.startsWith('database/') 
-      ? `http://127.0.0.1:5000/api/serve-file/${page.background}`
-      : `http://127.0.0.1:5000/api/serve-file/${page.background}`;
+      ? `http://127.0.0.1:5001/api/serve-file/${page.background}`
+      : `http://127.0.0.1:5001/api/serve-file/${page.background}`;
     
     pageDiv.style.backgroundImage = `url(${backgroundUrl})`;
     pageDiv.style.backgroundSize = "cover";
@@ -747,7 +747,7 @@ function renderImage(file) {
   if (file.isImageFile && file.fileUrl) {
     // Direct file upload - use the file URL
     return `<img src="${file.fileUrl}" alt="${file.name}" style="max-width: 100%; height: auto;" />`;
-  } else if (file.content && (file.content.startsWith('/api/serve-file/') || file.content.startsWith('http://127.0.0.1:5000/api/serve-file/'))) {
+  } else if (file.content && (file.content.startsWith('/api/serve-file/') || file.content.startsWith('http://127.0.0.1:5001/api/serve-file/'))) {
     // File URL stored in content
     return `<img src="${file.content}" alt="${file.name}" style="max-width: 100%; height: auto;" />`;
   } else {
@@ -1104,7 +1104,7 @@ async function clearFileContext() {
   try {
     addMessageToUI('system', 'Clearing context...');
     
-    const response = await fetch(`http://127.0.0.1:5000/api/file-context?session_id=${state.sessionId}`, {
+    const response = await fetch(`http://127.0.0.1:5001/api/file-context?session_id=${state.sessionId}`, {
       method: 'DELETE'
     });
 

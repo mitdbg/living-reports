@@ -10,7 +10,7 @@ export async function addSampleTools() {
   
   // Check if tools already exist via API
   try {
-    const response = await fetch(`http://127.0.0.1:5000/api/tools?documentId=${currentDocumentId}`);
+    const response = await fetch(`http://127.0.0.1:5001/api/tools?documentId=${currentDocumentId}`);
     const result = await response.json();
     if (result.success && result.tools && result.tools.length > 0) {
       return; // Don't add samples if tools already exist
@@ -421,7 +421,7 @@ console.log("Data Processor tool loaded successfully!")`,
 
   // Save sample tools via API
   try {
-    const response = await fetch('http://127.0.0.1:5000/api/tools', {
+    const response = await fetch('http://127.0.0.1:5001/api/tools', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

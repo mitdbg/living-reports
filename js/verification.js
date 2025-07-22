@@ -34,7 +34,7 @@ function setupVerifyButtonEventDelegation() {
 // Save verification to backend
 async function saveVerificationToBackend(verificationData) {
   try {
-    const response = await fetch('http://127.0.0.1:5000/api/verify-document', {
+    const response = await fetch('http://127.0.0.1:5001/api/verify-document', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -63,7 +63,7 @@ async function saveVerificationToBackend(verificationData) {
 // Load verification history from backend
 async function loadVerificationFromBackend() {
   try {
-    const response = await fetch(`http://127.0.0.1:5000/api/get-verification/${state.sessionId}`, {
+    const response = await fetch(`http://127.0.0.1:5001/api/get-verification/${state.sessionId}`, {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' }
     });

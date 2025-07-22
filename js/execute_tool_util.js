@@ -203,7 +203,7 @@ export async function executeOperatorWithData(tool, datasets, parameters, window
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
       
-      const response = await fetch('http://127.0.0.1:5000/api/execute-code', {
+      const response = await fetch('http://127.0.0.1:5001/api/execute-code', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -270,11 +270,11 @@ export async function executeOperatorWithData(tool, datasets, parameters, window
       
       // Handle specific error types
       if (error.name === 'AbortError') {
-        throw new Error(`Code execution timed out after 30 seconds. Check if backend is running at http://127.0.0.1:5000`);
+        throw new Error(`Code execution timed out after 30 seconds. Check if backend is running at http://127.0.0.1:5001`);
       } else if (error.message.includes('fetch') || error.message.includes('Failed to fetch')) {
-        throw new Error(`Cannot connect to backend at http://127.0.0.1:5000. Please ensure the backend server is running.`);
+        throw new Error(`Cannot connect to backend at http://127.0.0.1:5001. Please ensure the backend server is running.`);
       } else if (error.message.includes('NetworkError')) {
-        throw new Error(`Network error connecting to backend. Check if backend is running at http://127.0.0.1:5000`);
+        throw new Error(`Network error connecting to backend. Check if backend is running at http://127.0.0.1:5001`);
       } else {
         throw new Error(`Code execution failed: ${error.message}`);
       }
@@ -294,7 +294,7 @@ export async function executeOperatorWithData(tool, datasets, parameters, window
       };
 
       console.log(`[${windowId}] Executing code for author...`);
-      const response = await fetch('http://127.0.0.1:5000/api/execute-code', {
+      const response = await fetch('http://127.0.0.1:5001/api/execute-code', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

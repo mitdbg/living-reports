@@ -879,7 +879,7 @@ class VariableOperatorGenerator {
       
       // Try primary endpoint first
       try {
-        response = await fetch('http://127.0.0.1:5000/api/generate-variable-code', {
+        response = await fetch('http://127.0.0.1:5001/api/generate-variable-code', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
@@ -1301,7 +1301,7 @@ class VariableOperatorGenerator {
     }
     
     // Save all tools
-    const response = await fetch('http://127.0.0.1:5000/api/tools', {
+    const response = await fetch('http://127.0.0.1:5001/api/tools', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -1341,7 +1341,7 @@ class VariableOperatorGenerator {
       currentTools = window.toolsManager.tools;
     } else {
       // Fallback to API
-      const response = await fetch(`http://127.0.0.1:5000/api/tools?documentId=${documentId}`);
+      const response = await fetch(`http://127.0.0.1:5001/api/tools?documentId=${documentId}`);
       const result = await response.json();
       if (result.success) {
         currentTools = result.tools || [];
@@ -1365,7 +1365,7 @@ class VariableOperatorGenerator {
     }
     
     // Save all tools
-    const response = await fetch('http://127.0.0.1:5000/api/tools', {
+    const response = await fetch('http://127.0.0.1:5001/api/tools', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -1408,7 +1408,7 @@ class VariableOperatorGenerator {
     }
     
     // Fallback to API
-    const response = await fetch(`http://127.0.0.1:5000/api/tools?documentId=${documentId}`);
+    const response = await fetch(`http://127.0.0.1:5001/api/tools?documentId=${documentId}`);
     const result = await response.json();
     
     if (result.success && result.tools) {
@@ -1711,7 +1711,7 @@ class VariableOperatorGenerator {
         existingTools = window.toolsManager.tools;
       } else {
         // Fallback to API
-        const response = await fetch(`http://127.0.0.1:5000/api/tools?documentId=${currentDocumentId}`);
+        const response = await fetch(`http://127.0.0.1:5001/api/tools?documentId=${currentDocumentId}`);
         const result = await response.json();
         if (result.success) {
           existingTools = result.tools || [];
@@ -1852,7 +1852,7 @@ class VariableOperatorGenerator {
       if (!tool) {
         // Fallback to API
         const currentDocumentId = window.documentManager?.activeDocumentId;
-        const response = await fetch(`http://127.0.0.1:5000/api/tools?documentId=${currentDocumentId}`);
+        const response = await fetch(`http://127.0.0.1:5001/api/tools?documentId=${currentDocumentId}`);
         const result = await response.json();
         if (result.success) {
           const tools = result.tools || [];

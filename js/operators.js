@@ -542,7 +542,7 @@ class OperatorManager {
         return null;
       }
       
-      const response = await fetch(`http://127.0.0.1:5000/api/tools?documentId=${currentDocumentId}&windowId=${windowId}`);
+      const response = await fetch(`http://127.0.0.1:5001/api/tools?documentId=${currentDocumentId}&windowId=${windowId}`);
       const result = await response.json();
       if (result.success) {
         const tools = result.tools || [];
@@ -795,7 +795,7 @@ class OperatorManager {
           return validVariables;
         }
         
-        const response = await fetch(`http://127.0.0.1:5000/api/variables?documentId=${encodeURIComponent(documentId)}`);
+        const response = await fetch(`http://127.0.0.1:5001/api/variables?documentId=${encodeURIComponent(documentId)}`);
         
         if (!response.ok) {
           throw new Error(`API responded with status: ${response.status}`);
@@ -1514,7 +1514,7 @@ async function populateToolsDropdown() {
         return;
       }
       
-      const response = await fetch(`http://127.0.0.1:5000/api/tools?documentId=${currentDocumentId}&windowId=${windowId}`);
+      const response = await fetch(`http://127.0.0.1:5001/api/tools?documentId=${currentDocumentId}&windowId=${windowId}`);
       const result = await response.json();
       if (result.success) {
         tools = result.tools || [];
@@ -1804,7 +1804,7 @@ async function populateVariablesDropdown(select) {
         return;
       }
       
-      const response = await fetch(`http://127.0.0.1:5000/api/variables?documentId=${encodeURIComponent(documentId)}`);
+      const response = await fetch(`http://127.0.0.1:5001/api/variables?documentId=${encodeURIComponent(documentId)}`);
       
       if (!response.ok) {
         throw new Error(`API responded with status: ${response.status}`);
@@ -1916,7 +1916,7 @@ async function callLLMForToolAnalysis(tool) {
     const plainTextCode = convertHtmlCodeToPlainText(tool.code);
     
     // Call the dedicated operator config suggestion API
-    const response = await fetch('http://127.0.0.1:5000/api/suggest-operator-config', {
+    const response = await fetch('http://127.0.0.1:5001/api/suggest-operator-config', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -2296,7 +2296,7 @@ async function saveTool() {
       }
     } else {
       // Fallback API call
-      const response = await fetch('http://127.0.0.1:5000/api/tools', {
+      const response = await fetch('http://127.0.0.1:5001/api/tools', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -2559,7 +2559,7 @@ class ToolsManager {
         return;
       }
       
-      const response = await fetch('http://127.0.0.1:5000/api/tools', {
+      const response = await fetch('http://127.0.0.1:5001/api/tools', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -2592,7 +2592,7 @@ class ToolsManager {
         return;
       }
       
-      const response = await fetch(`http://127.0.0.1:5000/api/tools?documentId=${currentDocumentId}&windowId=${windowId}`);
+      const response = await fetch(`http://127.0.0.1:5001/api/tools?documentId=${currentDocumentId}&windowId=${windowId}`);
       const result = await response.json();
       
       if (result.success) {
@@ -3518,7 +3518,7 @@ async function refreshOperatorsToolsList() {
         return;
       }
       
-      const response = await fetch(`http://127.0.0.1:5000/api/tools?documentId=${currentDocumentId}&windowId=${windowId}`);
+      const response = await fetch(`http://127.0.0.1:5001/api/tools?documentId=${currentDocumentId}&windowId=${windowId}`);
       const result = await response.json();
       if (result.success) {
         tools = result.tools || [];

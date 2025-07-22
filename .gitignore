@@ -9,3 +9,5 @@ venv/
 *.env
 backend/test.db
 credentials.json
+umls-server/
+udi-hacky/

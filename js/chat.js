@@ -229,7 +229,7 @@ async function chatToLLM(message, suggestTemplate = false) {
     const currentTemplateContent = templateEditor ? templateEditor.innerHTML : '';
     const currentPreviewContent = previewContent ? previewContent.innerHTML : '';
     
-    const response = await fetch('http://127.0.0.1:5000/api/chat', {
+    const response = await fetch('http://127.0.0.1:5001/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
@@ -277,7 +277,7 @@ async function chatToLLM(message, suggestTemplate = false) {
 
 async function clearBackendChatHistory() {
   try {
-    const response = await fetch('http://127.0.0.1:5000/api/chat/clear', {
+    const response = await fetch('http://127.0.0.1:5001/api/chat/clear', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 

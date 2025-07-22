@@ -29,7 +29,7 @@ async function loadDataSourcesForCurrentDocument() {
   console.log(`[${windowId}] Loading Data Sources from backend for document: ${currentDocumentId}`);
   
   try {
-    const response = await fetch(`http://127.0.0.1:5000/api/data-sources?documentId=${currentDocumentId}&windowId=${windowId}&session_id=${state.sessionId || windowId}`);
+    const response = await fetch(`http://127.0.0.1:5001/api/data-sources?documentId=${currentDocumentId}&windowId=${windowId}&session_id=${state.sessionId || windowId}`);
     
     if (!response.ok) {
       throw new Error(`Backend responded with status: ${response.status}`);
@@ -70,7 +70,7 @@ async function saveDataSources() {
   console.log(`[${windowId}] 🔍 DEBUG: saveDataSources - saving dataSources:`, dataSources);
   
   try {
-    const response = await fetch('http://127.0.0.1:5000/api/data-sources', {
+    const response = await fetch('http://127.0.0.1:5001/api/data-sources', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 

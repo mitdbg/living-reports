@@ -10,7 +10,7 @@ export class TaskManager {
     this.isInitialized = false;
     this.currentDocumentId = null;
     this.tasks = [];
-    this.apiBaseUrl = 'http://127.0.0.1:5000';
+    this.apiBaseUrl = 'http://127.0.0.1:5001';
   }
 
   // Initialize the task manager system
