@@ -504,13 +504,14 @@ export class DocumentManager {
     const variablesCloseBtn = container.querySelector('#variables-close-btn');
     if (variablesPanel && variablesToggleBtn && variablesCloseBtn) {
       // Show variables panel
-      variablesToggleBtn.onclick = () => {
+      variablesToggleBtn.onclick = async () => {
         console.log('Variables toggle button clicked - opening panel');
         variablesPanel.classList.remove('panel-collapsed');
         // Notify the variables side panel that it was opened
         if (variablesSidePanel) {
           variablesSidePanel.isOpen = true;
-          variablesSidePanel.loadVariablesData();
+          console.log('🔄 Loading variables data when panel opens...');
+          await variablesSidePanel.loadVariablesData();
           variablesSidePanel.showOverview();
         }
       };

@@ -10,19 +10,60 @@ class VariableDependencyExecutor {
     this.executionMetadata = new Map(); // variable_name -> {lastExecuted, codeHash, valueOption}
     this.dependencyGraph = new Map(); // variable_name -> [dependent_variables]
     this.reverseDependencyGraph = new Map(); // variable_name -> [dependency_variables]
+    this.isInitialized = false; // Track if we've loaded variables initially
   }
 
   /**
    * Add or update a variable in the system
    */
-  addVariable(variableName, variableInfo) {
+  async addVariable(variableName, variableInfo, isInitialLoad = false) {
     const existing = this.variables.get(variableName);
-    this.variables.set(variableName, variableInfo);
     
-    // Check if this is an update that requires invalidation
-    if (existing && this.hasVariableChanged(existing, variableInfo)) {
-      console.log(`🔄 Variable ${variableName} changed, invalidating dependents`);
-      this.invalidateDependents(variableName);
+    console.log(`🔍 addVariable called for ${variableName}:`, {
+      isInitialLoad: isInitialLoad,
+      hasExisting: !!existing,
+      existingValue: existing?.value,
+      newValue: variableInfo.value,
+      existingValueOption: existing?.valueOption,
+      newValueOption: variableInfo.valueOption
+    });
+    
+    // Skip change detection during initial load
+    if (isInitialLoad) {
+      console.log(`📥 Initial load of variable ${variableName}, skipping change detection`);
+      this.variables.set(variableName, variableInfo);
+    } else {
+      console.log(`🔍 Checking for changes in ${variableName}...`);
+      // Check if this is an update that requires invalidation
+      if (existing && this.hasVariableChanged(existing, variableInfo)) {
+        console.log(`🔄 Variable ${variableName} changed, invalidating dependents`);
+        
+        // Update the variable AFTER change detection but BEFORE invalidation
+        this.variables.set(variableName, variableInfo);
+        
+        this.invalidateDependents(variableName);
+        
+        // Automatically re-execute invalidated dependents
+        try {
+          const reexecutedResults = await this.executeInvalidatedVariables();
+          if (Object.keys(reexecutedResults).length > 0) {
+            const dependentNames = Object.keys(reexecutedResults);
+            console.log(`🎯 Auto re-executed dependent variables due to ${variableName} change:`, dependentNames);
+            
+            // Show user notification about automatic re-execution
+            this.showDependencyUpdateNotification(variableName, dependentNames);
+          }
+        } catch (error) {
+          console.error(`❌ Error auto re-executing dependents of ${variableName}:`, error);
+          // Don't throw the error - just log it, as the variable save should still succeed
+        }
+      } else if (existing) {
+        console.log(`ℹ️ Variable ${variableName} unchanged - no cascading execution needed`);
+        this.variables.set(variableName, variableInfo);
+      } else {
+        console.log(`✨ New variable ${variableName} added - no dependents to update yet`);
+        this.variables.set(variableName, variableInfo);
+      }
     }
     
     this.buildDependencyGraph();
@@ -32,25 +73,55 @@ class VariableDependencyExecutor {
    * Check if a variable has changed in a way that requires re-execution
    */
   hasVariableChanged(oldVariable, newVariable) {
+    console.log(`🔍 Checking if variable changed:`, {
+      name: newVariable.name || 'unknown',
+      oldValueOption: oldVariable.valueOption,
+      newValueOption: newVariable.valueOption,
+      oldValue: oldVariable.value,
+      newValue: newVariable.value,
+      oldValueType: typeof oldVariable.value,
+      newValueType: typeof newVariable.value,
+      valuesEqual: oldVariable.value === newVariable.value,
+      oldCode: oldVariable.generatedCode,
+      newCode: newVariable.generatedCode
+    });
+    
     // Check if value option changed
     if (oldVariable.valueOption !== newVariable.valueOption) {
+      console.log(`✅ Variable changed: value option changed from ${oldVariable.valueOption} to ${newVariable.valueOption}`);
       return true;
     }
     
     // For manual variables, check if value changed
     if (newVariable.valueOption === 'manual') {
-      return oldVariable.value !== newVariable.value;
+      const valueChanged = oldVariable.value !== newVariable.value;
+      console.log(`🔍 Manual variable comparison: "${oldVariable.value}" !== "${newVariable.value}" = ${valueChanged}`);
+      if (valueChanged) {
+        console.log(`✅ Variable changed: manual value changed from "${oldVariable.value}" to "${newVariable.value}"`);
+        return true;
+      }
     }
     
     // For code variables, check if code changed
     if (newVariable.valueOption === 'code') {
-      return oldVariable.generatedCode !== newVariable.generatedCode;
+      const codeChanged = oldVariable.generatedCode !== newVariable.generatedCode;
+      if (codeChanged) {
+        console.log(`✅ Variable changed: generated code changed`);
+        return true;
+      }
     }
     
     // Check if dependencies changed
     const oldDeps = (oldVariable.dependencies || []).sort().join(',');
     const newDeps = (newVariable.dependencies || []).sort().join(',');
-    return oldDeps !== newDeps;
+    const depsChanged = oldDeps !== newDeps;
+    if (depsChanged) {
+      console.log(`✅ Variable changed: dependencies changed from [${oldDeps}] to [${newDeps}]`);
+      return true;
+    }
+    
+    console.log(`❌ No changes detected - this is the problem!`);
+    return false;
   }
 
   /**
@@ -402,6 +473,13 @@ class VariableDependencyExecutor {
    */
   invalidateDependents(variableName) {
     const dependents = this.dependencyGraph.get(variableName) || [];
+    console.log(`🔍 Finding dependents of ${variableName}:`, dependents);
+    
+    if (dependents.length === 0) {
+      console.log(`ℹ️ No dependents found for ${variableName}`);
+      return;
+    }
+    
     const toInvalidate = new Set(dependents);
 
     // Recursively invalidate all dependents
@@ -424,6 +502,58 @@ class VariableDependencyExecutor {
     for (const dep of dependents) {
       invalidateRecursive(dep);
     }
+    
+    console.log(`🗑️ Total invalidated variables:`, Array.from(toInvalidate));
+  }
+
+  /**
+   * Find variables that are invalidated (no cached results) and need re-execution
+   */
+  getInvalidatedVariables() {
+    const invalidated = [];
+    
+    for (const [varName] of this.variables) {
+      // Variable is invalidated if it has no cached execution result
+      if (!this.executionResults.has(varName)) {
+        invalidated.push(varName);
+      }
+    }
+    
+    console.log(`🔍 Found ${invalidated.length} invalidated variables:`, invalidated);
+    return invalidated;
+  }
+
+  /**
+   * Automatically re-execute all invalidated variables in dependency order
+   */
+  async executeInvalidatedVariables(showNotification = false) {
+    const invalidated = this.getInvalidatedVariables();
+    
+    if (invalidated.length === 0) {
+      console.log('✅ No invalidated variables to re-execute');
+      return {};
+    }
+
+    console.log(`🔄 Auto re-executing ${invalidated.length} invalidated variables:`, invalidated);
+    
+    try {
+      // Execute invalidated variables in proper dependency order
+      const results = await this.executeVariables(invalidated, false);
+      console.log(`✅ Successfully re-executed ${invalidated.length} invalidated variables`);
+      
+      // Show notification if requested (e.g., during template execution)
+      if (showNotification && invalidated.length > 0) {
+        const message = invalidated.length === 1 
+          ? `🔄 Re-executed 1 variable with updated dependencies: ${invalidated[0]}`
+          : `🔄 Re-executed ${invalidated.length} variables with updated dependencies: ${invalidated.join(', ')}`;
+        this.showTemporaryStatus(message);
+      }
+      
+      return results;
+    } catch (error) {
+      console.error('❌ Error during automatic re-execution:', error);
+      throw error;
+    }
   }
 
   /**
@@ -438,6 +568,68 @@ class VariableDependencyExecutor {
    */
   getAllVariableValues() {
     return Object.fromEntries(this.executionResults);
+  }
+
+  /**
+   * Show user notification when dependent variables are automatically re-executed
+   */
+  showDependencyUpdateNotification(changedVariable, dependentVariables) {
+    if (dependentVariables.length === 0) return;
+    
+    const dependentList = dependentVariables.join(', ');
+    const message = dependentVariables.length === 1 
+      ? `✅ Variable "${changedVariable}" changed. Automatically updated dependent variable: ${dependentList}`
+      : `✅ Variable "${changedVariable}" changed. Automatically updated ${dependentVariables.length} dependent variables: ${dependentList}`;
+    
+    console.log(`📢 ${message}`);
+    
+    // Show a subtle notification (you could replace this with a better UI notification system)
+    if (typeof window !== 'undefined' && window.variablesSidePanel) {
+      // Use a temporary status message instead of alert to be less intrusive
+      this.showTemporaryStatus(message);
+    }
+  }
+
+  /**
+   * Show temporary status message (less intrusive than alert)
+   */
+  showTemporaryStatus(message) {
+    // Create or update status element
+    let statusElement = document.getElementById('variable-dependency-status');
+    if (!statusElement) {
+      statusElement = document.createElement('div');
+      statusElement.id = 'variable-dependency-status';
+      statusElement.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: #4CAF50;
+        color: white;
+        padding: 12px 20px;
+        border-radius: 6px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        z-index: 10000;
+        font-size: 14px;
+        max-width: 400px;
+        transition: opacity 0.3s ease;
+      `;
+      document.body.appendChild(statusElement);
+    }
+    
+    statusElement.textContent = message;
+    statusElement.style.opacity = '1';
+    
+    // Auto-hide after 4 seconds
+    setTimeout(() => {
+      if (statusElement) {
+        statusElement.style.opacity = '0';
+        setTimeout(() => {
+          if (statusElement && statusElement.parentNode) {
+            statusElement.parentNode.removeChild(statusElement);
+          }
+        }, 300);
+      }
+    }, 4000);
   }
 }
 

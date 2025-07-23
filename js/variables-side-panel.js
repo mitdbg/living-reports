@@ -753,13 +753,21 @@ class VariablesSidePanel {
       await variablesManager.loadVariables();
     }
     
-    // Initialize all existing variables in the dependency executor
-    const variables = variablesManager.getVariables();
-    for (const [name, variable] of Object.entries(variables)) {
-      variableDependencyExecutor.addVariable(name, variable);
+    // Only initialize dependency executor once to preserve old values for change detection
+    if (!variableDependencyExecutor.isInitialized) {
+      const variables = variablesManager.getVariables();
+      console.log(`🚀 First-time initialization: Loading ${Object.keys(variables).length} variables into dependency executor...`);
+      
+      for (const [name, variable] of Object.entries(variables)) {
+        console.log(`➕ Initially loading variable ${name} with value: ${variable.value}`);
+        await variableDependencyExecutor.addVariable(name, variable, true); // isInitialLoad = true
+      }
+      
+      variableDependencyExecutor.isInitialized = true;
+      console.log(`🔧 Dependency executor initialized with ${variableDependencyExecutor.variables.size} variables`);
+    } else {
+      console.log(`⚪ Dependency executor already initialized, skipping reload to preserve old values`);
     }
-    
-    console.log(`🔧 Loaded ${Object.keys(variables).length} variables into dependency executor`);
     
     // Update the variables list
     this.updateVariablesList();
@@ -772,7 +780,15 @@ class VariablesSidePanel {
     try {
       console.log('🚀 Executing all variables for template substitution...');
       
-      // Execute all variables in dependency order
+      // First, ensure all invalidated variables are re-executed
+      console.log('🔍 Checking for invalidated variables before template execution...');
+      const invalidatedResults = await variableDependencyExecutor.executeInvalidatedVariables(true);
+      
+      if (Object.keys(invalidatedResults).length > 0) {
+        console.log(`🔄 Re-executed ${Object.keys(invalidatedResults).length} invalidated variables before template execution`);
+      }
+      
+      // Then execute all variables in dependency order (this will use cached results where appropriate)
       const results = await variableDependencyExecutor.executeVariables();
       
       console.log('✅ All variables executed successfully for template:', results);
@@ -797,7 +813,9 @@ class VariablesSidePanel {
   /**
    * Get all variable values for template substitution
    */
-  getAllVariableValuesForTemplate() {
+  async getAllVariableValuesForTemplate() {
+    // Ensure all invalidated variables are re-executed before getting values
+    await variableDependencyExecutor.executeInvalidatedVariables(true);
     return variableDependencyExecutor.getAllVariableValues();
   }
 
@@ -1130,8 +1148,9 @@ class VariablesSidePanel {
     // Add to variables manager
     variablesManager.variables.set(variable.name, variable);
     
-    // Add to dependency executor
-    variableDependencyExecutor.addVariable(variable.name, variable);
+    // Add to dependency executor (this will handle automatic re-execution if needed)
+    console.log(`💾 Saving new variable ${variable.name} with value: ${variable.value}`);
+    await variableDependencyExecutor.addVariable(variable.name, variable);
     
     // Replace selected text with placeholder if available
     if (this.selectedRange && this.selectedText) {
@@ -1169,21 +1188,29 @@ class VariablesSidePanel {
 
     // Handle variable name change in variables manager
     if (formData.name !== this.editingVariableName) {
-      variablesManager.variables.delete(this.editingVariableName);
-      variablesManager.variables.set(formData.name, updatedVariable);
+      console.log(`🔄 Variable name changed from ${this.editingVariableName} to ${formData.name}`);
       
-      // Handle name change in dependency executor
+      // Handle name change in dependency executor FIRST
       variableDependencyExecutor.removeVariable(this.editingVariableName);
-      variableDependencyExecutor.addVariable(formData.name, updatedVariable);
-    } else {
-      variablesManager.variables.set(this.editingVariableName, updatedVariable);
+      await variableDependencyExecutor.addVariable(formData.name, updatedVariable);
       
-      // Update in dependency executor
-      variableDependencyExecutor.addVariable(formData.name, updatedVariable);
+      // Sync all execution results back to variables manager
+      await this.syncExecutionResultsToVariablesManager();
+    } else {
+      // CRITICAL: Get the old value from dependency executor BEFORE any updates
+      const oldVariableInExecutor = variableDependencyExecutor.variables.get(this.editingVariableName);
+      const oldValue = oldVariableInExecutor ? oldVariableInExecutor.value : null;
+      
+      console.log(`💾 Updating existing variable ${formData.name}: "${oldValue}" → "${formData.value}"`);
+      
+      // Update in dependency executor FIRST (this will handle automatic re-execution if needed)
+      await variableDependencyExecutor.addVariable(formData.name, updatedVariable);
+      
+      // Sync all execution results back to variables manager
+      await this.syncExecutionResultsToVariablesManager();
     }
 
     await variablesManager.saveVariables();
-    variablesManager.updateVariablesUI();
     
     console.log(`✅ Updated variable ${formData.name} in dependency system`);
   }
@@ -1213,6 +1240,43 @@ class VariablesSidePanel {
   // in the next phase of development...
 
   /**
+   * Sync execution results from dependency executor back to variables manager
+   * This ensures that template preview shows the updated values after automatic re-execution
+   */
+  async syncExecutionResultsToVariablesManager() {
+    console.log('🔄 Syncing execution results from dependency executor to variables manager...');
+    
+    // Get all execution results from dependency executor
+    const executionResults = variableDependencyExecutor.getAllVariableValues();
+    
+    for (const [variableName, executedValue] of Object.entries(executionResults)) {
+      // Get the variable from variables manager
+      const variable = variablesManager.variables.get(variableName);
+      if (variable) {
+        // Convert result to string for display if needed
+        let displayValue = executedValue;
+        if (typeof executedValue === 'object' && executedValue !== null) {
+          displayValue = JSON.stringify(executedValue, null, 2);
+        } else if (executedValue !== null && executedValue !== undefined) {
+          displayValue = String(executedValue);
+        }
+        
+        // Update the variable's value in variables manager
+        variable.value = displayValue;
+        variablesManager.variables.set(variableName, variable);
+        
+        console.log(`🔄 Synced ${variableName}: ${displayValue}`);
+      }
+    }
+    
+    // Update the UI to reflect changes
+    variablesManager.updateVariablesUI();
+    this.updateVariablesList();
+    
+    console.log('✅ Execution results synced to variables manager');
+  }
+
+  /**
    * Value Management Methods
    */
   startValueEditing() {
@@ -1227,16 +1291,59 @@ class VariablesSidePanel {
     }
   }
 
-  saveValue() {
+  async saveValue() {
     const valueInput = this.panel.querySelector('#var-value-input');
     const value = valueInput?.value?.trim() || '';
     
     this.updateValueDisplay(value);
     this.cancelValueEditing();
     
-    // If editing existing variable, save immediately
-    if (this.editingVariableName) {
-      variablesManager.setVariableValue(this.editingVariableName, value);
+    // Validate that we have a variable name to edit
+    if (!this.editingVariableName) {
+      console.error('❌ No variable name to save value for');
+      alert('Error: No variable selected for editing. Please try again.');
+      return;
+    }
+    
+    // CRITICAL: Get the old value from dependency executor BEFORE any updates
+    const oldVariableInExecutor = variableDependencyExecutor.variables.get(this.editingVariableName);
+    const oldValue = oldVariableInExecutor ? oldVariableInExecutor.value : null;
+    
+    // Get the current variable data from variables manager
+    const existingVariable = variablesManager.variables.get(this.editingVariableName);
+    if (!existingVariable) {
+      console.error(`❌ Variable ${this.editingVariableName} not found in variables manager`);
+      alert('Error: Variable not found. Please try again.');
+      return;
+    }
+
+    // Create updated variable with new value
+    const updatedVariable = {
+      ...existingVariable,
+      value: value
+    };
+    
+    console.log(`💾 Saving value change for ${this.editingVariableName}: "${oldValue}" → "${value}"`);
+    
+    // Only proceed if value actually changed
+    if (oldValue !== value) {
+      try {
+        // Update in dependency executor FIRST (this will trigger automatic re-execution)
+        await variableDependencyExecutor.addVariable(this.editingVariableName, updatedVariable);
+        
+        // Get all execution results from dependency executor and update variables manager
+        await this.syncExecutionResultsToVariablesManager();
+        
+        // Save variables to persist all changes
+        await variablesManager.saveVariables();
+        
+        console.log(`✅ Value saved and dependencies updated for ${this.editingVariableName}`);
+      } catch (error) {
+        console.error('❌ Error saving value:', error);
+        alert(`Error saving value: ${error.message}`);
+      }
+    } else {
+      console.log(`ℹ️ Value unchanged for ${this.editingVariableName}, skipping update`);
     }
   }
 
@@ -1748,8 +1855,8 @@ class VariablesSidePanel {
         value: null
       };
 
-      // Add to dependency executor temporarily
-      variableDependencyExecutor.addVariable(formData.name, tempVariable);
+      // Add to dependency executor temporarily (don't trigger change detection)
+      await variableDependencyExecutor.addVariable(formData.name, tempVariable, true);
 
       // Execute this variable (and its dependencies if needed)
       const result = await variableDependencyExecutor.executeVariable(formData.name);
