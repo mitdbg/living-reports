@@ -140,6 +140,10 @@ export class DocumentManager {
         console.log(`🔍 Executing SHARE action for document: ${documentId}`);
         e.stopPropagation(); // Prevent event bubbling
         await this.shareDocument(documentId);
+      } else if (action === 'copy' && documentId) {
+        console.log(`🔍 Executing COPY action for document: ${documentId}`);
+        e.stopPropagation(); // Prevent event bubbling
+        await this.copyDocument(documentId);
       } else if (e.target.closest('.document-item') && !action) {
         // Click on document item itself
         const item = e.target.closest('.document-item');
@@ -413,6 +417,9 @@ export class DocumentManager {
       
       // Initialize variables for this specific document
       initVariablesForDocument();
+      
+      // Initialize copy document button
+      this.initializeCopyDocumentButton(documentId);
       
       // Load data sources for this specific document
       await loadDataSources(documentId);
@@ -764,6 +771,9 @@ export class DocumentManager {
               <button class="document-action-btn open" data-action="open" data-document-id="${doc.id}">
                 Open
               </button>
+              <button class="document-action-btn copy" data-action="copy" data-document-id="${doc.id}">
+                Copy
+              </button>
             </div>
           </div>
         `;
@@ -800,6 +810,9 @@ export class DocumentManager {
             <div class="document-actions">
               <button class="document-action-btn open" data-action="open" data-document-id="${doc.id}">
                 Open
+              </button>
+              <button class="document-action-btn copy" data-action="copy" data-document-id="${doc.id}">
+                Copy
               </button>
               <button class="document-action-btn delete" data-action="delete" data-document-id="${doc.id}">
                 Delete
@@ -1091,6 +1104,209 @@ export class DocumentManager {
     } else {
       addMessageToUI('system', '❌ Failed to share document. Make sure the backend is running.');
       return false;
+    }
+  }
+
+  /**
+   * Initialize copy document button event listener
+   */
+  initializeCopyDocumentButton(documentId) {
+    const copyBtn = document.getElementById(`${documentId}-copy-document-btn`);
+    if (copyBtn) {
+      // Remove any existing listeners to prevent duplicates
+      copyBtn.replaceWith(copyBtn.cloneNode(true));
+      const newCopyBtn = document.getElementById(`${documentId}-copy-document-btn`);
+      
+      newCopyBtn.addEventListener('click', async () => {
+        await this.copyDocument(documentId);
+      });
+      
+      console.log(`✅ Copy document button initialized for document: ${documentId}`);
+    } else {
+      console.warn(`Copy document button not found for document: ${documentId}`);
+    }
+  }
+
+  /**
+   * Copy a document with all its content and variables
+   */
+  async copyDocument(documentId) {
+    const sourceDoc = this.documents.get(documentId);
+    if (!sourceDoc) {
+      console.error(`Source document not found: ${documentId}`);
+      return null;
+    }
+
+    try {
+      console.log(`📋 Starting copy operation for document: ${sourceDoc.title}`);
+
+      // Get current user for ownership
+      const currentUser = getCurrentUser();
+      if (!currentUser) {
+        console.error('No current user found, cannot copy document');
+        return null;
+      }
+
+      // Generate new document ID
+      this.documentCounter++;
+      const newDocumentId = `${currentUser.id}-doc-${this.documentCounter}`;
+      const newSessionId = this.generateSessionId();
+
+      // Get current content from editors if the source document is active
+      let currentTemplateContent = sourceDoc.template_content || '';
+      let currentSourceContent = sourceDoc.source_content || '';
+      let currentPreviewContent = sourceDoc.preview_content || '';
+
+      // If we're copying the currently active document, get fresh content from editors
+      if (this.activeDocumentId === documentId) {
+        const container = document.getElementById(`document-${documentId}`);
+        if (container) {
+          const templateEditor = container.querySelector('.template-editor');
+          const sourceEditor = container.querySelector('.source-editor');
+          const previewContent = container.querySelector('.preview-content');
+
+          if (templateEditor) {
+            currentTemplateContent = templateEditor.innerHTML;
+          }
+          if (sourceEditor) {
+            currentSourceContent = getTextContentWithLineBreaks(sourceEditor);
+          }
+          if (previewContent) {
+            currentPreviewContent = previewContent.innerHTML;
+          }
+        }
+      }
+
+      // Create a copy of the source document with current content
+      const copiedDoc = {
+        id: newDocumentId,
+        sessionId: newSessionId,
+        title: `Copy of ${sourceDoc.title}`,
+        source_content: currentSourceContent,
+        template_content: currentTemplateContent,
+        preview_content: currentPreviewContent,
+        createdAt: new Date().toISOString(),
+        lastModified: new Date().toISOString(),
+        chatHistory: [], // Start with empty chat history for copy
+        contextFiles: [], // Start with empty context files for copy
+        author: currentUser.id,
+        authorName: currentUser.name,
+        editors: [],
+        viewers: [],
+        isShared: false, // Copies are not shared by default
+        comments: {} // Start with empty comments for copy
+      };
+
+      // Store the copied document
+      this.documents.set(newDocumentId, copiedDoc);
+
+      // Create tab and document elements
+      this.createTab(copiedDoc);
+      this.createAllElement(copiedDoc.id);
+
+      // Switch to the new document
+      await this.switchToDocument(newDocumentId);
+
+      // Load the copied content into the editors (this was missing!)
+      await this.loadDocumentContentWithRetry(newDocumentId, copiedDoc, 1);
+
+      // Copy variables from source document
+      await this.copyDocumentVariables(documentId, newDocumentId);
+
+      // Save the new document to backend
+      this.saveDocumentToBackend(newDocumentId).then(success => {
+        if (!success) {
+          console.error(`Failed to save copied document to backend: ${newDocumentId}`);
+        }
+      });
+
+      // Update document list
+      this.updateDocumentList();
+
+      // Show success message
+      console.log(`✅ Document copied successfully: ${sourceDoc.title} -> ${copiedDoc.title}`);
+      
+      // Show floating notification
+      if (window.variableDependencyExecutor) {
+        window.variableDependencyExecutor.showSimpleCompletionNotification(`Document "${sourceDoc.title}" copied successfully`);
+      }
+
+      return copiedDoc;
+
+    } catch (error) {
+      console.error('Error copying document:', error);
+      alert(`Error copying document: ${error.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Copy all variables from source document to target document
+   */
+  async copyDocumentVariables(sourceDocumentId, targetDocumentId) {
+    try {
+      console.log(`📊 Copying variables from ${sourceDocumentId} to ${targetDocumentId}`);
+
+      // Load variables for source document
+      const response = await fetch(`http://127.0.0.1:5001/api/variables?documentId=${encodeURIComponent(sourceDocumentId)}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      if (result.success && result.variables) {
+        const sourceVariables = result.variables;
+
+        // Only copy if there are variables to copy
+        if (Object.keys(sourceVariables).length > 0) {
+          // Save variables to target document
+          const saveResponse = await fetch('http://127.0.0.1:5001/api/variables', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              documentId: targetDocumentId,
+              variables: sourceVariables
+            })
+          });
+
+          if (!saveResponse.ok) {
+            throw new Error(`HTTP error saving variables! status: ${saveResponse.status}`);
+          }
+
+          const saveResult = await saveResponse.json();
+          if (saveResult.success) {
+            console.log(`✅ Successfully copied ${Object.keys(sourceVariables).length} variables to new document`);
+            
+            // Update variables manager if the target document is currently active
+            if (this.activeDocumentId === targetDocumentId && window.variablesManager) {
+              window.variablesManager.variables.clear();
+              Object.entries(sourceVariables).forEach(([name, variable]) => {
+                window.variablesManager.variables.set(name, variable);
+              });
+              window.variablesManager.updateVariablesUI();
+            }
+          } else {
+            throw new Error(saveResult.error || 'Failed to save copied variables');
+          }
+        } else {
+          console.log('✅ No variables to copy from source document');
+        }
+      } else {
+        console.log('✅ No variables found in source document or failed to load');
+      }
+
+    } catch (error) {
+      console.error('Error copying variables:', error);
+      // Don't fail the entire copy operation for variable copy errors
+      console.warn('Document was copied but variables copy failed');
     }
   }
 
@@ -2608,6 +2824,7 @@ export class DocumentManager {
       'data-sources-btn': `${docId}-data-sources-btn`,
       'variables-btn': `${docId}-variables-btn`,
       'operators-btn': `${docId}-operators-btn`,
+      'copy-document-btn': `${docId}-copy-document-btn`,
       
       // Variables display
       'variables-display': `${docId}-variables-display`,
@@ -2671,6 +2888,7 @@ export class DocumentManager {
       'data-sources-btn': `${docId}-data-sources-btn`,
       'variables-btn': `${docId}-variables-btn`,
       'operators-btn': `${docId}-operators-btn`,
+      'copy-document-btn': `${docId}-copy-document-btn`,
       
       // Variables display
       'variables-display': `${docId}-variables-display`,
