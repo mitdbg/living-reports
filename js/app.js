@@ -5,6 +5,7 @@ import { initializeUser, isUserAuthenticated, getCurrentUser } from './auth.js';
 import { addSampleTools } from './sample-tools.js';
 import { initGlobalChatToggle } from './chat.js';
 import { variablesSidePanel } from './variables-side-panel.js';
+import { initMonacoEditor } from './monaco-editor-integration.js';
 
 let documentManager;
 
@@ -76,6 +77,10 @@ async function initializeCoreModules() {
       variablesSidePanel.init();
       console.log('Variables side panel initialized');
     }
+    
+    // Initialize Monaco Editor integration
+    await initMonacoEditor();
+    console.log('Monaco Editor integration initialized');
     
     console.log('Global modules initialized successfully');
     console.log('📋 ALL DOM-related modules will be initialized per document in document-manager');

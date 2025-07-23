@@ -8886,8 +8886,8 @@ p {
 /* Variables Side Panel Styles */
 .variables-side-panel {
   position: relative;
-  flex: 0 0 400px;
-  width: 400px;
+  flex: 0 0 600px;
+  width: 600px;
   min-width: 0;
   height: 100%;
   max-height: 100vh; /* Ensure panel doesn't exceed viewport height */
@@ -9999,15 +9999,15 @@ p {
 /* Responsive Design */
 @media (max-width: 1200px) {
   .variables-side-panel {
-    flex-basis: 350px;
-    width: 350px;
+    flex-basis: 500px;
+    width: 500px;
   }
 }
 
 @media (max-width: 768px) {
   .variables-side-panel {
-    flex-basis: 300px;
-    width: 300px;
+    flex-basis: 400px;
+    width: 400px;
   }
 }
 
