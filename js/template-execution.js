@@ -438,6 +438,10 @@ function isRichHTMLContent(text) {
     /<table[^>]*class="csv-table"/i,
     /<table[^>]*style=[^>]*border-collapse/i,
     
+    // Enhanced annotations table content
+    /<div[^>]*class="enhanced-annotations-table-container"/i,
+    /<table[^>]*class="enhanced-annotations-table"/i,
+    
     // Markdown rendered content
     /<div[^>]*class="markdown-content"/i,
     

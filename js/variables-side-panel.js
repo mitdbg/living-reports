@@ -1222,14 +1222,32 @@ class VariablesSidePanel {
   updateValueDisplay(value) {
     const valueDisplay = this.panel.querySelector('#var-value-display');
     if (valueDisplay) {
-      valueDisplay.textContent = value || 'Click to set value';
-      valueDisplay.className = value ? 'value-display has-value' : 'value-display no-value';
+      if (!value) {
+        valueDisplay.textContent = 'Click to set value';
+        valueDisplay.className = 'value-display no-value';
+      } else {
+        // Check if value contains HTML content (particularly table content)
+        if (typeof value === 'string' && 
+            (value.includes('<table') || 
+             value.includes('<div class="enhanced-annotations-table-container"') || 
+             value.includes('<div class="annotations-table-container"') || 
+             value.includes('<img'))) {
+          // For HTML content, use innerHTML but ensure we don't duplicate content
+          valueDisplay.innerHTML = '';  // Clear first to prevent duplication
+          valueDisplay.innerHTML = value;
+        } else {
+          // For plain text, use textContent
+          valueDisplay.textContent = value;
+        }
+        valueDisplay.className = 'value-display has-value';
+      }
     }
   }
 
   resetValueDisplay() {
     const valueDisplay = this.panel.querySelector('#var-value-display');
     if (valueDisplay) {
+      valueDisplay.innerHTML = '';  // Clear any HTML content first
       valueDisplay.textContent = 'Click to set value';
       valueDisplay.className = 'value-display no-value';
     }
