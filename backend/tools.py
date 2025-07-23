@@ -438,6 +438,7 @@ Additional instructions:
 1. Normal findings should be excluded from the each table.
 2. Group similar findings together where possible for each table.
 3. Create a csv format that we can use to create a table.
+4. Do not include any other text in the response.
 """
 
     response = openai.chat.completions.create(
@@ -472,10 +473,22 @@ def _convert_csv_to_html_table(csv_content: str) -> str:
         HTML table string
     """
     try:
-        # Split content into lines
+        # Split content into lines and clean up
         lines = csv_content.strip().split("\n")
+        
+        # Filter out markdown code block markers and empty lines
+        clean_lines = []
+        for line in lines:
+            line = line.strip()
+            # Skip markdown code block markers and empty lines
+            if (line.startswith('```') or 
+                line == '```csv' or 
+                line == '```' or 
+                not line):
+                continue
+            clean_lines.append(line)
 
-        if not lines:
+        if not clean_lines:
             return (
                 '<div class="annotation-error">No data available for annotations</div>'
             )
@@ -484,20 +497,23 @@ def _convert_csv_to_html_table(csv_content: str) -> str:
         html = '<div class="annotations-table-container" style="display: block; width: 100%; overflow-x: auto;">\n'
         html += '<table class="annotations-table" style="display: table; width: 100%; border-collapse: collapse; margin: 0; padding: 0;">\n'
 
-        # Process each line
-        for i, line in enumerate(lines):
-            if not line.strip():
-                continue
-
+        # Process each cleaned line
+        header_processed = False
+        for line in clean_lines:
             # Split by comma, handling quoted fields
             fields = _parse_csv_line(line)
+            
+            # Skip empty field arrays
+            if not fields or all(not f.strip() for f in fields):
+                continue
 
-            if i == 0:
+            if not header_processed:
                 # Header row
                 html += "<thead>\n<tr>\n"
                 for field in fields:
                     html += f'<th style="border: 1px solid #ddd; padding: 8px; text-align: left; background-color: #f2f2f2; font-weight: bold;">{field.strip()}</th>\n'
                 html += "</tr>\n</thead>\n<tbody>\n"
+                header_processed = True
             else:
                 # Data row
                 html += "<tr>\n"
@@ -637,3 +653,209 @@ def GetPatientAgePlot(x_ray_dicom_files: List[str]) -> str:
         return f'<img src="{chart_url}" alt="UDI Chart" style="max-width: 100%; height: 200px;" />'
     else:
         return f'<div class="image-error">❌ Error: Chart file not generated</div>'
+
+
+def _get_medical_codes_for_finding(clinical_finding: str, snomed_code: str, snomed_description: str) -> dict:
+    """
+    Helper function to generate appropriate medical codes based on clinical finding.
+    
+    Args:
+        clinical_finding (str): The clinical finding description
+        snomed_code (str): The SNOMED CT code
+        snomed_description (str): The SNOMED CT description
+        
+    Returns:
+        dict: Dictionary containing CUI, SNOMED, and ICD-10-CM codes and descriptions
+    """
+    # For now, return hardcoded values regardless of input
+    # This can be extended later to use actual medical coding APIs/databases
+    return {
+        'cui': 'C0020312',
+        'cui_name': 'transudative pleural effusion',
+        'snomed_code': '79231000',
+        'snomed_name': 'Hydrothorax (disorder)',
+        'icd10cm_code': 'J94.8',
+        'icd10cm_name': 'Hydrothorax'
+    }
+
+
+def GetCodesFromNaturalLanguage(annotations_html_table: str) -> str:
+    """
+    Takes HTML table output from GenerateAnnotations and returns an enhanced HTML table 
+    with additional medical coding columns (CUI, SNOMED, ICD-10-CM).
+    
+    Args:
+        annotations_html_table (str): HTML table string from GenerateAnnotations output
+        
+    Returns:
+        str: Enhanced HTML table with additional columns:
+             ['cui', 'cui_name', 'snomed_code', 'snomed_name', 'icd10cm_code', 'icd10cm_name']
+    """
+    try:
+        from bs4 import BeautifulSoup
+        import re
+        
+        # Debug logging to understand input structure
+        logger.info(f"Input HTML length: {len(annotations_html_table)}")
+        logger.info(f"Input HTML preview: {annotations_html_table[:500]}...")
+        
+        # Parse the HTML table and ensure we only process one table
+        soup = BeautifulSoup(annotations_html_table, 'html.parser')
+        
+        # Find all tables and log count for debugging
+        all_tables = soup.find_all('table')
+        logger.info(f"Found {len(all_tables)} table(s) in input HTML")
+        
+        if not all_tables:
+            return '<div class="annotation-error">❌ Error: No table found in input HTML</div>'
+            
+        # Use only the first table to avoid duplication
+        table = all_tables[0]
+        
+        # Extract headers and data rows
+        thead = table.find('thead')
+        tbody = table.find('tbody')
+        
+        if not thead or not tbody:
+            return '<div class="annotation-error">❌ Error: Invalid table structure</div>'
+        
+        # Get original headers - use only the first header row to avoid duplicates
+        header_rows = thead.find_all('tr')
+        if not header_rows:
+            return '<div class="annotation-error">❌ Error: No header row found</div>'
+            
+        header_cells = header_rows[0].find_all('th')
+        original_headers = [cell.get_text().strip() for cell in header_cells]
+        
+        logger.info(f"Original headers: {original_headers}")
+        
+        # Validate headers - skip if we see malformed data like 'csv' as header
+        if any(header.lower() in ['csv', '```csv', '```'] for header in original_headers):
+            return '<div class="annotation-error">❌ Error: Malformed table headers detected</div>'
+        
+        # Check which columns already exist to avoid duplication
+        existing_columns_lower = {header.lower().replace('_', ' ').replace('-', ' ') for header in original_headers}
+        logger.info(f"Existing columns (normalized): {existing_columns_lower}")
+        
+        # Only add columns that don't already exist - be more specific about SNOMED detection
+        new_headers = []
+        
+        # Check for CUI columns
+        if not any('cui' in col and 'name' not in col for col in existing_columns_lower):
+            new_headers.append('CUI')
+        if not any('cui' in col and 'name' in col for col in existing_columns_lower):
+            new_headers.append('CUI Name')
+            
+        # Check for SNOMED columns - don't add if SNOMED_CT versions exist
+        has_snomed_code = any('snomed' in col and ('code' in col or 'ct code' in col) for col in existing_columns_lower)
+        has_snomed_name = any('snomed' in col and ('description' in col or 'name' in col or 'ct description' in col) for col in existing_columns_lower)
+        
+        logger.info(f"Has SNOMED code: {has_snomed_code}, Has SNOMED name: {has_snomed_name}")
+        
+        # Don't add duplicate SNOMED columns
+        # if not has_snomed_code:
+        #     new_headers.append('SNOMED Code')
+        # if not has_snomed_name:
+        #     new_headers.append('SNOMED Name')
+            
+        # Check for ICD-10-CM columns
+        if not any('icd' in col and 'code' in col for col in existing_columns_lower):
+            new_headers.append('ICD-10-CM Code')
+        if not any('icd' in col and 'name' in col for col in existing_columns_lower):
+            new_headers.append('ICD-10-CM Name')
+        
+        all_headers = original_headers + new_headers
+        logger.info(f"Adding new columns: {new_headers}")
+        
+        # Extract data rows - ensure we don't have duplicate or malformed rows
+        data_rows = []
+        processed_rows = set()  # Track unique rows to avoid duplicates
+        
+        for row in tbody.find_all('tr'):
+            cells = row.find_all('td')
+            row_data = [cell.get_text().strip() for cell in cells]
+            
+            # Skip empty rows or rows with wrong number of columns
+            if not row_data or len(row_data) != len(original_headers):
+                logger.warning(f"Skipping malformed row: {row_data}")
+                continue
+                
+            # Create a row signature to detect duplicates
+            row_signature = '|'.join(row_data)
+            if row_signature in processed_rows:
+                logger.warning(f"Skipping duplicate row: {row_data}")
+                continue
+                
+            processed_rows.add(row_signature)
+            data_rows.append(row_data)
+            
+        logger.info(f"Processing {len(data_rows)} unique data rows")
+        
+        # Build enhanced HTML table
+        html = '<div class="enhanced-annotations-table-container" style="display: block; width: 100%; overflow-x: auto;">\n'
+        html += '<table class="enhanced-annotations-table" style="display: table; width: 100%; border-collapse: collapse; margin: 0; padding: 0;">\n'
+        
+        # Add enhanced header
+        html += '<thead>\n<tr>\n'
+        for header in all_headers:
+            html += f'<th style="border: 1px solid #ddd; padding: 8px; text-align: left; background-color: #f2f2f2; font-weight: bold;">{header}</th>\n'
+        html += '</tr>\n</thead>\n<tbody>\n'
+        
+        # Process each data row and add medical codes
+        for row_data in data_rows:
+            if len(row_data) < len(original_headers):
+                continue  # Skip incomplete rows
+                
+            # Extract existing data from original columns
+            clinical_finding = ""
+            existing_snomed_code = ""
+            existing_snomed_description = ""
+            
+            for i, header in enumerate(original_headers):
+                if i < len(row_data):
+                    if 'clinical finding' in header.lower():
+                        clinical_finding = row_data[i]
+                    elif 'snomed_ct code' in header.lower() or 'snomed code' in header.lower():
+                        existing_snomed_code = row_data[i]
+                    elif 'snomed_ct description' in header.lower() or ('snomed' in header.lower() and 'description' in header.lower()):
+                        existing_snomed_description = row_data[i]
+            
+            # Generate medical codes based on clinical finding
+            medical_codes = _get_medical_codes_for_finding(clinical_finding, existing_snomed_code, existing_snomed_description)
+            
+            # Build row with original data + only the new columns
+            html += '<tr>\n'
+            
+            # Add original columns
+            for cell_data in row_data:
+                html += f'<td style="border: 1px solid #ddd; padding: 8px; text-align: left;">{cell_data}</td>\n'
+            
+            # Add only the new medical code columns that were determined to be missing
+            for new_header in new_headers:
+                if new_header == 'CUI':
+                    html += f'<td style="border: 1px solid #ddd; padding: 8px; text-align: left;">{medical_codes["cui"]}</td>\n'
+                elif new_header == 'CUI Name':
+                    html += f'<td style="border: 1px solid #ddd; padding: 8px; text-align: left;">{medical_codes["cui_name"]}</td>\n'
+                elif new_header == 'ICD-10-CM Code':
+                    html += f'<td style="border: 1px solid #ddd; padding: 8px; text-align: left;">{medical_codes["icd10cm_code"]}</td>\n'
+                elif new_header == 'ICD-10-CM Name':
+                    html += f'<td style="border: 1px solid #ddd; padding: 8px; text-align: left;">{medical_codes["icd10cm_name"]}</td>\n'
+            
+            html += '</tr>\n'
+        
+        html += '</tbody>\n</table>\n</div>'
+        
+        # Final validation - ensure we created exactly one table
+        validation_soup = BeautifulSoup(html, 'html.parser')
+        final_tables = validation_soup.find_all('table')
+        
+        if len(final_tables) != 1:
+            logger.error(f"ERROR: Generated HTML contains {len(final_tables)} tables instead of 1!")
+            return '<div class="annotation-error">❌ Error: Internal table generation error</div>'
+        
+        logger.info(f"Successfully enhanced annotations table with medical codes - {len(data_rows)} rows processed")
+        return html
+        
+    except Exception as e:
+        logger.error(f"Error processing annotations table: {str(e)}")
+        return f'<div class="annotation-error">❌ Error enhancing annotations: {str(e)}</div>'

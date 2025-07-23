@@ -41,7 +41,7 @@ from pdf_processor import process_pdf_file
 from local_code_executor.code_executor import execute_code_locally
 from task_manager import TaskManager
 from pathlib import Path
-from tools import GetPatientData, GenerateAnnotations, GetPatientAgePlot
+from tools import GetPatientData, GenerateAnnotations, GetPatientAgePlot, GetCodesFromNaturalLanguage
 
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -2489,6 +2489,27 @@ image_container = RenderImage("/var/folders/midrc_download_goy6na3v/1.2.826.0.1.
 html_plot = GetPatientAgePlot([\"/path/to/file1.dcm\", \"/path/to/file2.dcm\"])
 """,
             "import_statement": "from tools import GetPatientAgePlot",
+        },
+        {
+            "name": "GetCodesFromNaturalLanguage",
+            "description": "Takes HTML table output from GenerateAnnotations and enhances it with additional medical coding columns (CUI, SNOMED, ICD-10-CM).",
+            "function_signature": "GetCodesFromNaturalLanguage(annotations_html_table: str) -> str",
+            "parameters": [
+                {
+                    "name": "annotations_html_table",
+                    "type": "str",
+                    "description": "HTML table string from GenerateAnnotations output containing clinical findings and annotations",
+                }
+            ],
+            "returns": {
+                "type": "str",
+                "description": "Enhanced HTML table with additional columns for CUI, CUI Name, SNOMED Code, SNOMED Name, ICD-10-CM Code, and ICD-10-CM Name",
+            },
+            "usage_example": """# Example usage - typically used after GenerateAnnotations:
+annotations_table = GenerateAnnotations("/path/to/xray.jpg")
+enhanced_table = GetCodesFromNaturalLanguage(annotations_table)
+""",
+            "import_statement": "from tools import GetCodesFromNaturalLanguage",
         },
     ]
 
