@@ -25,6 +25,7 @@
     "electron": "^35.1.5"
   },
   "dependencies": {
-    "pptx2html": "^0.3.4"
+    "pptx2html": "^0.3.4",
+    "monaco-editor": "^0.45.0"
   }
 }

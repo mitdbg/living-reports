@@ -1102,6 +1102,11 @@ class VariablesManager {
       return;
     }
     
+    // CRITICAL: If not editing, ensure dialog is in create mode with clean state
+    if (!isEditing) {
+      this.resetDialogToCreateMode();
+    }
+    
     const textDisplay = this.variableDialog.querySelector('.selected-text-display');
     if (textDisplay && this.selectedText) {
       textDisplay.textContent = `"${this.selectedText}"`;
@@ -1149,11 +1154,16 @@ class VariablesManager {
     this.selectedText = null;
     this.selectedRange = null;
     
-    // Clear editing state
+    // Clear editing state completely
     this.clearEditingState();
     
-    // Hide the dialog
+    // CRITICAL: Clear any temporary values or cached data
+    this._temporaryValue = undefined;
+    this.currentSuggestion = null;
+    
+    // Hide the dialog and reset to create mode
     this.hideVariableDialog();
+    this.resetDialogToCreateMode();
   }
   
   /**
@@ -1290,17 +1300,16 @@ class VariablesManager {
       return false;
     }
     
-    // For updates, only check for duplicate names if the name has changed
+    // For updates, allow overwriting when renaming
     if (isUpdate) {
       if (formData.name !== originalVariableName && this.variables.has(formData.name)) {
-        alert('Variable name already exists');
-        return false;
+        // Automatically overwrite existing variable when renaming
+        console.log(`📝 Overwriting existing variable during rename: ${formData.name}`);
       }
     } else {
-      // For new variables, always check for duplicates
+      // For new variables, automatically overwrite if exists
       if (this.variables.has(formData.name)) {
-        alert('Variable name already exists');
-        return false;
+        console.log(`📝 Overwriting existing variable: ${formData.name}`);
       }
     }
     
@@ -1759,13 +1768,20 @@ class VariablesManager {
       if (formatInput) formatInput.value = '';
       if (requiredCheckbox) requiredCheckbox.checked = true;
       
-      // Reset value display
+      // CRITICAL: Clear disabled state from form fields if they were disabled during loading
+      if (nameInput) nameInput.disabled = false;
+      if (descInput) descInput.disabled = false;
+      if (typeSelect) typeSelect.disabled = false;
+      if (formatInput) formatInput.disabled = false;
+      
+      // Reset value display completely
       const valueDisplay = getDocumentElement('variable-value-display');
       const valueInput = getDocumentElement('variable-value-input');
       const valueInputContainer = this.variableDialog.querySelector('.value-input-container');
       const dataSourceSelect = getDocumentElement('data-source-select');
       
       if (valueDisplay) {
+        valueDisplay.innerHTML = ''; // Clear any HTML content first
         valueDisplay.textContent = 'Click to set value';
         valueDisplay.className = 'value-display no-value';
         valueDisplay.style.display = 'block';
@@ -1774,7 +1790,7 @@ class VariablesManager {
       if (valueInputContainer) valueInputContainer.style.display = 'none';
       if (dataSourceSelect) dataSourceSelect.value = '';
       
-      // Reset dependencies
+      // Reset dependencies completely
       const dependenciesList = getDocumentElement('variable-dependencies-list');
       if (dependenciesList) {
         dependenciesList.innerHTML = '<div class="no-dependencies-message">No dependencies selected</div>';
@@ -1782,10 +1798,25 @@ class VariablesManager {
       
       // Hide dependency selector if visible
       this.hideDependencySelector();
+      
+      // Clear AI indicator if visible
+      const aiIndicator = getDocumentElement('variable-ai-indicator');
+      if (aiIndicator) {
+        aiIndicator.style.display = 'none';
+      }
+      
+      // Clear selected text preview
+      const textDisplay = this.variableDialog.querySelector('.selected-text-display');
+      if (textDisplay) {
+        textDisplay.textContent = '';
+      }
     }
     
-    // Clear editing state
+    // Clear editing state completely
     this.clearEditingState();
+    
+    // Clear any suggestion state
+    this.currentSuggestion = null;
   }
 
   /**
