@@ -3,6 +3,7 @@ import tempfile
 import shutil
 import logging
 import zipfile
+import httpx
 import requests
 import subprocess
 from typing import Dict, List, Optional, Any
@@ -655,7 +656,47 @@ def GetPatientAgePlot(x_ray_dicom_files: List[str]) -> str:
         return f'<div class="image-error">❌ Error: Chart file not generated</div>'
 
 
-def _get_medical_codes_for_finding(clinical_finding: str, snomed_code: str, snomed_description: str) -> dict:
+async def get_codes_from_natural_language(natural_language_query):
+    BASE = "http://localhost:8000"
+    
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.get(f"{BASE}/cuis", params={"query": natural_language_query})
+        r.raise_for_status()
+        matches = r.json()
+        results = [m for m in matches["cuis"] if m["language_code"] == "ENG"]
+
+        codes = {m['cui']: m for m in results}
+        snomed_codes = {}
+        billing_codes = {}
+        for key, cui in codes.items():
+            r = await client.get(f"{BASE}/code-map/", params={"cui": key})
+            r.raise_for_status()
+            matches = r.json()['code_maps']
+            for m in matches:
+                if m['sab'] == 'SNOMEDCT_US':
+                    snomed_codes[key] = m
+                    codes[key]['snomed'] = m
+                elif m['sab'] == 'ICD10CM':
+                    billing_codes[key] = m
+                    codes[key]['icd10m'] = m
+            
+        # Retain only CUI codes that have both SNOMED and ICD10CM codes
+        return_codes = []
+        for key in list(codes.keys()):
+            if key in snomed_codes and key in billing_codes:
+                return_codes.append({
+                    "cui": key,
+                    "cui_name": codes[key]['name'],
+                    "snomed_code": snomed_codes[key]['code'],
+                    "snomed_name": snomed_codes[key]['name'],
+                    "icd10cm_code": billing_codes[key]['code'],
+                    "icd10cm_name": billing_codes[key]['name']
+                })
+
+        return return_codes
+
+
+def _get_medical_codes_for_finding(clinical_finding: str, snomed_code: str, snomed_description: str) -> list[dict]:
     """
     Helper function to generate appropriate medical codes based on clinical finding.
     
@@ -669,15 +710,16 @@ def _get_medical_codes_for_finding(clinical_finding: str, snomed_code: str, snom
     """
     # For now, return hardcoded values regardless of input
     # This can be extended later to use actual medical coding APIs/databases
-    return {
+    return [{
         'cui': 'C0020312',
         'cui_name': 'transudative pleural effusion',
         'snomed_code': '79231000',
         'snomed_name': 'Hydrothorax (disorder)',
         'icd10cm_code': 'J94.8',
         'icd10cm_name': 'Hydrothorax'
-    }
+    }]
 
+    return asyncio.run(get_codes_from_natural_language(clinical_finding))
 
 def GetCodesFromNaturalLanguage(annotations_html_table: str) -> str:
     """
@@ -822,13 +864,21 @@ def GetCodesFromNaturalLanguage(annotations_html_table: str) -> str:
             
             # Generate medical codes based on clinical finding
             medical_codes = _get_medical_codes_for_finding(clinical_finding, existing_snomed_code, existing_snomed_description)
+            medical_codes = medical_codes[0] if medical_codes else {
+                "cui": "",
+                "cui_name": "",
+                "snomed_code": existing_snomed_code,
+                "snomed_name": existing_snomed_description,
+                "icd10cm_code": "",
+                "icd10cm_name": ""
+            }
             
             # Build row with original data + only the new columns
             html += '<tr>\n'
             
             # Add original columns
-            for cell_data in row_data:
-                html += f'<td style="border: 1px solid #ddd; padding: 8px; text-align: left;">{cell_data}</td>\n'
+            # for cell_data in row_data:
+                # html += f'<td style="border: 1px solid #ddd; padding: 8px; text-align: left;">{cell_data}</td>\n'
             
             # Add only the new medical code columns that were determined to be missing
             for new_header in new_headers:

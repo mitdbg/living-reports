@@ -10,15 +10,4 @@ openpyxl
 python-pptx
 python-dotenv
 mcp
-httpx
-gen3
-pydicom
-Pillow
-numpy
-python-gdcm
-pylibjpeg>=2.0
-pylibjpeg-libjpeg>=2.1
-pylibjpeg-openjpeg
-udi-grammar-py
-playwright
-lzstring
+httpx 

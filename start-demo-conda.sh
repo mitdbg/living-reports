@@ -20,27 +20,38 @@ if [ ! -f ".env" ]; then
     exit 1
 fi
 
-# Check if we're already in a virtual environment
-if [ -n "$VIRTUAL_ENV" ]; then
-    echo "✅ Using active virtual environment: $VIRTUAL_ENV"
-    PYTHON_CMD="python"
-else
-    # Fall back to local venv if not already in one
-    VENV_DIR="venv"
-    
-    # Check if local venv exists
-    if [ ! -d "$VENV_DIR" ]; then
-        echo "❌ No active virtual environment found and local venv directory not found!"
-        echo "📦 Please either:"
-        echo "   1. Activate your virtual environment before running this script, or"
-        echo "   2. Run ./install-deps.sh to create a local virtual environment."
+# # Set venv directory name
+# VENV_DIR="venv"
+
+# # Check if venv exists
+# if [ ! -d "$VENV_DIR" ]; then
+#     echo "❌ Virtual environment not found!"
+#     echo "📦 Please run ./install-deps.sh first to install dependencies."
+#     exit 1
+# fi
+
+# # Activate venv
+# source "$VENV_DIR/bin/activate"
+
+if [ -n "$MAMBA_EXE" ] && [ -n "$MAMBA_ROOT_PREFIX" ]; then
+    # Prefer micromamba.sh if it exists
+    if [ -f "$MAMBA_ROOT_PREFIX/etc/profile.d/micromamba.sh" ]; then
+        source "$MAMBA_ROOT_PREFIX/etc/profile.d/micromamba.sh"
+    elif [ -f "$MAMBA_ROOT_PREFIX/etc/profile.d/mamba.sh" ]; then
+        source "$MAMBA_ROOT_PREFIX/etc/profile.d/mamba.sh"
+    # Otherwise fallback to conda.sh (for mamba)
+    elif [ -f "$MAMBA_ROOT_PREFIX/etc/profile.d/conda.sh" ]; then
+        source "$MAMBA_ROOT_PREFIX/etc/profile.d/conda.sh"
+    else
+        echo "❌ Neither micromamba.sh nor conda.sh found in: $MAMBA_ROOT_PREFIX/etc/profile.d/"
         exit 1
     fi
-    
-    echo "🔄 Activating local virtual environment..."
-    source "$VENV_DIR/bin/activate"
-    PYTHON_CMD="../$VENV_DIR/bin/python"
+else
+    echo "❌ MAMBA_EXE or MAMBA_ROOT_PREFIX is not set. Cannot locate init script."
+    exit 1
 fi
+
+mamba activate living-reports
 
 # Function to cleanup background processes
 cleanup() {
@@ -162,9 +173,9 @@ fi
 
 echo "✅ Ready to start fresh backend and MCP processes"
 
+export MIDRC_CREDENTIALS_PATH="./credentials.json"
 # Start Python backend
-echo "🐍 Starting Python backend..."
-cd backend && $PYTHON_CMD python_backend.py &
+echo "🐍 Starting Python backend..." && cd backend && python python_backend.py &
 BACKEND_PID=$!
 cd "$SCRIPT_DIR"
 sleep 2
