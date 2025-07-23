@@ -8885,25 +8885,28 @@ p {
 
 /* Variables Side Panel Styles */
 .variables-side-panel {
-  position: fixed;
-  top: 0;
-  right: 0;
+  position: relative;
+  flex: 0 0 400px;
   width: 400px;
-  height: 100vh;
+  min-width: 0;
+  height: 100%;
   background: #ffffff;
   border-left: 1px solid #e0e0e0;
-  box-shadow: -2px 0 10px rgba(0, 0, 0, 0.1);
-  transform: translateX(100%);
-  transition: transform 0.3s ease-in-out;
-  z-index: 1000;
+  box-shadow: -2px 0 8px rgba(0,0,0,0.08);
+  z-index: 10;
   display: flex;
   flex-direction: column;
+  border-radius: 12px 0 0 12px;
   overflow: hidden;
-  visibility: visible;
+  transition: flex-basis 0.3s, width 0.3s, min-width 0.3s;
 }
 
-.variables-side-panel.open {
-  transform: translateX(0);
+.variables-side-panel.panel-collapsed {
+  width: 0 !important;
+  min-width: 0 !important;
+  flex-basis: 0 !important;
+  overflow: hidden !important;
+  border-left: none !important;
 }
 
 .variables-side-panel .panel-header {
@@ -8916,14 +8919,14 @@ p {
   flex-shrink: 0;
 }
 
-.variables-side-panel .panel-header h3 {
+.variables-side-panel .panel-title {
   margin: 0;
   font-size: 16px;
   font-weight: 600;
   color: #333;
 }
 
-.variables-side-panel .close-panel-btn {
+.variables-side-panel .panel-close-btn {
   background: none;
   border: none;
   font-size: 18px;
@@ -8934,7 +8937,7 @@ p {
   transition: background-color 0.2s ease;
 }
 
-.variables-side-panel .close-panel-btn:hover {
+.variables-side-panel .panel-close-btn:hover {
   background-color: #e0e0e0;
   color: #333;
 }
@@ -9716,26 +9719,14 @@ p {
 /* Responsive Design */
 @media (max-width: 1200px) {
   .variables-side-panel {
+    flex-basis: 350px;
     width: 350px;
   }
 }
 
 @media (max-width: 768px) {
   .variables-side-panel {
-    width: 100%;
-    transform: translateX(100%);
+    flex-basis: 300px;
+    width: 300px;
   }
-  
-  .variables-side-panel.open {
-    transform: translateX(0);
-  }
-}
-
-/* Animation States */
-.variables-side-panel.closing {
-  transform: translateX(100%);
-}
-
-.variables-side-panel.opening {
-  transform: translateX(0);
 }

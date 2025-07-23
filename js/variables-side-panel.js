@@ -22,16 +22,31 @@ class VariablesSidePanel {
   /**
    * Initialize the side panel
    */
-  init() {
-    if (this.initialized) {
-      return;
+  init(documentContainer = null) {
+    // Find the panel - either in the specific document container or globally
+    let panel = null;
+    if (documentContainer) {
+      panel = documentContainer.querySelector('#variables-side-panel');
+    } else {
+      // Fallback to current active document or global search
+      const activeContainer = document.querySelector('.tab-content.active');
+      if (activeContainer) {
+        panel = activeContainer.querySelector('#variables-side-panel');
+      } else {
+        panel = document.getElementById('variables-side-panel');
+      }
     }
 
-    this.panel = document.getElementById('variables-side-panel');
-    if (!this.panel) {
+    if (!panel) {
       console.error('Variables side panel element not found');
       return;
     }
+
+    // Store the panel reference
+    this.panel = panel;
+
+    // Check initial state
+    this.isOpen = !this.panel.classList.contains('panel-collapsed');
 
     this.setupEventListeners();
     this.setupVariablesButtonListener();
@@ -61,21 +76,33 @@ class VariablesSidePanel {
     if (!this.panel) return;
 
     // Panel close button
-    const closeBtn = this.panel.querySelector('#close-variables-panel');
+    const closeBtn = this.panel.querySelector('#variables-close-btn');
     closeBtn?.addEventListener('click', () => this.close());
 
     // Add new variable button
     const addBtn = this.panel.querySelector('#add-new-variable');
-    addBtn?.addEventListener('click', () => {
-      this.editingVariableName = null; // Clear any existing variable being edited
-      this.showEditor();
-    });
+    if (addBtn) {
+      console.log('✅ Found Add Variable button, attaching event listener');
+      addBtn.addEventListener('click', () => {
+        console.log('Add Variable button clicked');
+        this.editingVariableName = null; // Clear any existing variable being edited
+        this.showEditor();
+      });
+    } else {
+      console.error('❌ Add Variable button not found');
+    }
 
     // Force execute all variables button
     const forceExecuteBtn = this.panel.querySelector('#force-execute-all-btn');
-    forceExecuteBtn?.addEventListener('click', () => {
-      this.forceExecuteAllVariables();
-    });
+    if (forceExecuteBtn) {
+      console.log('✅ Found Force Execute button, attaching event listener');
+      forceExecuteBtn.addEventListener('click', () => {
+        console.log('Force Execute button clicked');
+        this.forceExecuteAllVariables();
+      });
+    } else {
+      console.error('❌ Force Execute button not found');
+    }
 
     // Back to overview button
     const backBtn = this.panel.querySelector('#back-to-overview');
@@ -362,16 +389,9 @@ class VariablesSidePanel {
    * Set up Variables button listener to open panel
    */
   setupVariablesButtonListener() {
-    document.addEventListener('click', (e) => {
-      // Check if click is on variables button
-      const isVariablesBtn = e.target.matches('.variables-btn') || e.target.closest('.variables-btn');
-      
-      if (isVariablesBtn) {
-        e.preventDefault();
-        e.stopPropagation();
-        this.open();
-      }
-    });
+    // Note: Variables panel toggle is now handled by document-manager.js
+    // This method is kept for compatibility but does nothing
+    console.log('Variables button listener setup (handled by document manager)');
   }
 
   /**
@@ -397,8 +417,14 @@ class VariablesSidePanel {
           
           // Auto-open panel and show editor with selected text
           setTimeout(() => {
-            this.open();
-            this.showEditor(true); // true = from text selection
+            console.log('Auto-opening panel for text selection');
+            // Open via the panel's CSS class and notify the object
+            if (this.panel) {
+              this.panel.classList.remove('panel-collapsed');
+              this.isOpen = true;
+              this.loadVariablesData();
+              this.showEditor(true); // true = from text selection
+            }
           }, 100);
         }
       }
@@ -436,7 +462,7 @@ class VariablesSidePanel {
       return;
     }
 
-    this.panel.classList.add('open');
+    this.panel.classList.remove('panel-collapsed');
     this.isOpen = true;
     
     // Load current variables and show overview
@@ -451,9 +477,9 @@ class VariablesSidePanel {
    * Close the side panel
    */
   close() {
-    if (!this.panel || !this.isOpen) return;
+    if (!this.panel) return;
 
-    this.panel.classList.remove('open');
+    this.panel.classList.add('panel-collapsed');
     this.isOpen = false;
     this.currentView = 'overview';
     this.editingVariableName = null;
@@ -826,7 +852,10 @@ class VariablesSidePanel {
    */
   updateVariablesList() {
     const listContainer = this.panel.querySelector('#variables-quick-list');
-    if (!listContainer) return;
+    if (!listContainer) {
+      console.error('Variables list container not found!');
+      return;
+    }
 
     const variables = variablesManager.getVariables();
     listContainer.innerHTML = '';
@@ -835,6 +864,8 @@ class VariablesSidePanel {
       listContainer.innerHTML = '<div class="no-variables-message">No variables defined yet.</div>';
       return;
     }
+
+    console.log(`Displaying ${Object.keys(variables).length} variables in variables panel`);
 
     Object.entries(variables).forEach(([name, variable]) => {
       const item = document.createElement('div');

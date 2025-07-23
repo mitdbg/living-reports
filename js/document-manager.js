@@ -392,9 +392,11 @@ export class DocumentManager {
         variablesManager.init();
       }
       
-      // Initialize variables side panel
-      if (variablesSidePanel && !variablesSidePanel.initialized) {
-        variablesSidePanel.init();
+      // Initialize variables side panel for this document
+      if (variablesSidePanel) {
+        // Reset initialization to allow reinit for new document
+        variablesSidePanel.initialized = false;
+        variablesSidePanel.init(container);
       }
       
       // Expose variables manager to window for global access
@@ -495,6 +497,37 @@ export class DocumentManager {
         sidebar.classList.add('sidebar-collapsed');
       }
     }
+    
+    // Variables panel toggle logic (per-document)
+    const variablesPanel = container.querySelector('#variables-side-panel');
+    const variablesToggleBtn = container.querySelector('#variables-toggle-btn');
+    const variablesCloseBtn = container.querySelector('#variables-close-btn');
+    if (variablesPanel && variablesToggleBtn && variablesCloseBtn) {
+      // Show variables panel
+      variablesToggleBtn.onclick = () => {
+        console.log('Variables toggle button clicked - opening panel');
+        variablesPanel.classList.remove('panel-collapsed');
+        // Notify the variables side panel that it was opened
+        if (variablesSidePanel) {
+          variablesSidePanel.isOpen = true;
+          variablesSidePanel.loadVariablesData();
+          variablesSidePanel.showOverview();
+        }
+      };
+      // Hide variables panel
+      variablesCloseBtn.onclick = () => {
+        console.log('Variables close button clicked - closing panel');
+        variablesPanel.classList.add('panel-collapsed');
+        // Notify the variables side panel that it was closed
+        if (variablesSidePanel) {
+          variablesSidePanel.isOpen = false;
+        }
+      };
+      
+      // Start with variables panel collapsed by default
+      variablesPanel.classList.add('panel-collapsed');
+    }
+    
     // Tab switching
     sidebarTabs.forEach(tab => {
       tab.onclick = () => {
