@@ -868,7 +868,7 @@ class VariablesSidePanel {
   }
 
   /**
-   * Update variables list in overview
+   * Update variables list in overview (redesigned)
    */
   updateVariablesList() {
     const listContainer = this.panel.querySelector('#variables-quick-list');
@@ -887,32 +887,260 @@ class VariablesSidePanel {
 
     console.log(`Displaying ${Object.keys(variables).length} variables in variables panel`);
 
-    Object.entries(variables).forEach(([name, variable]) => {
+    // Sort variables: parameters first, then generated variables
+    const sortedVariables = Object.entries(variables).sort(([nameA, varA], [nameB, varB]) => {
+      const isParameterA = varA.valueOption === 'manual';
+      const isParameterB = varB.valueOption === 'manual';
+      
+      if (isParameterA && !isParameterB) return -1; // A is parameter, B is generated - A comes first
+      if (!isParameterA && isParameterB) return 1;  // A is generated, B is parameter - B comes first
+      return nameA.localeCompare(nameB); // Same type, sort alphabetically
+    });
+
+    sortedVariables.forEach(([name, variable]) => {
       const item = document.createElement('div');
-      item.className = 'variable-quick-item';
+      
+      // Determine if this is a parameter (manual) or generated (code) variable
+      const isParameter = variable.valueOption === 'manual';
+      const variableTypeLabel = isParameter ? 'Parameter' : 'Generated';
+      const variableTypeClass = isParameter ? 'parameter' : 'generated';
+      
+      // Set CSS class based on variable type
+      item.className = `variable-expanded-item ${isParameter ? 'parameter-item' : 'generated-item'}`;
+      
+      // Get current value (could be from execution results or stored value)
+      const currentValue = this.getCurrentVariableValue(name, variable);
+      const displayValue = this.formatValueForDisplay(currentValue);
+      
       item.innerHTML = `
-        <div class="variable-info">
-          <span class="variable-name">${variable.name}</span>
-          <span class="variable-type">${variable.type || 'text'}</span>
+        <div class="variable-header">
+          <div class="variable-main">
+            <span class="variable-name">${variable.name}</span>
+            <span class="variable-type-badge ${variableTypeClass}">${variableTypeLabel}</span>
+          </div>
+          <div class="variable-actions">
+            <button class="edit-variable-btn" data-variable-name="${name}" title="Edit Variable">✏️</button>
+            <button class="delete-variable-btn" data-variable-name="${name}" title="Delete Variable">🗑️</button>
+          </div>
         </div>
-        <button class="delete-variable-btn" data-variable-name="${name}" title="Delete Variable">🗑️</button>
+        
+        ${isParameter ? `
+          <div class="variable-value-section parameter-section">
+            <div class="value-display-row">
+              <span class="value-label">Value:</span>
+              <div class="inline-value-container">
+                <div class="inline-value-display" id="inline-value-${name}">
+                  ${displayValue}
+                </div>
+                <div class="inline-value-input-container" id="inline-input-${name}" style="display: none;">
+                  <input type="text" class="inline-value-input" value="${currentValue || ''}" placeholder="Enter value...">
+                  <div class="inline-actions">
+                    <button class="inline-save-btn" data-variable-name="${name}">Save</button>
+                    <button class="inline-cancel-btn" data-variable-name="${name}">Cancel</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ` : ''}
       `;
       
-      // Click to edit variable (but not on delete button)
-      const infoDiv = item.querySelector('.variable-info');
-      infoDiv.addEventListener('click', () => {
-        this.editVariable(name);
-      });
-      
-      // Delete button click handler
-      const deleteBtn = item.querySelector('.delete-variable-btn');
-      deleteBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        this.deleteVariable(name);
-      });
+      // Add event listeners
+      this.addVariableItemEventListeners(item, name, variable, isParameter);
       
       listContainer.appendChild(item);
     });
+  }
+
+  /**
+   * Get current variable value from execution results or stored value
+   */
+  getCurrentVariableValue(name, variable) {
+    // First try to get from execution results
+    const executionValue = variableDependencyExecutor.getVariableValue(name);
+    if (executionValue !== undefined && executionValue !== null) {
+      return executionValue;
+    }
+    
+    // Fall back to stored value
+    return variable.value || '';
+  }
+
+  /**
+   * Format value for display in the UI
+   */
+  formatValueForDisplay(value) {
+    if (value === null || value === undefined) {
+      return '<em>No value set</em>';
+    }
+    
+    const stringValue = String(value);
+    if (stringValue.length > 50) {
+      return stringValue.substring(0, 50) + '...';
+    }
+    
+    return stringValue || '<em>Empty</em>';
+  }
+
+  /**
+   * Add event listeners to variable list items
+   */
+  addVariableItemEventListeners(item, name, variable, isParameter) {
+    // Edit button click handler
+    const editBtn = item.querySelector('.edit-variable-btn');
+    editBtn.addEventListener('click', () => {
+      this.editVariable(name);
+    });
+    
+    // Delete button click handler
+    const deleteBtn = item.querySelector('.delete-variable-btn');
+    deleteBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.deleteVariable(name);
+    });
+    
+    // For parameter variables, add inline editing functionality
+    if (isParameter) {
+      this.addInlineEditingListeners(item, name);
+    }
+  }
+
+  /**
+   * Add inline editing event listeners for parameter variables
+   */
+  addInlineEditingListeners(item, variableName) {
+    const valueDisplay = item.querySelector(`#inline-value-${variableName}`);
+    const inputContainer = item.querySelector(`#inline-input-${variableName}`);
+    const input = inputContainer?.querySelector('.inline-value-input');
+    const saveBtn = item.querySelector('.inline-save-btn');
+    const cancelBtn = item.querySelector('.inline-cancel-btn');
+    
+    // Click on value display to start editing
+    valueDisplay?.addEventListener('click', () => {
+      this.startInlineEditing(variableName);
+    });
+    
+    // Save button click handler
+    saveBtn?.addEventListener('click', () => {
+      this.saveInlineValue(variableName);
+    });
+    
+    // Cancel button click handler  
+    cancelBtn?.addEventListener('click', () => {
+      this.cancelInlineEditing(variableName);
+    });
+    
+    // Enter key to save
+    input?.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        this.saveInlineValue(variableName);
+      }
+    });
+    
+    // Escape key to cancel
+    input?.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        this.cancelInlineEditing(variableName);
+      }
+    });
+  }
+
+  /**
+   * Start inline editing for a parameter variable
+   */
+  startInlineEditing(variableName) {
+    const valueDisplay = document.querySelector(`#inline-value-${variableName}`);
+    const inputContainer = document.querySelector(`#inline-input-${variableName}`);
+    const input = inputContainer?.querySelector('.inline-value-input');
+    
+    if (valueDisplay && inputContainer && input) {
+      valueDisplay.style.display = 'none';
+      inputContainer.style.display = 'block';
+      input.focus();
+      input.select(); // Select all text for easy replacement
+    }
+  }
+
+  /**
+   * Cancel inline editing and restore display
+   */
+  cancelInlineEditing(variableName) {
+    const valueDisplay = document.querySelector(`#inline-value-${variableName}`);
+    const inputContainer = document.querySelector(`#inline-input-${variableName}`);
+    
+    if (valueDisplay && inputContainer) {
+      valueDisplay.style.display = 'block';
+      inputContainer.style.display = 'none';
+    }
+  }
+
+  /**
+   * Save inline value change
+   */
+  async saveInlineValue(variableName) {
+    const inputContainer = document.querySelector(`#inline-input-${variableName}`);
+    const input = inputContainer?.querySelector('.inline-value-input');
+    
+    if (!input) {
+      console.error(`Input not found for variable ${variableName}`);
+      return;
+    }
+    
+    const newValue = input.value.trim();
+    
+    // Hide the input and show display
+    this.cancelInlineEditing(variableName);
+    
+    try {       
+      // Get the current variable data from variables manager
+      const existingVariable = variablesManager.variables.get(variableName);
+      if (!existingVariable) {
+        console.error(`❌ Variable ${variableName} not found in variables manager`);
+        alert('Error: Variable not found. Please try again.');
+        return;
+      }
+
+      // Get old value for comparison
+      const oldValue = this.getCurrentVariableValue(variableName, existingVariable);
+      
+      console.log(`💾 Saving inline value change for ${variableName}: "${oldValue}" → "${newValue}"`);
+      
+      // Only proceed if value actually changed
+      if (String(oldValue) !== newValue) {
+        // Create updated variable with new value
+        const updatedVariable = {
+          ...existingVariable,
+          value: newValue
+        };
+        
+        // Update in dependency executor FIRST (this will trigger automatic re-execution)
+        await variableDependencyExecutor.addVariable(variableName, updatedVariable);
+        
+        // Get all execution results from dependency executor and update variables manager
+        await this.syncExecutionResultsToVariablesManager();
+        
+        // Save variables to persist all changes
+        await variablesManager.saveVariables();
+        
+        // Refresh the variables list to show updated values
+        this.updateVariablesList();
+        
+        console.log(`✅ Inline value saved and dependencies updated for ${variableName}`);
+        
+        // Show success notification
+        if (window.variableDependencyExecutor) {
+          window.variableDependencyExecutor.showSimpleCompletionNotification('Variable value updated');
+        }
+      } else {
+        console.log(`ℹ️ Value unchanged for ${variableName}, skipping update`);
+      }
+    } catch (error) {
+      console.error('❌ Error saving inline value:', error);
+      alert(`Error saving value: ${error.message}`);
+      
+      // Refresh the list to restore original state
+      this.updateVariablesList();
+    }
   }
 
   /**
