@@ -17,53 +17,97 @@ class VariablesSidePanel {
     this.selectedRange = null;
     this.currentValueOption = null; // 'manual' or 'code'
     this.initialized = false;
+    this.floatingButton = null; // Floating suggest variables button
   }
 
   /**
    * Initialize the side panel
    */
   init(documentContainer = null) {
+    console.log('🚀 Initializing Variables Side Panel...');
+    console.log('📋 Document container provided:', !!documentContainer);
+    
     // Find the panel - either in the specific document container or globally
     let panel = null;
     if (documentContainer) {
+      console.log('🔍 Looking for panel in provided container...');
       panel = documentContainer.querySelector('#variables-side-panel');
+      console.log('📍 Panel found in container:', !!panel);
     } else {
+      console.log('🔍 Looking for panel globally...');
       // Fallback to current active document or global search
       const activeContainer = document.querySelector('.tab-content.active');
+      console.log('📍 Active container found:', !!activeContainer);
+      
       if (activeContainer) {
         panel = activeContainer.querySelector('#variables-side-panel');
+        console.log('📍 Panel found in active container:', !!panel);
       } else {
         panel = document.getElementById('variables-side-panel');
+        console.log('📍 Panel found globally:', !!panel);
       }
     }
 
     if (!panel) {
-      console.error('Variables side panel element not found');
+      console.error('❌ Variables side panel element not found');
+      
+      // Let's see what elements are available
+      console.log('🔍 Available elements with "variables" in ID:');
+      const variableElements = document.querySelectorAll('[id*="variables"]');
+      variableElements.forEach(el => {
+        console.log('  -', el.id, el.className);
+      });
+      
+      console.log('🔍 Available elements with "panel" in class:');
+      const panelElements = document.querySelectorAll('[class*="panel"]');
+      panelElements.forEach(el => {
+        console.log('  -', el.id, el.className);
+      });
+      
       return;
     }
+
+    console.log('✅ Variables side panel element found:', panel.id);
 
     // Store the panel reference
     this.panel = panel;
 
     // Check initial state
     this.isOpen = !this.panel.classList.contains('panel-collapsed');
+    console.log('📊 Panel initial state - isOpen:', this.isOpen);
 
+    console.log('🔧 Setting up event listeners...');
     this.setupEventListeners();
+    
+    console.log('🔧 Setting up variables button listener...');
     this.setupVariablesButtonListener();
+    
+    console.log('🔧 Setting up text selection listener...');
     this.setupTextSelectionListener();
+    
+    console.log('🔧 Creating floating button...');
+    this.createFloatingButton();
+    
     this.initialized = true;
     
-    console.log('Variables side panel initialized successfully');
+    console.log('✅ Variables side panel initialized successfully');
   }
 
   /**
    * Handle document changes
    */
   onDocumentChange(documentId) {
+    // Hide floating button when document changes
+    this.hideFloatingButton();
+    
     // Close panel if it's open
     if (this.isOpen) {
       this.close();
     }
+    
+    // Clear any text selection state
+    this.selectedText = null;
+    this.selectedRange = null;
     
     // Load variables for the new document if panel is opened later
     // The loadVariablesData method will be called when the panel opens
@@ -85,8 +129,12 @@ class VariablesSidePanel {
       console.log('✅ Found Add Variable button, attaching event listener');
       addBtn.addEventListener('click', () => {
         console.log('Add Variable button clicked');
-        this.editingVariableName = null; // Clear any existing variable being edited
-        this.showEditor();
+        // CRITICAL: Clear all editing state before showing editor
+        this.editingVariableName = null;
+        this.selectedText = null;
+        this.selectedRange = null;
+        this.currentValueOption = null;
+        this.showEditor(); // This will call resetEditorForm()
       });
     } else {
       console.error('❌ Add Variable button not found');
@@ -187,6 +235,9 @@ class VariablesSidePanel {
     if (manualSection) manualSection.style.display = 'none';
     if (codeSection) codeSection.style.display = 'none';
     
+    // Hide execution result display when switching value options
+    this.hideExecutionResult();
+    
     if (option === 'manual') {
       manualValueBtn?.classList.add('active');
       if (manualSection) manualSection.style.display = 'block';
@@ -256,6 +307,7 @@ class VariablesSidePanel {
     const generateBtn = this.panel.querySelector('#generate-var-code');
     const testBtn = this.panel.querySelector('#test-var-code');
     const copyBtn = this.panel.querySelector('#copy-code-btn');
+    const resultCloseBtn = this.panel.querySelector('#result-close-btn');
 
     generateBtn?.addEventListener('click', () => {
       this.generateCode();
@@ -267,6 +319,11 @@ class VariablesSidePanel {
 
     copyBtn?.addEventListener('click', () => {
       this.copyCode();
+    });
+
+    // Result close button
+    resultCloseBtn?.addEventListener('click', () => {
+      this.hideExecutionResult();
     });
 
     // Set up code editor listeners - simpler approach to avoid cursor issues
@@ -395,46 +452,200 @@ class VariablesSidePanel {
   }
 
   /**
+   * Create floating "Suggest Variables" button
+   */
+  createFloatingButton() {
+    console.log('🔧 Creating floating suggest variables button...');
+    
+    try {
+      this.floatingButton = document.createElement('div');
+      this.floatingButton.className = 'floating-suggest-variables-btn';
+      this.floatingButton.innerHTML = `
+        <button type="button" class="suggest-btn">
+          <span class="btn-text">Suggest Variable</span>
+        </button>
+      `;
+      
+      // Style the floating button
+      this.floatingButton.style.cssText = `
+        position: absolute;
+        z-index: 10000;
+        display: none;
+        pointer-events: auto;
+      `;
+      
+      // Style the inner button
+      const button = this.floatingButton.querySelector('.suggest-btn');
+      if (button) {
+        button.style.cssText = `
+          background: #2196F3;
+          color: white;
+          border: none;
+          border-radius: 4px;
+          padding: 4px 8px;
+          font-size: 11px;
+          font-weight: 500;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+          transition: all 0.2s ease;
+          white-space: nowrap;
+        `;
+        
+        // Add hover effects
+        button.addEventListener('mouseenter', () => {
+          button.style.background = '#1976D2';
+          button.style.transform = 'translateY(-1px)';
+          button.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
+        });
+        
+        button.addEventListener('mouseleave', () => {
+          button.style.background = '#2196F3';
+          button.style.transform = 'translateY(0)';
+          button.style.boxShadow = '0 2px 8px rgba(0,0,0,0.2)';
+        });
+        
+        // Handle click
+        button.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          console.log('🎯 Floating button clicked!');
+          this.handleSuggestVariablesClick();
+        });
+        
+        console.log('✅ Button event listeners attached');
+      } else {
+        console.error('❌ Could not find suggest button element');
+      }
+      
+      document.body.appendChild(this.floatingButton);
+      console.log('✅ Floating button added to document body');
+      
+      // Note: Click handling is now done in setupTextSelectionListener
+      
+      console.log('✅ Floating suggest variables button created successfully');
+      
+    } catch (error) {
+      console.error('❌ Error creating floating button:', error);
+    }
+  }
+
+  /**
    * Set up text selection listener for suggest variables
    */
   setupTextSelectionListener() {
+    console.log('🎧 Setting up text selection listener (using proven working approach)...');
+    
+    // Use the PROVEN working approach from the original variables.js
     document.addEventListener('mouseup', (e) => {
-      // Skip if panel is already open
-      if (this.isOpen) return;
+      console.log('🖱️ Mouse up event detected');
+      
+      // CRITICAL: Skip if the mouseup event is from clicking the floating button itself
+      if (e.target && e.target.closest('.floating-suggest-variables-btn')) {
+        console.log('⏭️ Mouse up from floating button click, ignoring');
+        return;
+      }
 
       const selection = window.getSelection();
-      if (selection.rangeCount === 0) return;
-
+      
+      // Early validation (same as original)
+      if (selection.rangeCount === 0) {
+        console.log('❌ No selection range, hiding button');
+        this.hideFloatingButton();
+        return;
+      }
+      
       const selectedText = selection.toString().trim();
       const range = selection.getRangeAt(0);
       const rect = range.getBoundingClientRect();
 
-      // Check for valid text selection in template content
-      if (selectedText.length > 0 && rect.width > 0 && rect.height > 0) {
-        if (this.isInTemplateContent(selection)) {
-          this.selectedText = selectedText;
-          this.selectedRange = range.cloneRange();
-          
-          // Auto-open panel and show editor with selected text
-          setTimeout(() => {
-            console.log('Auto-opening panel for text selection');
-            // Open via the panel's CSS class and notify the object
-            if (this.panel) {
-              this.panel.classList.remove('panel-collapsed');
-              this.isOpen = true;
-              this.loadVariablesData();
-              this.showEditor(true); // true = from text selection
-            }
-          }, 100);
-        }
+      console.log('📝 Selected text:', `"${selectedText}"`);
+      
+      // Check for valid text selection with visible dimensions (same as original)
+      if (selectedText.length === 0 || rect.width === 0 || rect.height === 0) {
+        console.log('❌ Invalid selection dimensions, hiding button');
+        this.hideFloatingButton();
+        return;
+      }
+      
+      const isInTemplate = this.isInTemplateContentSimple(selection);
+      console.log('🎯 Is in template content:', isInTemplate);
+      
+      if (!isInTemplate) {
+        console.log('❌ Selection not in template content, hiding button');
+        this.hideFloatingButton();
+        return;
+      }
+      
+      // CRITICAL: Use setTimeout like the original (prevents immediate hiding)
+      setTimeout(() => {
+        this.handleTextSelection(e);
+      }, 10);
+    });
+
+    // Click listener with proper exclusions (like original)
+    document.addEventListener('click', (e) => {
+      // Only hide button on clicks outside both the button and the panel
+      if (!e.target.closest('.floating-suggest-variables-btn') && 
+          !e.target.closest('.variables-panel-dialog') &&
+          !e.target.closest('.variables-side-panel')) {
+        console.log('🖱️ Click outside floating button and panel, hiding');
+        this.hideFloatingButton();
       }
     });
+    
+    console.log('✅ Text selection listener set up successfully');
   }
 
   /**
-   * Check if selection is within template content
+   * Handle text selection events (adapted from original)
    */
-  isInTemplateContent(selection) {
+  handleTextSelection(e) {
+    console.log('🎯 handleTextSelection called');
+    
+    // Skip processing if no active document
+    if (!window.documentManager?.activeDocumentId) {
+      console.log('❌ No active document');
+      return;
+    }
+    
+    const selection = window.getSelection();
+    
+    // Early return if no selection range
+    if (selection.rangeCount === 0) {
+      console.log('❌ No selection range in handler');
+      this.hideFloatingButton();
+      return;
+    }
+    
+    const selectedText = selection.toString().trim();
+    const range = selection.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+    
+    // Final validation
+    if (selectedText.length > 0 && rect.width > 0 && rect.height > 0) {
+      const isInTemplate = this.isInTemplateContentSimple(selection);
+      
+      if (isInTemplate) {
+        console.log('✅ Valid selection, storing data and showing button');
+        this.selectedText = selectedText;
+        this.selectedRange = range.cloneRange();
+        
+        // Always show the button for valid text selections in template content
+        this.showFloatingButtonFromEvent(e, rect);
+      } else {
+        this.hideFloatingButton();
+      }
+    } else {
+      this.hideFloatingButton();
+    }
+  }
+
+  /**
+   * Simplified template content detection
+   */
+  isInTemplateContentSimple(selection) {
     const range = selection.getRangeAt(0);
     const container = range.commonAncestorContainer;
     
@@ -443,10 +654,178 @@ class VariablesSidePanel {
       elementToCheck = container.parentElement;
     }
     
-    return elementToCheck && (
-      elementToCheck.closest('.template-editor') !== null ||
-      elementToCheck.closest('.preview-content') !== null
+    if (!elementToCheck) return false;
+    
+    // Simple check for common template containers
+    return !!(
+      elementToCheck.closest('.template-editor') ||
+      elementToCheck.closest('.preview-content') ||
+      elementToCheck.closest('.tab-content') ||
+      elementToCheck.closest('.document-content')
     );
+  }
+
+  // Note: Replaced with isInTemplateContentSimple() method above
+
+  /**
+   * Show floating button from mouse event (like original)
+   */
+  showFloatingButtonFromEvent(mouseEvent, rect) {
+    console.log('📌 showFloatingButtonFromEvent called');
+    
+    if (!this.floatingButton) {
+      console.error('❌ No floating button element found!');
+      return;
+    }
+    
+    // Use mouse position with offset (like original approach)
+    const x = mouseEvent.clientX;
+    const y = mouseEvent.clientY;
+    
+    console.log('📍 Mouse position:', { x, y });
+    console.log('📍 Window dimensions:', { width: window.innerWidth, height: window.innerHeight });
+    
+    // Position with offset from mouse (like original)
+    let left = x + 10;
+    let top = y - 40;
+    
+    // Ensure button stays within viewport
+    const buttonWidth = 120;
+    const buttonHeight = 32;
+    
+    if (left + buttonWidth > window.innerWidth) {
+      left = x - buttonWidth - 10;
+    }
+    
+    if (top < 10) {
+      top = y + 10;
+    }
+    
+    left = Math.max(10, Math.min(left, window.innerWidth - buttonWidth - 10));
+    top = Math.max(10, Math.min(top, window.innerHeight - buttonHeight - 10));
+    
+    console.log('📍 Final position:', { left, top });
+    
+    this.floatingButton.style.left = `${left}px`;
+    this.floatingButton.style.top = `${top}px`;
+    this.floatingButton.style.display = 'block';
+    
+    console.log('✅ Floating button positioned and made visible from event');
+  }
+
+  /**
+   * Show floating button near text selection (fallback method)
+   */
+  showFloatingButton(selectionRect) {
+    console.log('📌 showFloatingButton called with rect:', selectionRect);
+    
+    if (!this.floatingButton) {
+      console.error('❌ No floating button element found!');
+      return;
+    }
+    
+    console.log('✅ Floating button element exists');
+    
+    // Position the button near the selection
+    const buttonWidth = 120; // Approximate button width
+    const buttonHeight = 32; // Approximate button height
+    const offset = 8; // Space between selection and button
+    
+    // Calculate position - try to show below and to the right of selection
+    let left = selectionRect.right + offset;
+    let top = selectionRect.bottom + offset;
+    
+    console.log('📍 Initial position calculation:', { left, top });
+    console.log('📍 Window dimensions:', { width: window.innerWidth, height: window.innerHeight });
+    
+    // Adjust if button would go off screen
+    if (left + buttonWidth > window.innerWidth) {
+      left = selectionRect.left - buttonWidth - offset; // Show to the left
+      console.log('📍 Adjusted left position (off screen):', left);
+    }
+    
+    if (top + buttonHeight > window.innerHeight) {
+      top = selectionRect.top - buttonHeight - offset; // Show above
+      console.log('📍 Adjusted top position (off screen):', top);
+    }
+    
+    // Ensure button stays within viewport
+    left = Math.max(10, Math.min(left, window.innerWidth - buttonWidth - 10));
+    top = Math.max(10, Math.min(top, window.innerHeight - buttonHeight - 10));
+    
+    console.log('📍 Final position:', { left, top });
+    
+    this.floatingButton.style.left = `${left}px`;
+    this.floatingButton.style.top = `${top}px`;
+    this.floatingButton.style.display = 'block';
+    
+    console.log('✅ Floating button positioned and made visible');
+    console.log('📌 Button styles applied:', {
+      left: this.floatingButton.style.left,
+      top: this.floatingButton.style.top,
+      display: this.floatingButton.style.display,
+      zIndex: this.floatingButton.style.zIndex
+    });
+  }
+
+  /**
+   * Hide floating button
+   */
+  hideFloatingButton() {
+    console.log('🫥 hideFloatingButton called');
+    if (this.floatingButton) {
+      this.floatingButton.style.display = 'none';
+      console.log('✅ Floating button hidden');
+    } else {
+      console.log('❌ No floating button to hide');
+    }
+  }
+
+  /**
+   * Handle floating button click to suggest variables
+   */
+  handleSuggestVariablesClick() {
+    console.log('✨ Suggest Variables button clicked');
+    console.log('📝 Selected text for suggestion:', this.selectedText);
+    
+    // CRITICAL: Hide the floating button first
+    this.hideFloatingButton();
+    
+    // CRITICAL: Don't clear text selection - we need it for suggestions
+    // Only clear internal state that might interfere
+    this.editingVariableName = null;
+    this.currentValueOption = null;
+    
+    // Verify we have selected text
+    if (!this.selectedText) {
+      console.warn('❌ No selected text available for variable suggestion');
+      // Try to get current selection as fallback
+      const selection = window.getSelection();
+      if (selection.rangeCount > 0) {
+        this.selectedText = selection.toString().trim();
+        this.selectedRange = selection.getRangeAt(0).cloneRange();
+        console.log('🔄 Recovered selected text:', this.selectedText);
+      } else {
+        alert('Please select text first to suggest a variable');
+        return;
+      }
+    }
+    
+    // Open the panel and show editor with text selection
+    if (this.panel) {
+      this.panel.classList.remove('panel-collapsed');
+      this.isOpen = true;
+      
+      // Load variables data first
+      this.loadVariablesData();
+      
+      // Show editor with text selection flag
+      this.showEditor(true); // true = from text selection
+      
+      console.log('✅ Variables panel opened with selected text for suggestion');
+    } else {
+      console.error('❌ Variables panel not found');
+    }
   }
 
   /**
@@ -461,6 +840,13 @@ class VariablesSidePanel {
     if (this.isOpen) {
       return;
     }
+
+    // Hide floating button when panel opens
+    this.hideFloatingButton();
+
+    // CRITICAL: Clear all state when opening panel for fresh start
+    console.log('🧹 Clearing all state when opening variables panel');
+    this.clearAllVariableState();
 
     this.panel.classList.remove('panel-collapsed');
     this.isOpen = true;
@@ -482,14 +868,13 @@ class VariablesSidePanel {
     this.panel.classList.add('panel-collapsed');
     this.isOpen = false;
     this.currentView = 'overview';
-    this.editingVariableName = null;
-    this.selectedText = null;
-    this.selectedRange = null;
     
-    // Clear selection
-    if (window.getSelection) {
-      window.getSelection().removeAllRanges();
-    }
+    // Hide floating button when panel closes
+    this.hideFloatingButton();
+    
+    // CRITICAL: Clear all state when panel is closed
+    console.log('🧹 Clearing all state when closing variables panel');
+    this.clearAllVariableState();
   }
 
   /**
@@ -552,7 +937,23 @@ class VariablesSidePanel {
    * Populate editor from text selection
    */
   populateFromTextSelection() {
-    if (!this.selectedText) return;
+    if (!this.selectedText) {
+      console.warn('No text selected for variable suggestion');
+      return;
+    }
+
+    console.log('📝 Populating form from text selection:', this.selectedText);
+
+    // CRITICAL: Preserve selected text and range before resetting form
+    const preservedText = this.selectedText;
+    const preservedRange = this.selectedRange;
+
+    // Reset form first to clear any previous variable data
+    this.resetEditorForm();
+
+    // CRITICAL: Restore the preserved text after form reset
+    this.selectedText = preservedText;
+    this.selectedRange = preservedRange;
 
     // Show selected text preview
     const preview = this.panel.querySelector('#selected-text-preview');
@@ -561,9 +962,13 @@ class VariablesSidePanel {
     if (preview && display) {
       display.textContent = `"${this.selectedText}"`;
       preview.style.display = 'block';
+      console.log('✅ Selected text preview shown:', this.selectedText);
+    } else {
+      console.warn('❌ Selected text preview elements not found');
     }
 
-    // Get AI suggestions for the variable
+    // Get AI suggestions for the variable - this will populate name, description, type, etc.
+    console.log('🤖 Getting AI suggestions for selected text:', this.selectedText);
     this.getVariableSuggestions(this.selectedText);
   }
 
@@ -571,16 +976,23 @@ class VariablesSidePanel {
    * Get AI suggestions for variable creation
    */
   async getVariableSuggestions(text) {
+    console.log('🤖 Getting AI suggestions for text:', text);
+    
     try {
       // Show loading state
       const nameInput = this.panel.querySelector('#var-name');
       const descInput = this.panel.querySelector('#var-description');
+      const typeSelect = this.panel.querySelector('#var-type');
+      const formatInput = this.panel.querySelector('#var-format');
       
       if (nameInput && descInput) {
         nameInput.value = 'Generating suggestions...';
         descInput.value = 'AI is analyzing your selection...';
         nameInput.disabled = true;
         descInput.disabled = true;
+        if (typeSelect) typeSelect.disabled = true;
+        if (formatInput) formatInput.disabled = true;
+        console.log('🔄 Loading state shown');
       }
 
       // Use the existing LLM suggestion method from variables manager
@@ -593,6 +1005,8 @@ class VariablesSidePanel {
         document_id: window.documentManager?.activeDocumentId || 'default'
       };
 
+      console.log('📤 Sending request to LLM API:', requestData);
+
       const response = await fetch('http://127.0.0.1:5001/api/suggest-variable', {
         method: 'POST',
         headers: {
@@ -601,27 +1015,39 @@ class VariablesSidePanel {
         body: JSON.stringify(requestData)
       });
 
+      console.log('📥 LLM API response status:', response.status);
+
       if (response.ok) {
         const result = await response.json();
+        console.log('📋 LLM API result:', result);
+        
         if (result.success && result.suggestion) {
+          console.log('✅ Got AI suggestions, filling form');
           this.fillFormWithSuggestions(result.suggestion);
         } else {
+          console.warn('⚠️ LLM API returned no suggestions, using basic fallback');
           this.fillFormWithBasicSuggestions(text);
         }
       } else {
+        console.warn('⚠️ LLM API request failed, using basic fallback');
         this.fillFormWithBasicSuggestions(text);
       }
     } catch (error) {
-      console.error('Error getting AI suggestions:', error);
+      console.error('❌ Error getting AI suggestions:', error);
       this.fillFormWithBasicSuggestions(text);
     } finally {
       // Re-enable form inputs
       const nameInput = this.panel.querySelector('#var-name');
       const descInput = this.panel.querySelector('#var-description');
+      const typeSelect = this.panel.querySelector('#var-type');
+      const formatInput = this.panel.querySelector('#var-format');
       
       if (nameInput && descInput) {
         nameInput.disabled = false;
         descInput.disabled = false;
+        if (typeSelect) typeSelect.disabled = false;
+        if (formatInput) formatInput.disabled = false;
+        console.log('✅ Form inputs re-enabled');
       }
     }
   }
@@ -648,15 +1074,50 @@ class VariablesSidePanel {
    * Fill form with AI suggestions
    */
   fillFormWithSuggestions(suggestions) {
+    console.log('📝 Filling form with AI suggestions:', suggestions);
+    
     const nameInput = this.panel.querySelector('#var-name');
     const descInput = this.panel.querySelector('#var-description');
     const typeSelect = this.panel.querySelector('#var-type');
     const formatInput = this.panel.querySelector('#var-format');
+    const requiredCheck = this.panel.querySelector('#var-required');
 
-    if (nameInput) nameInput.value = suggestions.name || '';
-    if (descInput) descInput.value = suggestions.description || '';
-    if (typeSelect) typeSelect.value = suggestions.type || 'text';
-    if (formatInput) formatInput.value = suggestions.format || '';
+    // CRITICAL: Only populate if suggestions exist and form elements are found
+    if (suggestions) {
+      if (nameInput) {
+        nameInput.value = suggestions.name || '';
+        console.log('✅ Set variable name:', suggestions.name);
+      }
+      if (descInput) {
+        descInput.value = suggestions.description || '';
+        console.log('✅ Set variable description:', suggestions.description);
+      }
+      if (typeSelect) {
+        typeSelect.value = suggestions.type || 'text';
+        console.log('✅ Set variable type:', suggestions.type);
+      }
+      if (formatInput) {
+        formatInput.value = suggestions.format || '';
+        console.log('✅ Set variable format:', suggestions.format);
+      }
+      
+      // CRITICAL: Make sure required checkbox is reset to default state
+      if (requiredCheck) {
+        requiredCheck.checked = true;
+        console.log('✅ Set required checkbox to true');
+      }
+      
+      console.log('✅ Form populated successfully with AI suggestions');
+    } else {
+      console.warn('❌ No suggestions provided to fill form');
+      
+      // Clear form if no suggestions
+      if (nameInput) nameInput.value = '';
+      if (descInput) descInput.value = '';
+      if (typeSelect) typeSelect.value = 'text';
+      if (formatInput) formatInput.value = '';
+      if (requiredCheck) requiredCheck.checked = true;
+    }
   }
 
   /**
@@ -728,6 +1189,7 @@ class VariablesSidePanel {
     const formatInput = this.panel.querySelector('#var-format');
     const requiredCheck = this.panel.querySelector('#var-required');
     const preview = this.panel.querySelector('#selected-text-preview');
+    const editorTitle = this.panel.querySelector('#editor-title');
 
     if (nameInput) nameInput.value = '';
     if (descInput) descInput.value = '';
@@ -735,6 +1197,13 @@ class VariablesSidePanel {
     if (formatInput) formatInput.value = '';
     if (requiredCheck) requiredCheck.checked = true;
     if (preview) preview.style.display = 'none';
+    if (editorTitle) editorTitle.textContent = 'Create Variable';
+
+    // CRITICAL: Clear all state variables that might persist from previous edits
+    this.editingVariableName = null;
+    this.selectedText = null;
+    this.selectedRange = null;
+    this.currentValueOption = null;
 
     // Reset value options
     this.resetValueOptions();
@@ -742,6 +1211,25 @@ class VariablesSidePanel {
     // Reset other sections
     this.resetValueDisplay();
     this.resetDependencies();
+    
+    // Clear any data source selection
+    const dataSourceSelect = this.panel.querySelector('#var-data-source');
+    if (dataSourceSelect) dataSourceSelect.value = '';
+    
+    // Clear execution result display to prevent showing results from previous variable
+    this.hideExecutionResult();
+    
+    // Force clear any cached execution results for variables that might have been temporarily created during testing
+    if (window.variableDependencyExecutor) {
+      // Clear any temporary variables that might have been created during code testing
+      const tempVariablePattern = /^(text|revenue|rate|count)(_\d+)?$/;
+      const allVariables = Array.from(window.variableDependencyExecutor.variables.keys());
+      allVariables.forEach(varName => {
+        if (tempVariablePattern.test(varName) && !variablesManager.variables.has(varName)) {
+          window.variableDependencyExecutor.removeVariable(varName);
+        }
+      });
+    }
   }
 
   /**
@@ -1245,16 +1733,100 @@ class VariablesSidePanel {
         await this.createVariable(formData);
       }
       
+      // CRITICAL: Completely clear all state after successful save
+      console.log('🧹 Clearing all state after successful variable save');
+      this.clearAllVariableState();
+      
       // Show success and return to overview
       this.showOverview();
-      this.editingVariableName = null;
-      this.selectedText = null;
-      this.selectedRange = null;
       
     } catch (error) {
       console.error('Error saving variable:', error);
       alert('Error saving variable: ' + error.message);
     }
+  }
+
+  /**
+   * Debug method to test floating button (for console debugging)
+   */
+  debugTestFloatingButton() {
+    console.log('🧪 Testing floating button...');
+    console.log('🧪 Is initialized:', this.initialized);
+    console.log('🧪 Has panel:', !!this.panel);
+    console.log('🧪 Has floating button:', !!this.floatingButton);
+    
+    if (this.floatingButton) {
+      console.log('🧪 Button in DOM:', document.body.contains(this.floatingButton));
+      console.log('🧪 Button display:', this.floatingButton.style.display);
+    }
+    
+    // Test showing the button at a fixed position
+    if (this.floatingButton) {
+      const testRect = { 
+        right: 300, 
+        bottom: 200, 
+        left: 200, 
+        top: 150, 
+        width: 100, 
+        height: 50 
+      };
+      console.log('🧪 Testing show at position:', testRect);
+      this.showFloatingButton(testRect);
+    }
+  }
+
+  /**
+   * Clear all variable creation state
+   * @param {boolean} preserveTextSelection - If true, don't clear the browser's text selection
+   */
+  clearAllVariableState(preserveTextSelection = false) {
+    // Clear editing state
+    this.editingVariableName = null;
+    this.selectedText = null;
+    this.selectedRange = null;
+    this.currentValueOption = null;
+    
+    // Clear text selection only if we're not preserving it
+    if (!preserveTextSelection && window.getSelection) {
+      window.getSelection().removeAllRanges();
+    }
+    
+    // Clear any temporary variables from dependency executor that might have been created during testing
+    if (window.variableDependencyExecutor) {
+      const tempVarPattern = /^(text|revenue|rate|count|temp_var|patient_data|age)(_\d+)?$/;
+      const allVars = Array.from(window.variableDependencyExecutor.variables.keys());
+      allVars.forEach(varName => {
+        // Only remove if it's a temp variable pattern AND not in the official variables manager
+        if (tempVarPattern.test(varName) && !variablesManager.variables.has(varName)) {
+          console.log(`🗑️ Clearing temporary variable: ${varName}`);
+          window.variableDependencyExecutor.removeVariable(varName);
+        }
+      });
+    }
+    
+    // Clear any cached form data or DOM state
+    if (this.panel) {
+      // Clear any data attributes that might store previous values
+      const formElements = this.panel.querySelectorAll('input, select, textarea');
+      formElements.forEach(element => {
+        if (element.hasAttribute('data-previous-value')) {
+          element.removeAttribute('data-previous-value');
+        }
+      });
+      
+      // Clear any execution result displays
+      const resultContainer = this.panel.querySelector('#code-execution-result');
+      if (resultContainer) {
+        resultContainer.style.display = 'none';
+        const resultContent = this.panel.querySelector('#code-result-content');
+        if (resultContent) resultContent.innerHTML = '';
+      }
+    }
+    
+    // Force a form reset to ensure clean state for next variable
+    this.resetEditorForm();
+    
+    console.log('✅ All variable state cleared successfully');
   }
 
   /**
@@ -1275,10 +1847,25 @@ class VariablesSidePanel {
       const valueDisplay = this.panel.querySelector('#var-value-display');
       currentValue = valueDisplay?.textContent !== 'Click to set value' ? valueDisplay?.textContent : '';
     } else if (this.currentValueOption === 'code') {
-      // For code generation, get the value from execution results displayed in UI
-      const valueDisplay = this.panel.querySelector('#var-value-display');
-      currentValue = valueDisplay?.textContent !== 'Click to set value' ? valueDisplay?.textContent : '';
-      console.log('🔧 Getting code execution result for saving:', currentValue);
+      // For code generation, first try to get from execution results
+      const varName = nameInput?.value?.trim() || '';
+      if (varName && variableDependencyExecutor) {
+        const executionResult = variableDependencyExecutor.getVariableValue(varName);
+        if (executionResult !== undefined && executionResult !== null) {
+          currentValue = executionResult;
+          console.log('🔧 Getting code execution result from dependency executor:', currentValue);
+        } else {
+          // Fall back to value display if no execution result found
+          const valueDisplay = this.panel.querySelector('#var-value-display');
+          currentValue = valueDisplay?.textContent !== 'Click to set value' ? valueDisplay?.textContent : '';
+          console.log('🔧 Getting code execution result from UI display:', currentValue);
+        }
+      } else {
+        // Fall back to value display
+        const valueDisplay = this.panel.querySelector('#var-value-display');
+        currentValue = valueDisplay?.textContent !== 'Click to set value' ? valueDisplay?.textContent : '';
+        console.log('🔧 Getting code execution result from UI display (fallback):', currentValue);
+      }
     }
 
     // Get generated code if using code option
@@ -1346,9 +1933,21 @@ class VariablesSidePanel {
         alert('Please generate code for the variable using the "Generate Python Code" button');
         return false;
       }
-      if (!formData.value) {
+      
+      // Check if variable has been executed by looking at execution results
+      const varName = formData.name;
+      const hasExecutionResult = variableDependencyExecutor && 
+                                variableDependencyExecutor.getVariableValue(varName) !== undefined;
+      const hasValueInForm = formData.value && formData.value !== '';
+      
+      if (!hasExecutionResult && !hasValueInForm) {
         alert('Please execute the generated code first by clicking the "Execute" button to get the variable value');
         return false;
+      }
+      
+      // If we have execution result but no form value, that's okay - we'll use the execution result
+      if (hasExecutionResult && !hasValueInForm) {
+        console.log('✅ Variable has execution result, proceeding with save');
       }
     }
     
@@ -1359,6 +1958,16 @@ class VariablesSidePanel {
    * Create new variable
    */
   async createVariable(formData) {
+    // For code variables, use execution result if form value is empty
+    let finalValue = formData.value;
+    if (formData.valueOption === 'code' && (!finalValue || finalValue === '')) {
+      const executionResult = variableDependencyExecutor?.getVariableValue(formData.name);
+      if (executionResult !== undefined) {
+        finalValue = executionResult;
+        console.log('✅ Using execution result for new variable value:', finalValue);
+      }
+    }
+    
     const variable = {
       id: `var_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       name: formData.name,
@@ -1371,7 +1980,7 @@ class VariablesSidePanel {
       placeholder: `{{${formData.name}}}`,
       createdAt: new Date().toISOString(),
       valueOption: formData.valueOption,
-      value: formData.value,
+      value: finalValue,
       generatedCode: formData.generatedCode
     };
 
@@ -1402,6 +2011,16 @@ class VariablesSidePanel {
       throw new Error('Original variable not found');
     }
 
+    // For code variables, use execution result if form value is empty
+    let finalValue = formData.value;
+    if (formData.valueOption === 'code' && (!finalValue || finalValue === '')) {
+      const executionResult = variableDependencyExecutor?.getVariableValue(formData.name);
+      if (executionResult !== undefined) {
+        finalValue = executionResult;
+        console.log('✅ Using execution result for updated variable value:', finalValue);
+      }
+    }
+
     const updatedVariable = {
       ...originalVariable,
       name: formData.name,
@@ -1412,7 +2031,7 @@ class VariablesSidePanel {
       dependencies: formData.dependencies,
       placeholder: `{{${formData.name}}}`,
       valueOption: formData.valueOption,
-      value: formData.value,
+      value: finalValue,
       generatedCode: formData.generatedCode
     };
 
@@ -1528,10 +2147,10 @@ class VariablesSidePanel {
     this.updateValueDisplay(value);
     this.cancelValueEditing();
     
-    // Validate that we have a variable name to edit
+    // For new variables, we don't need to save immediately - just update the display
+    // The value will be saved when the user clicks "Save Variable"
     if (!this.editingVariableName) {
-      console.error('❌ No variable name to save value for');
-      alert('Error: No variable selected for editing. Please try again.');
+      console.log('✅ Value set for new variable, will be saved when variable is created');
       return;
     }
     
@@ -1794,11 +2413,33 @@ class VariablesSidePanel {
     if (codeSection) codeSection.style.display = 'none';
     if (codeContainer) codeContainer.style.display = 'none';
     
-    // Clear generated code
+    // Clear generated code completely
     if (codeEditor) {
       codeEditor.innerHTML = '';
+      codeEditor.textContent = '';
       codeEditor.removeAttribute('data-code');
+      codeEditor.removeAttribute('data-last-highlighted');
+      codeEditor.removeAttribute('data-editing');
     }
+    
+    // Clear any code generation inputs
+    const codeInstructions = this.panel.querySelector('#code-instructions');
+    if (codeInstructions) codeInstructions.value = '';
+    
+    // Reset generation buttons to default state
+    const generateBtn = this.panel.querySelector('#generate-var-code');
+    const testBtn = this.panel.querySelector('#test-var-code');
+    if (generateBtn) {
+      generateBtn.disabled = false;
+      generateBtn.textContent = '🤖 Generate Python Code';
+    }
+    if (testBtn) {
+      testBtn.disabled = false;
+      testBtn.textContent = '▶️ Execute';
+    }
+    
+    // Hide execution result display
+    this.hideExecutionResult();
     
     // Reset current option
     this.currentValueOption = null;
@@ -1937,7 +2578,75 @@ class VariablesSidePanel {
       const highlightedCode = this.applySyntaxHighlighting(code);
       editor.innerHTML = highlightedCode;
       editor.setAttribute('data-last-highlighted', code);
+      
+      // Hide any previous execution result since new code has been generated
+      this.hideExecutionResult();
     }
+  }
+
+  /**
+   * Show execution result in HTML format below code editor
+   */
+  showExecutionResult(result) {
+    const resultContainer = this.panel.querySelector('#code-execution-result');
+    const resultContent = this.panel.querySelector('#code-result-content');
+    
+    if (!resultContainer || !resultContent) {
+      console.error('Result display elements not found');
+      return;
+    }
+    
+    // Convert result to HTML format for display
+    let htmlContent = '';
+    
+    if (result === null || result === undefined) {
+      htmlContent = '<em style="color: #666;">No result</em>';
+    } else if (typeof result === 'string') {
+      // Check if the string contains HTML (for images, tables, etc.)
+      if (result.includes('<') && (result.includes('<table') || result.includes('<img') || result.includes('<div'))) {
+        // Raw HTML content - display as-is
+        htmlContent = result;
+      } else {
+        // Plain text - wrap in pre tag to preserve formatting
+        htmlContent = `<pre style="margin: 0; white-space: pre-wrap; font-family: inherit;">${this.escapeHtml(result)}</pre>`;
+      }
+    } else if (typeof result === 'object') {
+      try {
+        // Format JSON objects nicely
+        const jsonString = JSON.stringify(result, null, 2);
+        htmlContent = `<pre style="margin: 0; white-space: pre-wrap; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; background: #f5f5f5; padding: 8px; border-radius: 4px; font-size: 12px;">${this.escapeHtml(jsonString)}</pre>`;
+      } catch (e) {
+        htmlContent = `<pre style="margin: 0; white-space: pre-wrap; font-family: inherit;">${this.escapeHtml(String(result))}</pre>`;
+      }
+    } else {
+      // Numbers, booleans, etc.
+      htmlContent = `<span style="font-weight: 500; color: #2196F3;">${this.escapeHtml(String(result))}</span>`;
+    }
+    
+    // Set the HTML content
+    resultContent.innerHTML = htmlContent;
+    
+    // Show the result container
+    resultContainer.style.display = 'block';
+  }
+  
+  /**
+   * Hide execution result display
+   */
+  hideExecutionResult() {
+    const resultContainer = this.panel.querySelector('#code-execution-result');
+    if (resultContainer) {
+      resultContainer.style.display = 'none';
+    }
+  }
+  
+  /**
+   * Escape HTML characters for safe display
+   */
+  escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
   }
 
   /**
@@ -2069,6 +2778,7 @@ class VariablesSidePanel {
     }
 
     console.log('🧪 Testing code for variable:', formData.name);
+    console.log('🔍 Generated code to execute:', formData.generatedCode);
 
     // Show loading state
     this.showCodeExecutionLoading(true);
@@ -2125,6 +2835,9 @@ class VariablesSidePanel {
       if (success && displayResult) {
         // Update the variable value display
         this.updateValueDisplay(displayResult);
+        
+        // Show the execution result in HTML format below the code editor
+        this.showExecutionResult(result);
         
         // Show success message using floating window
         if (window.variableDependencyExecutor) {
@@ -2289,3 +3002,6 @@ class VariablesSidePanel {
 // Create and export singleton instance
 export const variablesSidePanel = new VariablesSidePanel();
 export default variablesSidePanel;
+
+// Also make it available globally for debugging
+window.variablesSidePanel = variablesSidePanel;

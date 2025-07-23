@@ -88,6 +88,42 @@
     </div>
   </div>
 
+  <!-- Batch Copy Dialog -->
+  <div class="batch-copy-dialog" id="batch-copy-dialog" style="display: none;">
+    <div class="dialog-overlay">
+      <div class="dialog-content batch-copy-content">
+        <h3>📋 Copy Document with Batch Values</h3>
+        <p>Enter batch values for each variable. Each line/comma-separated value will create a separate document copy.</p>
+        
+        <div class="document-info">
+          <div class="document-title" id="batch-copy-document-title">Document Title</div>
+        </div>
+        
+        <div class="batch-variables-section" id="batch-variables-section">
+          <h4>Variables and Batch Values:</h4>
+          <div class="batch-variables-list" id="batch-variables-list">
+            <!-- Variables will be populated here -->
+          </div>
+          <div class="no-variables-message" id="batch-no-variables" style="display: none;">
+            <p>No variables found in this document. Create some variables first to use batch copy.</p>
+          </div>
+        </div>
+        
+        <div class="batch-preview-section" id="batch-preview-section" style="display: none;">
+          <h4>Preview:</h4>
+          <div class="batch-preview-info" id="batch-preview-info">
+            <!-- Preview will be shown here -->
+          </div>
+        </div>
+        
+        <div class="dialog-actions">
+          <button class="btn-primary" id="confirm-batch-copy-btn" disabled>Create Batch Copies</button>
+          <button class="btn-secondary" id="cancel-batch-copy-btn">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Data Sources Dialog -->
   <div class="data-sources-dialog" id="data-sources-dialog" style="display: none;">
     <div class="dialog-overlay">
@@ -201,6 +237,10 @@
             <button class="copy-document-btn mode-toggle" id="copy-document-btn" title="Copy Document">
               <span class="icon">📋</span>
               <span class="text">Copy</span>
+            </button>
+            <button class="copy-batch-btn mode-toggle" id="copy-batch-btn" title="Copy Document with Batch Values">
+              <span class="icon">📋</span>
+              <span class="text">Copy Batch</span>
             </button>
             <div class="mode-buttons">
               <button class="mode-btn template-mode-btn active" data-mode="template" title="Template">Template</button>
@@ -532,6 +572,17 @@ def calculate():
                       </div>
                     </div>
                     <pre class="code-editor" id="generated-code-editor" contenteditable="true" spellcheck="false"></pre>
+                  </div>
+                  
+                  <!-- Code Execution Result Display -->
+                  <div class="code-execution-result" id="code-execution-result" style="display: none;">
+                    <div class="result-header">
+                      <span class="result-label">📊 Execution Result:</span>
+                      <button class="result-close-btn" id="result-close-btn" title="Hide Result">✕</button>
+                    </div>
+                    <div class="result-content" id="code-result-content">
+                      <!-- Execution result will be displayed here -->
+                    </div>
                   </div>
                 </div>
               </div>

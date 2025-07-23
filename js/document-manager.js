@@ -421,6 +421,9 @@ export class DocumentManager {
       // Initialize copy document button
       this.initializeCopyDocumentButton(documentId);
       
+      // Initialize copy batch button
+      this.initializeCopyBatchButton(documentId);
+      
       // Load data sources for this specific document
       await loadDataSources(documentId);
       
@@ -1127,6 +1130,23 @@ export class DocumentManager {
     }
   }
 
+  initializeCopyBatchButton(documentId) {
+    const copyBatchBtn = document.getElementById(`${documentId}-copy-batch-btn`);
+    if (copyBatchBtn) {
+      // Remove any existing listeners to prevent duplicates
+      copyBatchBtn.replaceWith(copyBatchBtn.cloneNode(true));
+      const newCopyBatchBtn = document.getElementById(`${documentId}-copy-batch-btn`);
+      
+      newCopyBatchBtn.addEventListener('click', async () => {
+        await this.showBatchCopyDialog(documentId);
+      });
+      
+      console.log(`✅ Copy batch button initialized for document: ${documentId}`);
+    } else {
+      console.warn(`Copy batch button not found for document: ${documentId}`);
+    }
+  }
+
   /**
    * Copy a document with all its content and variables
    */
@@ -1305,6 +1325,761 @@ export class DocumentManager {
 
     } catch (error) {
       console.error('Error copying variables:', error);
+      // Don't fail the entire copy operation for variable copy errors
+      console.warn('Document was copied but variables copy failed');
+    }
+  }
+
+  /**
+   * Show batch copy dialog for creating multiple document copies with different variable values
+   */
+  async showBatchCopyDialog(documentId) {
+    const sourceDoc = this.documents.get(documentId);
+    if (!sourceDoc) {
+      console.error(`Source document not found: ${documentId}`);
+      return;
+    }
+
+    try {
+      // Get current variables for the document
+      const variables = await this.getDocumentVariables(documentId);
+      
+      // Show the dialog
+      const dialog = document.getElementById('batch-copy-dialog');
+      const documentTitle = document.getElementById('batch-copy-document-title');
+      const variablesList = document.getElementById('batch-variables-list');
+      const noVariablesMsg = document.getElementById('batch-no-variables');
+      const previewSection = document.getElementById('batch-preview-section');
+      const confirmBtn = document.getElementById('confirm-batch-copy-btn');
+
+      // Set document title
+      documentTitle.textContent = sourceDoc.title;
+
+      // Filter for parameter variables only (manual values)
+      const parameterVariables = {};
+      const generatedVariables = {};
+      
+      Object.entries(variables).forEach(([name, variable]) => {
+        if (variable.valueOption === 'manual') {
+          parameterVariables[name] = variable;
+        } else if (variable.valueOption === 'code') {
+          generatedVariables[name] = variable;
+        }
+      });
+
+      // Check if there are parameter variables
+      if (Object.keys(parameterVariables).length === 0) {
+        variablesList.style.display = 'none';
+        noVariablesMsg.style.display = 'block';
+        noVariablesMsg.innerHTML = `
+          <p>No parameter variables found in this document.</p>
+          <p>Batch copy requires parameter variables (manually set values) to create variations.</p>
+          ${Object.keys(generatedVariables).length > 0 ? 
+            `<p><strong>Note:</strong> This document has ${Object.keys(generatedVariables).length} generated variable(s) that will be automatically computed for each copy.</p>` : ''}
+        `;
+        confirmBtn.disabled = true;
+      } else {
+        variablesList.style.display = 'block';
+        noVariablesMsg.style.display = 'none';
+        
+        // Populate variables list with parameter variables only
+        this.populateBatchVariablesList(parameterVariables, generatedVariables, variablesList, previewSection, confirmBtn);
+      }
+
+      // Set up event handlers FIRST (this replaces buttons with fresh copies)
+      this.setupBatchCopyEventHandlers(documentId, parameterVariables, generatedVariables, dialog);
+
+      // Show dialog
+      dialog.style.display = 'block';
+
+    } catch (error) {
+      console.error('Error showing batch copy dialog:', error);
+      alert(`Error loading variables: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get variables for a specific document
+   */
+  async getDocumentVariables(documentId) {
+    try {
+      const response = await fetch(`http://127.0.0.1:5001/api/variables?documentId=${encodeURIComponent(documentId)}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      return result.success ? result.variables : {};
+    } catch (error) {
+      console.error('Error fetching document variables:', error);
+      return {};
+    }
+  }
+
+  /**
+   * Populate the batch variables list in the dialog
+   */
+  populateBatchVariablesList(parameterVariables, generatedVariables, variablesList, previewSection, confirmBtn) {
+    variablesList.innerHTML = '';
+    
+    // Add header explaining the distinction
+    if (Object.keys(generatedVariables).length > 0) {
+      const headerDiv = document.createElement('div');
+      headerDiv.className = 'batch-variables-explanation';
+      headerDiv.innerHTML = `
+        <div class="batch-info-box">
+          <h5>📝 Parameter Variables (provide batch values below):</h5>
+          <p>These variables accept manual input values and will be set to your specified batch values.</p>
+        </div>
+        <div class="batch-info-box generated-info">
+          <h5>🔧 Generated Variables (will be computed automatically):</h5>
+          <p>These variables use code to compute values: <strong>${Object.keys(generatedVariables).join(', ')}</strong></p>
+          <p>They will be automatically recalculated for each copy based on the parameter values.</p>
+        </div>
+      `;
+      variablesList.appendChild(headerDiv);
+    }
+    
+    // Add parameter variables with input fields
+    Object.entries(parameterVariables).forEach(([varName, varData]) => {
+      const variableDiv = document.createElement('div');
+      variableDiv.className = 'batch-variable-item parameter-variable';
+      
+      variableDiv.innerHTML = `
+        <div class="batch-variable-header">
+          <label for="batch-${varName}">📝 ${varName}</label>
+          <span class="variable-type">(${varData.data_type || 'text'}) - Parameter</span>
+        </div>
+        <div class="batch-variable-description">
+          ${varData.description || 'No description'}
+        </div>
+        <textarea 
+          id="batch-${varName}" 
+          class="batch-variable-input" 
+          placeholder="Enter values separated by commas or new lines (e.g., value1, value2, value3)"
+          rows="3"
+        ></textarea>
+        <div class="batch-variable-help">
+          Current value: ${varData.value || 'Not set'}
+        </div>
+      `;
+      
+      variablesList.appendChild(variableDiv);
+    });
+
+    // Add event listeners to validate and preview
+    this.setupBatchInputValidation(parameterVariables, previewSection, confirmBtn);
+  }
+
+  /**
+   * Set up validation and preview for batch inputs
+   */
+  setupBatchInputValidation(parameterVariables, previewSection, confirmBtn) {
+    console.log('🔧 Setting up batch input validation for', Object.keys(parameterVariables));
+    
+    const validateAndPreview = () => {
+      const batchData = {};
+      let maxBatchSize = 0;
+      let hasInvalidInput = false;
+      let errorMessage = '';
+
+      // Collect all batch values for parameter variables only
+      Object.keys(parameterVariables).forEach(varName => {
+        const input = document.getElementById(`batch-${varName}`);
+        if (input) {
+          const rawValue = input.value.trim();
+          if (rawValue) {
+            // Split by commas or newlines and clean up
+            const values = rawValue.split(/[,\n]/).map(v => v.trim()).filter(v => v.length > 0);
+            batchData[varName] = values;
+            maxBatchSize = Math.max(maxBatchSize, values.length);
+            console.log(`📝 Variable ${varName}: ${values.length} values`, values);
+          } else {
+            batchData[varName] = [];
+          }
+        } else {
+          console.warn(`❌ Input not found for variable: batch-${varName}`);
+        }
+      });
+
+      console.log('📊 Batch data collected:', batchData, 'maxBatchSize:', maxBatchSize);
+
+      // Validate that all variables with values have the same number of values
+      if (maxBatchSize > 0) {
+        const variablesWithValues = Object.entries(batchData).filter(([_, values]) => values.length > 0);
+        
+        variablesWithValues.forEach(([varName, values]) => {
+          if (values.length !== maxBatchSize) {
+            hasInvalidInput = true;
+            errorMessage = `All variables with batch values must have the same number of values. Variable "${varName}" has ${values.length} values, but others have ${maxBatchSize} values.`;
+          }
+        });
+
+        // Ensure at least one variable has batch values
+        if (variablesWithValues.length === 0) {
+          maxBatchSize = 0; // Reset if no variables actually have values
+        }
+      }
+
+      console.log('✅ Validation result:', { maxBatchSize, hasInvalidInput, errorMessage });
+
+      // Show preview
+      if (maxBatchSize > 0 && !hasInvalidInput) {
+        previewSection.style.display = 'block';
+        const previewInfo = document.getElementById('batch-preview-info');
+        previewInfo.innerHTML = `
+          <p><strong>${maxBatchSize} documents will be created:</strong></p>
+          <ul>
+            ${Array.from({length: maxBatchSize}, (_, i) => 
+              `<li>Copy ${i + 1}: ${Object.entries(batchData)
+                .filter(([_, values]) => values.length > 0)
+                .map(([name, values]) => `${name}="${values[i] || 'current'}"`)
+                .join(', ')}</li>`
+            ).join('')}
+          </ul>
+          ${Object.entries(batchData).filter(([_, values]) => values.length === 0).length > 0 ? 
+            `<p><em>Variables not listed will keep their current values.</em></p>` : ''}
+        `;
+        // Get current button reference (may have been replaced)
+        const currentConfirmBtn = document.getElementById('confirm-batch-copy-btn');
+        if (currentConfirmBtn) {
+          currentConfirmBtn.disabled = false;
+          currentConfirmBtn.textContent = `Create ${maxBatchSize} Copies`;
+          console.log('🟢 Button enabled!');
+        }
+      } else {
+        previewSection.style.display = 'none';
+        // Get current button reference (may have been replaced)
+        const currentConfirmBtn = document.getElementById('confirm-batch-copy-btn');
+        if (currentConfirmBtn) {
+          currentConfirmBtn.disabled = true;
+          currentConfirmBtn.textContent = 'Create Batch Copies';
+          console.log('🔴 Button disabled');
+        }
+      }
+
+      // Show error if any
+      if (hasInvalidInput) {
+        previewSection.style.display = 'block';
+        const previewInfo = document.getElementById('batch-preview-info');
+        previewInfo.innerHTML = `<p style="color: red;"><strong>Error:</strong> ${errorMessage}</p>`;
+        // Get current button reference (may have been replaced)
+        const currentConfirmBtn = document.getElementById('confirm-batch-copy-btn');
+        if (currentConfirmBtn) {
+          currentConfirmBtn.disabled = true;
+          console.log('❌ Button disabled due to error:', errorMessage);
+        }
+      }
+    };
+
+    // Add event listeners to specific inputs by ID
+    Object.keys(parameterVariables).forEach(varName => {
+      const input = document.getElementById(`batch-${varName}`);
+      if (input) {
+        // Remove any existing listeners by cloning the element
+        const newInput = input.cloneNode(true);
+        input.parentNode.replaceChild(newInput, input);
+        
+        // Add fresh event listener
+        newInput.addEventListener('input', validateAndPreview);
+        console.log(`✅ Event listener added to batch-${varName}`);
+      } else {
+        console.error(`❌ Could not find input element: batch-${varName}`);
+      }
+    });
+
+    // Initial validation
+    console.log('🔄 Running initial validation...');
+    validateAndPreview();
+  }
+
+  /**
+   * Set up event handlers for the batch copy dialog
+   */
+  setupBatchCopyEventHandlers(documentId, parameterVariables, generatedVariables, dialog) {
+    console.log('🔧 Setting up batch copy event handlers');
+    
+    const confirmBtn = document.getElementById('confirm-batch-copy-btn');
+    const cancelBtn = document.getElementById('cancel-batch-copy-btn');
+
+    console.log('🔍 Button elements found:', { confirmBtn: !!confirmBtn, cancelBtn: !!cancelBtn });
+
+    if (!confirmBtn || !cancelBtn) {
+      console.error('❌ Could not find batch copy buttons!');
+      return;
+    }
+
+    console.log('🔍 Using original button references:', { confirmBtn: !!confirmBtn, cancelBtn: !!cancelBtn });
+
+    // Remove existing listeners by cloning buttons
+    const newConfirmBtn = confirmBtn.cloneNode(true);
+    const newCancelBtn = cancelBtn.cloneNode(true);
+    confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
+    cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
+
+    // Cancel handler
+    newCancelBtn.addEventListener('click', () => {
+      console.log('🚫 Cancel button clicked');
+      dialog.style.display = 'none';
+    });
+
+    // Confirm handler
+    newConfirmBtn.addEventListener('click', async () => {
+      console.log('✅ Confirm button clicked - starting batch copy');
+      await this.executeBatchCopy(documentId, parameterVariables, generatedVariables);
+      dialog.style.display = 'none';
+    });
+
+    // Close on overlay click
+    dialog.querySelector('.dialog-overlay').addEventListener('click', (e) => {
+      if (e.target === dialog.querySelector('.dialog-overlay')) {
+        dialog.style.display = 'none';
+      }
+    });
+
+    console.log('✅ Event handlers set up successfully');
+  }
+
+  /**
+   * Execute the batch copy operation
+   */
+  async executeBatchCopy(documentId, parameterVariables, generatedVariables) {
+    try {
+      // Collect batch data
+      const batchData = {};
+      let batchSize = 0;
+
+      Object.keys(parameterVariables).forEach(varName => {
+        const input = document.getElementById(`batch-${varName}`);
+        if (input) {
+          const rawValue = input.value.trim();
+          if (rawValue) {
+            const values = rawValue.split(/[,\n]/).map(v => v.trim()).filter(v => v.length > 0);
+            batchData[varName] = values;
+            batchSize = Math.max(batchSize, values.length);
+          } else {
+            batchData[varName] = []; // Empty array for variables without batch values
+          }
+        }
+      });
+
+      if (batchSize === 0) {
+        alert('No batch values provided');
+        return;
+      }
+
+      // Show progress
+      const progressMsg = `Creating ${batchSize} document copies...`;
+      console.log(progressMsg);
+      
+      if (window.variableDependencyExecutor) {
+        window.variableDependencyExecutor.showSimpleCompletionNotification(progressMsg);
+      }
+
+      const createdDocs = [];
+
+      // Create each batch copy
+      for (let i = 0; i < batchSize; i++) {
+        const batchVariableOverrides = {};
+        
+        // Collect variable values for this batch (only for variables that have batch values)
+        Object.entries(batchData).forEach(([varName, values]) => {
+          if (values.length > 0 && values[i] !== undefined) {
+            batchVariableOverrides[varName] = values[i];
+          }
+          // Variables with no batch values (empty arrays) will keep their current values
+        });
+
+        // Create copy with variable overrides for parameter variables
+        const copiedDoc = await this.copyDocumentWithVariableOverrides(documentId, batchVariableOverrides, i + 1);
+        if (copiedDoc) {
+          // Reexecute ALL variables for this copy in dependency order
+          await this.reexecuteAllVariablesForDocument(copiedDoc.id);
+          createdDocs.push(copiedDoc);
+        }
+      }
+
+      // Update document list and show success
+      this.updateDocumentList();
+      
+      const successMsg = `Successfully created ${createdDocs.length} document copies`;
+      console.log(`✅ ${successMsg}`);
+      
+      if (window.variableDependencyExecutor) {
+        window.variableDependencyExecutor.showSimpleCompletionNotification(successMsg);
+      }
+
+    } catch (error) {
+      console.error('Error executing batch copy:', error);
+      alert(`Error creating batch copies: ${error.message}`);
+    }
+  }
+
+  /**
+   * Copy a document with variable value overrides
+   */
+  async copyDocumentWithVariableOverrides(documentId, variableOverrides, batchNumber) {
+    const sourceDoc = this.documents.get(documentId);
+    if (!sourceDoc) {
+      console.error(`Source document not found: ${documentId}`);
+      return null;
+    }
+
+    try {
+      // Get current user for ownership
+      const currentUser = getCurrentUser();
+      if (!currentUser) {
+        console.error('No current user found, cannot copy document');
+        return null;
+      }
+
+      // Generate new document ID
+      this.documentCounter++;
+      const newDocumentId = `${currentUser.id}-doc-${this.documentCounter}`;
+      const newSessionId = this.generateSessionId();
+
+      // Get current content from editors if the source document is active
+      let currentTemplateContent = sourceDoc.template_content || '';
+      let currentSourceContent = sourceDoc.source_content || '';
+      let currentPreviewContent = sourceDoc.preview_content || '';
+
+      // If we're copying the currently active document, get fresh content from editors
+      if (this.activeDocumentId === documentId) {
+        const container = document.getElementById(`document-${documentId}`);
+        if (container) {
+          const templateEditor = container.querySelector('.template-editor');
+          const sourceEditor = container.querySelector('.source-editor');
+          const previewContent = container.querySelector('.preview-content');
+
+          if (templateEditor) {
+            currentTemplateContent = templateEditor.innerHTML;
+          }
+          if (sourceEditor) {
+            currentSourceContent = getTextContentWithLineBreaks(sourceEditor);
+          }
+          if (previewContent) {
+            currentPreviewContent = previewContent.innerHTML;
+          }
+        }
+      }
+
+      // Create a copy of the source document with current content
+      const copiedDoc = {
+        id: newDocumentId,
+        sessionId: newSessionId,
+        title: `${sourceDoc.title} - Batch ${batchNumber}`,
+        source_content: currentSourceContent,
+        template_content: currentTemplateContent,
+        preview_content: currentPreviewContent,
+        createdAt: new Date().toISOString(),
+        lastModified: new Date().toISOString(),
+        chatHistory: [], // Start with empty chat history for copy
+        contextFiles: [], // Start with empty context files for copy
+        author: currentUser.id,
+        authorName: currentUser.name,
+        editors: [],
+        viewers: [],
+        isShared: false, // Copies are not shared by default
+        comments: {} // Start with empty comments for copy
+      };
+
+      // Store the copied document
+      this.documents.set(newDocumentId, copiedDoc);
+
+      // Create tab and document elements
+      this.createTab(copiedDoc);
+      this.createAllElement(copiedDoc.id);
+
+      // Add small delay to ensure DOM is ready for batch operations
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      // Load the copied content into the editors (same as regular copy)
+      await this.loadDocumentContentWithRetry(newDocumentId, copiedDoc, 1);
+
+      // Copy variables from source document with overrides
+      await this.copyDocumentVariablesWithOverrides(documentId, newDocumentId, variableOverrides);
+
+      // Save the new document to backend
+      this.saveDocumentToBackend(newDocumentId).then(success => {
+        if (!success) {
+          console.error(`Failed to save copied document to backend: ${newDocumentId}`);
+        }
+      });
+
+      console.log(`✅ Batch document copied successfully: ${sourceDoc.title} -> ${copiedDoc.title}`);
+      return copiedDoc;
+
+    } catch (error) {
+      console.error('Error copying document with overrides:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Reexecute all variables for a document in dependency order
+   */
+  async reexecuteAllVariablesForDocument(documentId) {
+    try {
+      console.log(`🔄 Reexecuting all variables for document ${documentId}`);
+      
+      // Get all variables for the document
+      const variables = await this.getDocumentVariables(documentId);
+      if (!variables || Object.keys(variables).length === 0) {
+        console.log('No variables to execute for document');
+        return;
+      }
+
+      // Sort variables in dependency order (topological sort)
+      const sortedVariables = this.sortVariablesByDependencies(variables);
+      console.log(`📊 Executing ${sortedVariables.length} variables in dependency order:`, sortedVariables.map(v => v.name));
+
+      // Execute variables one by one in dependency order
+      for (const { name: varName, variable: varData } of sortedVariables) {
+        try {
+          if (varData.valueOption === 'code' && varData.generatedCode) {
+            // Execute generated variables using their Python code
+            console.log(`🔧 Executing generated variable: ${varName}`);
+            
+            const response = await fetch('http://127.0.0.1:5001/api/execute-python', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                code: varData.generatedCode,
+                document_id: documentId
+              })
+            });
+
+            if (response.ok) {
+              const result = await response.json();
+              if (result.success && result.result !== undefined) {
+                // Update the variable value
+                await this.updateVariableValue(documentId, varName, result.result);
+                console.log(`✅ Variable ${varName} executed: ${result.result}`);
+              } else {
+                console.error(`❌ Failed to execute variable ${varName}:`, result.error);
+              }
+            }
+          } else if (varData.valueOption === 'manual') {
+            // Parameter variables already have their values set, just log
+            console.log(`📝 Parameter variable ${varName}: ${varData.value}`);
+          }
+        } catch (error) {
+          console.error(`❌ Error executing variable ${varName}:`, error);
+        }
+      }
+
+      console.log(`✅ Successfully reexecuted all variables for document ${documentId}`);
+
+    } catch (error) {
+      console.error(`Error reexecuting variables for document ${documentId}:`, error);
+    }
+  }
+
+  /**
+   * Sort variables by dependencies using topological sort
+   */
+  sortVariablesByDependencies(variables) {
+    const sorted = [];
+    const visited = new Set();
+    const visiting = new Set();
+
+    const visit = (varName) => {
+      if (visiting.has(varName)) {
+        console.warn(`Circular dependency detected involving variable: ${varName}`);
+        return;
+      }
+      if (visited.has(varName)) {
+        return;
+      }
+
+      visiting.add(varName);
+      
+      const variable = variables[varName];
+      if (variable && variable.dependencies) {
+        for (const depName of variable.dependencies) {
+          if (variables[depName]) {
+            visit(depName);
+          }
+        }
+      }
+
+      visiting.delete(varName);
+      visited.add(varName);
+      sorted.push({ name: varName, variable });
+    };
+
+    // Visit all variables
+    Object.keys(variables).forEach(varName => {
+      if (!visited.has(varName)) {
+        visit(varName);
+      }
+    });
+
+    return sorted;
+  }
+
+  /**
+   * Execute generated variables for a specific document (legacy method)
+   */
+  async executeGeneratedVariablesForDocument(documentId, generatedVariables) {
+    if (Object.keys(generatedVariables).length === 0) {
+      return; // No generated variables to execute
+    }
+
+    try {
+      console.log(`🔧 Executing ${Object.keys(generatedVariables).length} generated variables for document ${documentId}`);
+      
+      // We need to execute generated variables using their Python code
+      // This requires the variable dependency executor to be available
+      if (!window.variableDependencyExecutor) {
+        console.warn('Variable dependency executor not available, skipping generated variable execution');
+        return;
+      }
+
+      // For each generated variable, execute its code
+      for (const [varName, varData] of Object.entries(generatedVariables)) {
+        if (varData.generatedCode) {
+          try {
+            // Execute the Python code for this variable
+            const response = await fetch('http://127.0.0.1:5001/api/execute-python', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                code: varData.generatedCode,
+                document_id: documentId
+              })
+            });
+
+            if (response.ok) {
+              const result = await response.json();
+              if (result.success && result.result !== undefined) {
+                // Update the variable value in the document
+                await this.updateVariableValue(documentId, varName, result.result);
+                console.log(`✅ Generated variable ${varName} executed successfully for document ${documentId}: ${result.result}`);
+              } else {
+                console.error(`❌ Failed to execute generated variable ${varName}:`, result.error);
+              }
+            }
+          } catch (error) {
+            console.error(`❌ Error executing generated variable ${varName}:`, error);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error executing generated variables:', error);
+    }
+  }
+
+  /**
+   * Update a variable value for a specific document
+   */
+  async updateVariableValue(documentId, variableName, value) {
+    try {
+      // Get current variables for the document
+      const variables = await this.getDocumentVariables(documentId);
+      
+      // Update the specific variable value
+      if (variables[variableName]) {
+        variables[variableName].value = value;
+        
+        // Save back to backend
+        const response = await fetch('http://127.0.0.1:5001/api/variables', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            documentId: documentId,
+            variables: variables
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+      }
+    } catch (error) {
+      console.error(`Error updating variable ${variableName} for document ${documentId}:`, error);
+    }
+  }
+
+  /**
+   * Copy variables with value overrides
+   */
+  async copyDocumentVariablesWithOverrides(sourceDocumentId, targetDocumentId, variableOverrides = {}) {
+    try {
+      console.log(`📊 Copying variables from ${sourceDocumentId} to ${targetDocumentId} with overrides:`, variableOverrides);
+      
+      // Load variables for source document
+      const response = await fetch(`http://127.0.0.1:5001/api/variables?documentId=${encodeURIComponent(sourceDocumentId)}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      if (result.success && result.variables) {
+        const sourceVariables = result.variables;
+        
+        // Apply variable overrides
+        const modifiedVariables = { ...sourceVariables };
+        Object.entries(variableOverrides).forEach(([varName, newValue]) => {
+          if (modifiedVariables[varName]) {
+            modifiedVariables[varName] = {
+              ...modifiedVariables[varName],
+              value: newValue
+            };
+          }
+        });
+
+        // Only copy if there are variables to copy
+        if (Object.keys(modifiedVariables).length > 0) {
+          // Save variables to target document
+          const saveResponse = await fetch('http://127.0.0.1:5001/api/variables', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              documentId: targetDocumentId,
+              variables: modifiedVariables
+            })
+          });
+
+          if (!saveResponse.ok) {
+            throw new Error(`HTTP error saving variables! status: ${saveResponse.status}`);
+          }
+
+          const saveResult = await saveResponse.json();
+          if (saveResult.success) {
+            console.log(`✅ Successfully copied ${Object.keys(modifiedVariables).length} variables with overrides to new document`);
+          } else {
+            throw new Error(saveResult.error || 'Failed to save copied variables');
+          }
+        } else {
+          console.log('✅ No variables to copy from source document');
+        }
+      } else {
+        console.log('✅ No variables found in source document or failed to load');
+      }
+
+    } catch (error) {
+      console.error('Error copying variables with overrides:', error);
       // Don't fail the entire copy operation for variable copy errors
       console.warn('Document was copied but variables copy failed');
     }
@@ -2825,6 +3600,7 @@ export class DocumentManager {
       'variables-btn': `${docId}-variables-btn`,
       'operators-btn': `${docId}-operators-btn`,
       'copy-document-btn': `${docId}-copy-document-btn`,
+      'copy-batch-btn': `${docId}-copy-batch-btn`,
       
       // Variables display
       'variables-display': `${docId}-variables-display`,
@@ -2889,6 +3665,7 @@ export class DocumentManager {
       'variables-btn': `${docId}-variables-btn`,
       'operators-btn': `${docId}-operators-btn`,
       'copy-document-btn': `${docId}-copy-document-btn`,
+      'copy-batch-btn': `${docId}-copy-batch-btn`,
       
       // Variables display
       'variables-display': `${docId}-variables-display`,

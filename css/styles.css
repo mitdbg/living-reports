@@ -10010,3 +10010,364 @@ p {
     width: 300px;
   }
 }
+
+/* Batch Copy Dialog */
+.batch-copy-dialog {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.batch-copy-dialog .dialog-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.batch-copy-dialog .dialog-content {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 700px;
+  width: 90%;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  animation: batchDialogFadeIn 0.3s ease-out;
+}
+
+@keyframes batchDialogFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9) translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.batch-copy-dialog h3 {
+  margin: 0 0 16px 0;
+  color: #333;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.batch-copy-dialog p {
+  margin: 0 0 20px 0;
+  color: #666;
+  line-height: 1.5;
+}
+
+.batch-variables-section {
+  margin-bottom: 20px;
+}
+
+.batch-variables-section h4 {
+  margin: 0 0 16px 0;
+  color: #495057;
+  font-size: 18px;
+}
+
+.batch-variables-explanation {
+  margin-bottom: 20px;
+}
+
+.batch-info-box {
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.batch-info-box.generated-info {
+  background: #e7f3ff;
+  border-color: #b8daff;
+}
+
+.batch-info-box h5 {
+  margin: 0 0 8px 0;
+  color: #495057;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.batch-info-box.generated-info h5 {
+  color: #004085;
+}
+
+.batch-info-box p {
+  margin: 4px 0 0 0;
+  color: #6c757d;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.batch-info-box.generated-info p {
+  color: #004085;
+}
+
+.parameter-variable {
+  border-left: 4px solid #28a745;
+}
+
+.parameter-variable .batch-variable-header label {
+  color: #28a745;
+}
+
+/* Code Execution Result Display */
+.code-execution-result {
+  margin-top: 12px;
+  border: 1px solid #e9ecef;
+  border-radius: 6px;
+  background: #f8f9fa;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.result-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: #e9ecef;
+  border-bottom: 1px solid #dee2e6;
+  border-radius: 6px 6px 0 0;
+}
+
+.result-label {
+  font-weight: 600;
+  color: #495057;
+  font-size: 14px;
+}
+
+.result-close-btn {
+  background: none;
+  border: none;
+  color: #6c757d;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 12px;
+  transition: all 0.2s ease;
+}
+
+.result-close-btn:hover {
+  background: #dee2e6;
+  color: #495057;
+}
+
+.result-content {
+  padding: 12px;
+  background: white;
+  border-radius: 0 0 6px 6px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #495057;
+}
+
+/* Support for HTML content in results */
+.result-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0;
+  border: 1px solid #dee2e6;
+}
+
+.result-content th,
+.result-content td {
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid #dee2e6;
+  font-size: 13px;
+}
+
+.result-content th {
+  background: #f8f9fa;
+  font-weight: 600;
+  color: #495057;
+}
+
+.result-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+  margin: 8px 0;
+}
+
+.result-content pre {
+  background: #f8f9fa;
+  padding: 8px 12px;
+  border-radius: 4px;
+  border: 1px solid #e9ecef;
+  font-size: 12px;
+  overflow-x: auto;
+  margin: 8px 0;
+}
+
+.result-content code {
+  background: #f8f9fa;
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-family: 'Monaco', 'Consolas', monospace;
+  font-size: 12px;
+}
+
+.batch-variable-item {
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.batch-variable-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.batch-variable-header label {
+  font-weight: 600;
+  color: #495057;
+  font-size: 16px;
+}
+
+.variable-type {
+  color: #6c757d;
+  font-size: 14px;
+  font-style: italic;
+}
+
+.batch-variable-description {
+  color: #6c757d;
+  font-size: 14px;
+  margin-bottom: 12px;
+  line-height: 1.4;
+}
+
+.batch-variable-input {
+  width: 100%;
+  min-height: 60px;
+  padding: 12px;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 14px;
+  resize: vertical;
+  transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+  box-sizing: border-box;
+}
+
+.batch-variable-input:focus {
+  outline: none;
+  border-color: #007bff;
+  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+}
+
+.batch-variable-help {
+  color: #6c757d;
+  font-size: 12px;
+  margin-top: 8px;
+  font-style: italic;
+}
+
+.batch-preview-section {
+  background: #e7f3ff;
+  border: 1px solid #b8daff;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+
+.batch-preview-section h4 {
+  margin: 0 0 12px 0;
+  color: #004085;
+  font-size: 16px;
+}
+
+.batch-preview-info {
+  color: #004085;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.batch-preview-info ul {
+  margin: 8px 0 0 20px;
+  padding: 0;
+}
+
+.batch-preview-info li {
+  margin-bottom: 4px;
+  font-family: monospace;
+  background: rgba(255, 255, 255, 0.7);
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.no-variables-message {
+  text-align: center;
+  color: #6c757d;
+  font-style: italic;
+  padding: 20px;
+}
+
+.batch-copy-dialog .dialog-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid #e9ecef;
+}
+
+.batch-copy-dialog .btn-primary,
+.batch-copy-dialog .btn-secondary {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background-color 0.2s ease;
+}
+
+.batch-copy-dialog .btn-primary {
+  background: #007bff;
+  color: white;
+}
+
+.batch-copy-dialog .btn-primary:hover:not(:disabled) {
+  background: #0056b3;
+}
+
+.batch-copy-dialog .btn-primary:disabled {
+  background: #6c757d;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.batch-copy-dialog .btn-secondary {
+  background: #6c757d;
+  color: white;
+}
+
+.batch-copy-dialog .btn-secondary:hover {
+  background: #5a6268;
+}

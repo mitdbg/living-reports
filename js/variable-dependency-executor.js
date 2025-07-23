@@ -260,6 +260,12 @@ class VariableDependencyExecutor {
     if (isInitialLoad) {
       console.log(`📥 Initial load of variable ${variableName}, skipping change detection`);
       this.variables.set(variableName, variableInfo);
+      
+      // For parameter variables, store their value in execution results
+      if (variableInfo.valueOption === 'manual' && variableInfo.value !== undefined && variableInfo.value !== null) {
+        this.executionResults.set(variableName, variableInfo.value);
+        console.log(`📝 Stored parameter variable ${variableName} value in execution results: ${variableInfo.value}`);
+      }
     } else {
       console.log(`🔍 Checking for changes in ${variableName}...`);
       // Check if this is an update that requires invalidation
@@ -268,6 +274,12 @@ class VariableDependencyExecutor {
         
         // Update the variable AFTER change detection but BEFORE invalidation
         this.variables.set(variableName, variableInfo);
+        
+        // For parameter variables, update their value in execution results
+        if (variableInfo.valueOption === 'manual' && variableInfo.value !== undefined && variableInfo.value !== null) {
+          this.executionResults.set(variableName, variableInfo.value);
+          console.log(`📝 Updated parameter variable ${variableName} value in execution results: ${variableInfo.value}`);
+        }
         
         this.invalidateDependents(variableName);
         
@@ -288,9 +300,21 @@ class VariableDependencyExecutor {
       } else if (existing) {
         console.log(`ℹ️ Variable ${variableName} unchanged - no cascading execution needed`);
         this.variables.set(variableName, variableInfo);
+        
+        // For parameter variables, ensure their value is in execution results
+        if (variableInfo.valueOption === 'manual' && variableInfo.value !== undefined && variableInfo.value !== null) {
+          this.executionResults.set(variableName, variableInfo.value);
+          console.log(`📝 Ensured parameter variable ${variableName} value in execution results: ${variableInfo.value}`);
+        }
       } else {
         console.log(`✨ New variable ${variableName} added - no dependents to update yet`);
         this.variables.set(variableName, variableInfo);
+        
+        // For parameter variables, store their value in execution results
+        if (variableInfo.valueOption === 'manual' && variableInfo.value !== undefined && variableInfo.value !== null) {
+          this.executionResults.set(variableName, variableInfo.value);
+          console.log(`📝 Stored new parameter variable ${variableName} value in execution results: ${variableInfo.value}`);
+        }
       }
     }
     
@@ -536,12 +560,22 @@ class VariableDependencyExecutor {
     const dependencies = variable.dependencies || [];
     const dependencyValues = {};
 
-    // Get dependency values from execution results
+    // Get dependency values from execution results or variable values
     for (const depName of dependencies) {
-      const depResult = this.executionResults.get(depName);
+      let depResult = this.executionResults.get(depName);
+      
+      // If not in execution results, check if it's a parameter variable with a value
       if (depResult === undefined) {
-        throw new Error(`Dependency ${depName} for variable ${variableName} has not been executed`);
+        const depVariable = this.variables.get(depName);
+        if (depVariable && depVariable.valueOption === 'manual' && depVariable.value !== undefined && depVariable.value !== null) {
+          // Parameter variables with values are considered "executed"
+          depResult = depVariable.value;
+          console.log(`📝 Using parameter variable ${depName} value: ${depResult}`);
+        } else {
+          throw new Error(`Dependency ${depName} for variable ${variableName} has not been executed or has no value set`);
+        }
       }
+      
       dependencyValues[depName] = depResult;
     }
 
@@ -553,8 +587,17 @@ class VariableDependencyExecutor {
       throw new Error(`No generated code found for variable ${variableName}`);
     }
 
-    // Execute code with dependency values as direct function parameters
-    const executableCode = await this.generateExecutableCode(code, dependencyValues);
+    console.log(`📝 Raw generated code for ${variableName}:`, code);
+
+    let executableCode;
+    try {
+      // Execute code with dependency values as direct function parameters
+      executableCode = await this.generateExecutableCode(code, dependencyValues);
+      console.log(`✅ Successfully generated executable code for ${variableName}`);
+    } catch (codeGenError) {
+      console.error(`❌ Error generating executable code for ${variableName}:`, codeGenError);
+      throw new Error(`Failed to prepare code for execution: ${codeGenError.message}`);
+    }
     
     // Execute via backend API
     const response = await fetch('http://127.0.0.1:5001/api/execute-code', {
@@ -607,16 +650,58 @@ class VariableDependencyExecutor {
    * Generate executable code with proper dependency value injection
    */
   async generateExecutableCode(originalCode, dependencyValues) {
-    // Find function definition
-    const functionMatch = originalCode.match(/def\s+(\w+)\s*\([^)]*\):/);
+    console.log('🔍 Analyzing generated code for function definition:', originalCode);
+    
+    // Try multiple patterns to find function definition
+    let functionMatch = originalCode.match(/def\s+(\w+)\s*\([^)]*\):/);
+    
     if (!functionMatch) {
-      throw new Error('Could not find function definition in generated code');
+      // Try more flexible patterns
+      functionMatch = originalCode.match(/def\s+(\w+)\s*\([^)]*\)\s*:/);
+    }
+    
+    if (!functionMatch) {
+      // Try pattern with multiline
+      functionMatch = originalCode.match(/def\s+(\w+)\s*\([^)]*?\)\s*:/s);
+    }
+    
+    if (!functionMatch) {
+      // Check if this is just Python code without a function (direct execution)
+      console.log('🔍 No function definition found, checking if this is direct Python code...');
+      
+      // If no function definition, treat as direct executable Python code
+      if (originalCode.trim() && !originalCode.includes('def ')) {
+        console.log('✅ Treating as direct Python code execution');
+        let executableCode = originalCode;
+        
+        // Inject dependency values as variables if any
+        if (dependencyValues && Object.keys(dependencyValues).length > 0) {
+          const variableInjections = [];
+          for (const [depName, depValue] of Object.entries(dependencyValues)) {
+            if (typeof depValue === 'string') {
+              variableInjections.push(`${depName} = ${JSON.stringify(depValue)}`);
+            } else if (typeof depValue === 'object') {
+              variableInjections.push(`${depName} = ${JSON.stringify(depValue)}`);
+            } else {
+              variableInjections.push(`${depName} = ${depValue}`);
+            }
+          }
+          executableCode = `# Inject dependency values as variables\n${variableInjections.join('\n')}\n\n${originalCode}`;
+        }
+        
+        console.log('🔧 Generated executable code (direct):', executableCode);
+        return executableCode;
+      }
+      
+      const codePreview = originalCode.length > 200 ? originalCode.substring(0, 200) + '...' : originalCode;
+      throw new Error(`Could not find function definition in generated code. Make sure the code contains a Python function definition starting with "def".\n\nGenerated code preview:\n${codePreview}`);
     }
 
     const functionName = functionMatch[1];
+    console.log('✅ Found function definition:', functionName);
     
-    // Build function call with actual values
-    const paramMatch = originalCode.match(new RegExp(`def\\s+${functionName}\\s*\\(([^)]*)\\):`));
+    // Build function call with actual values - use more flexible regex
+    const paramMatch = originalCode.match(new RegExp(`def\\s+${functionName}\\s*\\(([^)]*)\\)\\s*:`, 's'));
     
     let functionCall = `${functionName}()`;
     let variableInjections = [];
