@@ -219,7 +219,7 @@ def convert_base64_images_to_files(content: str, document_id: str) -> str:
 
             # Create file URL
             relative_path = f"database/files/{document_id}/images/{filename}"
-            file_url = f"http://127.0.0.1:5000/api/serve-file/{relative_path}"
+            file_url = f"http://127.0.0.1:5001/api/serve-file/{relative_path}"
 
             # Replace the src attribute in the original tag
             return full_tag.replace(
@@ -1005,7 +1005,7 @@ def process_file():
 
             # Return file URL instead of base64 content
             relative_path = f"database/files/{document_id}/images/{filename}"
-            file_url = f"http://127.0.0.1:5000/api/serve-file/{relative_path}"
+            file_url = f"http://127.0.0.1:5001/api/serve-file/{relative_path}"
             processed_content = file_url
 
         elif file_ext in [".xlsx", ".xls"]:
@@ -3170,7 +3170,7 @@ def test_file_access(document_id):
                         "filename": file,
                         "full_path": file_path,
                         "relative_path": relative_path,
-                        "file_url": f"http://127.0.0.1:5000/api/serve-file/{relative_path}",
+                        "file_url": f"http://127.0.0.1:5001/api/serve-file/{relative_path}",
                         "file_exists": os.path.exists(file_path),
                         "file_size": os.path.getsize(file_path)
                         if os.path.exists(file_path)

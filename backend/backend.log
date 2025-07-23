@@ -1,86 +1,86 @@
-18:10:27 - backend - INFO - ✅ gen3 command-line tool is already available
-18:10:27 - backend - INFO - ✓ OpenAI client initialized successfully
-18:10:27 - task_manager - INFO - 📋 No existing tasks file found. Starting fresh.
-18:10:27 - backend - INFO - 🚀 Starting MCP initialization at startup...
-18:10:27 - backend - INFO - 🔄 MCP initialization started in background thread
-18:10:27 - simple_mcp - INFO - 🔄 MCP background event loop started
-18:10:27 - backend - INFO - 📄 Loaded 1 documents from database/documents.json
-18:10:27 - backend - INFO - 📋 No existing verifications file found. Starting fresh.
-18:10:27 - backend - INFO - 🗂️ Loaded data sources for 0 documents from database/data_sources.json
-18:10:27 - task_manager - INFO - 📋 No existing tasks file found. Starting fresh.
-18:10:27 - backend - INFO - 📊 Loaded variables for 1 documents from database/vars.json
-18:10:27 - backend - INFO - 🔧 Loaded tools for 0 documents from database/tools.json
-18:10:27 - simple_mcp - INFO - 🚀 Initializing MCP service from /Users/sivaprasadsudhir/Desktop/living-reports/backend/mcp/mcp.json
+22:15:39 - backend - INFO - ✅ gen3 command-line tool is already available
+22:15:39 - backend - INFO - ✓ OpenAI client initialized successfully
+22:15:39 - task_manager - INFO - 📋 No existing tasks file found. Starting fresh.
+22:15:39 - backend - INFO - 🚀 Starting MCP initialization at startup...
+22:15:39 - backend - INFO - 🔄 MCP initialization started in background thread
+22:15:39 - simple_mcp - INFO - 🔄 MCP background event loop started
+22:15:39 - backend - INFO - 📄 Loaded 1 documents from database/documents.json
+22:15:39 - backend - INFO - 📋 No existing verifications file found. Starting fresh.
+22:15:39 - backend - INFO - 🗂️ Loaded data sources for 0 documents from database/data_sources.json
+22:15:39 - task_manager - INFO - 📋 No existing tasks file found. Starting fresh.
+22:15:39 - backend - INFO - 📊 Loaded variables for 1 documents from database/vars.json
+22:15:39 - backend - INFO - 🔧 Loaded tools for 0 documents from database/tools.json
+22:15:39 - simple_mcp - INFO - 🚀 Initializing MCP service from /Users/sivaprasadsudhir/Desktop/living-reports/backend/mcp/mcp.json
 Starting Python backend server...
  * Serving Flask app 'python_backend'
  * Debug mode: on
-18:10:27 - simple_mcp - INFO - 📋 Found 4 servers to initialize
-18:10:27 - simple_mcp - ERROR - ❌ Error initializing MCP server 'google_workspace': Command 'uv' not found in PATH
-18:10:27 - simple_mcp - INFO - 🧹 MCP server 'google_workspace' cleaned up
-18:10:27 - simple_mcp - ERROR - Failed to initialize server 'google_workspace': Command 'uv' not found in PATH
-18:10:27 - simple_mcp - ERROR - ❌ Error initializing MCP server 'sqlite': Command 'uvx' not found in PATH
-18:10:27 - simple_mcp - INFO - 🧹 MCP server 'sqlite' cleaned up
-18:10:27 - simple_mcp - ERROR - Failed to initialize server 'sqlite': Command 'uvx' not found in PATH
-18:10:27 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+22:15:39 - simple_mcp - INFO - 📋 Found 4 servers to initialize
+22:15:39 - simple_mcp - ERROR - ❌ Error initializing MCP server 'google_workspace': Command 'uv' not found in PATH
+22:15:39 - simple_mcp - INFO - 🧹 MCP server 'google_workspace' cleaned up
+22:15:39 - simple_mcp - ERROR - Failed to initialize server 'google_workspace': Command 'uv' not found in PATH
+22:15:39 - simple_mcp - ERROR - ❌ Error initializing MCP server 'sqlite': Command 'uvx' not found in PATH
+22:15:39 - simple_mcp - INFO - 🧹 MCP server 'sqlite' cleaned up
+22:15:39 - simple_mcp - ERROR - Failed to initialize server 'sqlite': Command 'uvx' not found in PATH
+22:15:39 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
  * Running on http://127.0.0.1:5001
-18:10:27 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
-18:10:27 - werkzeug - INFO -  * Restarting with stat
-18:10:29 - simple_mcp - INFO - ✅ MCP server 'puppeteer' initialized successfully
+22:15:39 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+22:15:39 - werkzeug - INFO -  * Restarting with stat
+22:15:41 - simple_mcp - INFO - ✅ MCP server 'puppeteer' initialized successfully
 Sequential Thinking MCP Server running on stdio
-18:10:30 - simple_mcp - INFO - ✅ MCP server 'sequential-thinking' initialized successfully
-18:10:30 - simple_mcp - INFO - 🔧 Collecting tools from initialized servers...
-18:10:30 - simple_mcp - INFO - 📋 Getting tools from server 'puppeteer'...
-18:10:30 - simple_mcp - INFO - ✅ Server 'puppeteer': 7 tools loaded
-18:10:30 - simple_mcp - INFO -    Tools: ['puppeteer_navigate', 'puppeteer_screenshot', 'puppeteer_click', 'puppeteer_fill', 'puppeteer_select', 'puppeteer_hover', 'puppeteer_evaluate']
-18:10:30 - simple_mcp - INFO - 📋 Getting tools from server 'sequential-thinking'...
-18:10:30 - simple_mcp - INFO - ✅ Server 'sequential-thinking': 1 tools loaded
-18:10:30 - simple_mcp - INFO -    Tools: ['sequentialthinking']
-18:10:30 - simple_mcp - INFO - ✅ MCP service initialized with 8 total tools from 2 servers
-18:10:30 - simple_mcp - INFO - 🔧 All available tools: ['puppeteer_navigate', 'puppeteer_screenshot', 'puppeteer_click', 'puppeteer_fill', 'puppeteer_select', 'puppeteer_hover', 'puppeteer_evaluate', 'sequentialthinking']
-18:10:30 - simple_mcp - INFO - 📊 Service ready: True
-18:10:30 - backend - INFO - ✅ MCP service initialized successfully at startup
-18:10:31 - backend - INFO - ✅ gen3 command-line tool is already available
-18:10:31 - backend - INFO - ✓ OpenAI client initialized successfully
-18:10:31 - task_manager - INFO - 📋 No existing tasks file found. Starting fresh.
-18:10:31 - backend - INFO - 🚀 Starting MCP initialization at startup...
-18:10:31 - backend - INFO - 🔄 MCP initialization started in background thread
-18:10:31 - simple_mcp - INFO - 🔄 MCP background event loop started
-18:10:31 - simple_mcp - INFO - 🚀 Initializing MCP service from /Users/sivaprasadsudhir/Desktop/living-reports/backend/mcp/mcp.json
-18:10:31 - backend - INFO - 📄 Loaded 1 documents from database/documents.json
-18:10:31 - backend - INFO - 📋 No existing verifications file found. Starting fresh.
-18:10:31 - simple_mcp - INFO - 📋 Found 4 servers to initialize
-18:10:31 - backend - INFO - 🗂️ Loaded data sources for 0 documents from database/data_sources.json
-18:10:31 - task_manager - INFO - 📋 No existing tasks file found. Starting fresh.
-18:10:31 - backend - INFO - 📊 Loaded variables for 1 documents from database/vars.json
-18:10:31 - backend - INFO - 🔧 Loaded tools for 0 documents from database/tools.json
-18:10:31 - simple_mcp - ERROR - ❌ Error initializing MCP server 'google_workspace': Command 'uv' not found in PATH
-18:10:31 - simple_mcp - INFO - 🧹 MCP server 'google_workspace' cleaned up
-18:10:31 - simple_mcp - ERROR - Failed to initialize server 'google_workspace': Command 'uv' not found in PATH
-18:10:31 - simple_mcp - ERROR - ❌ Error initializing MCP server 'sqlite': Command 'uvx' not found in PATH
-18:10:31 - simple_mcp - INFO - 🧹 MCP server 'sqlite' cleaned up
-18:10:31 - simple_mcp - ERROR - Failed to initialize server 'sqlite': Command 'uvx' not found in PATH
-18:10:31 - werkzeug - WARNING -  * Debugger is active!
-18:10:31 - werkzeug - INFO -  * Debugger PIN: 997-542-364
-18:10:32 - simple_mcp - INFO - ✅ MCP server 'puppeteer' initialized successfully
-Sequential Thinking MCP Server running on stdio
-18:10:33 - simple_mcp - INFO - ✅ MCP server 'sequential-thinking' initialized successfully
-18:10:33 - simple_mcp - INFO - 🔧 Collecting tools from initialized servers...
-18:10:33 - simple_mcp - INFO - 📋 Getting tools from server 'puppeteer'...
-18:10:33 - simple_mcp - INFO - ✅ Server 'puppeteer': 7 tools loaded
-18:10:33 - simple_mcp - INFO -    Tools: ['puppeteer_navigate', 'puppeteer_screenshot', 'puppeteer_click', 'puppeteer_fill', 'puppeteer_select', 'puppeteer_hover', 'puppeteer_evaluate']
-18:10:33 - simple_mcp - INFO - 📋 Getting tools from server 'sequential-thinking'...
-18:10:33 - simple_mcp - INFO - ✅ Server 'sequential-thinking': 1 tools loaded
-18:10:33 - simple_mcp - INFO -    Tools: ['sequentialthinking']
-18:10:33 - simple_mcp - INFO - ✅ MCP service initialized with 8 total tools from 2 servers
-18:10:33 - simple_mcp - INFO - 🔧 All available tools: ['puppeteer_navigate', 'puppeteer_screenshot', 'puppeteer_click', 'puppeteer_fill', 'puppeteer_select', 'puppeteer_hover', 'puppeteer_evaluate', 'sequentialthinking']
-18:10:33 - simple_mcp - INFO - 📊 Service ready: True
-18:10:33 - backend - INFO - ✅ MCP service initialized successfully at startup
+22:15:42 - simple_mcp - INFO - ✅ MCP server 'sequential-thinking' initialized successfully
+22:15:42 - simple_mcp - INFO - 🔧 Collecting tools from initialized servers...
+22:15:42 - simple_mcp - INFO - 📋 Getting tools from server 'puppeteer'...
+22:15:42 - simple_mcp - INFO - ✅ Server 'puppeteer': 7 tools loaded
+22:15:42 - simple_mcp - INFO -    Tools: ['puppeteer_navigate', 'puppeteer_screenshot', 'puppeteer_click', 'puppeteer_fill', 'puppeteer_select', 'puppeteer_hover', 'puppeteer_evaluate']
+22:15:42 - simple_mcp - INFO - 📋 Getting tools from server 'sequential-thinking'...
+22:15:42 - simple_mcp - INFO - ✅ Server 'sequential-thinking': 1 tools loaded
+22:15:42 - simple_mcp - INFO -    Tools: ['sequentialthinking']
+22:15:42 - simple_mcp - INFO - ✅ MCP service initialized with 8 total tools from 2 servers
+22:15:42 - simple_mcp - INFO - 🔧 All available tools: ['puppeteer_navigate', 'puppeteer_screenshot', 'puppeteer_click', 'puppeteer_fill', 'puppeteer_select', 'puppeteer_hover', 'puppeteer_evaluate', 'sequentialthinking']
+22:15:42 - simple_mcp - INFO - 📊 Service ready: True
+22:15:42 - backend - INFO - ✅ MCP service initialized successfully at startup
+22:15:43 - backend - INFO - ✅ gen3 command-line tool is already available
+22:15:43 - backend - INFO - ✓ OpenAI client initialized successfully
+22:15:43 - task_manager - INFO - 📋 No existing tasks file found. Starting fresh.
+22:15:43 - backend - INFO - 🚀 Starting MCP initialization at startup...
+22:15:43 - backend - INFO - 🔄 MCP initialization started in background thread
+22:15:43 - simple_mcp - INFO - 🔄 MCP background event loop started
+22:15:43 - backend - INFO - 📄 Loaded 1 documents from database/documents.json
+22:15:43 - backend - INFO - 📋 No existing verifications file found. Starting fresh.
+22:15:43 - backend - INFO - 🗂️ Loaded data sources for 0 documents from database/data_sources.json
+22:15:43 - simple_mcp - INFO - 🚀 Initializing MCP service from /Users/sivaprasadsudhir/Desktop/living-reports/backend/mcp/mcp.json
+22:15:43 - task_manager - INFO - 📋 No existing tasks file found. Starting fresh.
+22:15:43 - simple_mcp - INFO - 📋 Found 4 servers to initialize
+22:15:43 - backend - INFO - 📊 Loaded variables for 1 documents from database/vars.json
+22:15:43 - simple_mcp - ERROR - ❌ Error initializing MCP server 'google_workspace': Command 'uv' not found in PATH
+22:15:43 - simple_mcp - INFO - 🧹 MCP server 'google_workspace' cleaned up
+22:15:43 - simple_mcp - ERROR - Failed to initialize server 'google_workspace': Command 'uv' not found in PATH
+22:15:43 - backend - INFO - 🔧 Loaded tools for 0 documents from database/tools.json
+22:15:44 - simple_mcp - ERROR - ❌ Error initializing MCP server 'sqlite': Command 'uvx' not found in PATH
+22:15:44 - simple_mcp - INFO - 🧹 MCP server 'sqlite' cleaned up
+22:15:44 - simple_mcp - ERROR - Failed to initialize server 'sqlite': Command 'uvx' not found in PATH
+22:15:44 - werkzeug - WARNING -  * Debugger is active!
+22:15:44 - werkzeug - INFO -  * Debugger PIN: 997-542-364
 Starting Python backend server...
-📥 Incoming request: GET http://127.0.0.1:5001/health
-18:10:40 - werkzeug - INFO - 127.0.0.1 - - [22/Jul/2025 18:10:40] "[33mGET /health HTTP/1.1[0m" 404 -
-📥 Incoming request: GET http://127.0.0.1:5001/api/documents/user/charlie
-18:10:44 - werkzeug - INFO - 127.0.0.1 - - [22/Jul/2025 18:10:44] "GET /api/documents/user/charlie HTTP/1.1" 200 -
-Puppeteer MCP Server closed
+📥 Incoming request: HEAD http://127.0.0.1:5001/api/serve-file/test
+22:15:44 - backend - WARNING - 📄 File not found: /Users/sivaprasadsudhir/Desktop/living-reports/backend/test
+22:15:44 - werkzeug - INFO - 127.0.0.1 - - [22/Jul/2025 22:15:44] "[33mHEAD /api/serve-file/test HTTP/1.1[0m" 404 -
+22:15:45 - simple_mcp - INFO - ✅ MCP server 'puppeteer' initialized successfully
+Sequential Thinking MCP Server running on stdio
+22:15:46 - simple_mcp - INFO - ✅ MCP server 'sequential-thinking' initialized successfully
+22:15:46 - simple_mcp - INFO - 🔧 Collecting tools from initialized servers...
+22:15:46 - simple_mcp - INFO - 📋 Getting tools from server 'puppeteer'...
+22:15:46 - simple_mcp - INFO - ✅ Server 'puppeteer': 7 tools loaded
+22:15:46 - simple_mcp - INFO -    Tools: ['puppeteer_navigate', 'puppeteer_screenshot', 'puppeteer_click', 'puppeteer_fill', 'puppeteer_select', 'puppeteer_hover', 'puppeteer_evaluate']
+22:15:46 - simple_mcp - INFO - 📋 Getting tools from server 'sequential-thinking'...
+22:15:46 - simple_mcp - INFO - ✅ Server 'sequential-thinking': 1 tools loaded
+22:15:46 - simple_mcp - INFO -    Tools: ['sequentialthinking']
+22:15:46 - simple_mcp - INFO - ✅ MCP service initialized with 8 total tools from 2 servers
+22:15:46 - simple_mcp - INFO - 🔧 All available tools: ['puppeteer_navigate', 'puppeteer_screenshot', 'puppeteer_click', 'puppeteer_fill', 'puppeteer_select', 'puppeteer_hover', 'puppeteer_evaluate', 'sequentialthinking']
+22:15:46 - simple_mcp - INFO - 📊 Service ready: True
+22:15:46 - backend - INFO - ✅ MCP service initialized successfully at startup
+📥 Incoming request: HEAD http://127.0.0.1:5001/api/serve-file/database/files/charts/test.txt
+22:16:38 - backend - INFO - 📎 Serving file: database/files/charts/test.txt
+22:16:38 - werkzeug - INFO - 127.0.0.1 - - [22/Jul/2025 22:16:38] "HEAD /api/serve-file/database/files/charts/test.txt HTTP/1.1" 200 -
 /Users/sivaprasadsudhir/.pyenv/versions/3.10.13/lib/python3.10/multiprocessing/resource_tracker.py:224: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown
   warnings.warn('resource_tracker: There appear to be %d '
-Puppeteer MCP Server closed

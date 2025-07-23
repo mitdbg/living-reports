@@ -11,3 +11,8 @@ backend/test.db
 credentials.json
 umls-server/
 udi-hacky/
+
+
+# TODO: Clean up the path and fix these.
+*usecase_col*
+*udi_chart*

@@ -401,7 +401,7 @@ def RenderImage(x_ray_jpeg: str) -> str:
         # Use the MIDRC file serving endpoint with query parameter for absolute paths
         # URL-encode the absolute path as a query parameter to avoid URL path issues
         encoded_path = urllib.parse.quote(x_ray_jpeg, safe="")
-        image_url = f"http://127.0.0.1:5000/api/serve-midrc-file?path={encoded_path}"
+        image_url = f"http://127.0.0.1:5001/api/serve-midrc-file?path={encoded_path}"
 
         # Return just the image URL instead of full HTML to avoid template processing issues
         # The template system will handle the HTML rendering
@@ -617,5 +617,23 @@ def GetPatientAgePlot(x_ray_dicom_files: List[str]) -> str:
     output_img = f"udi_chart_{rand_tag}.png"
     # Render the image (Jupyter supports top-level await)
     asyncio.run(udi_to_png(udi_spec, output_img))
-    # Return HTML container to display the image
-    return f'<img src="{output_img}" alt="UDI Chart" style="max-width: 100%; height: 200px;" />'
+    
+    # Copy the generated image to a location that can be served by the backend
+    chart_dir = "database/files/charts"
+    os.makedirs(chart_dir, exist_ok=True)
+    chart_path = os.path.join(chart_dir, output_img)
+    
+    # Copy the generated chart to the serveable location
+    if os.path.exists(output_img):
+        import shutil
+        shutil.copy2(output_img, chart_path)
+        # Clean up the original file
+        os.remove(output_img)
+        
+        # Create URL for serving the chart
+        relative_path = f"database/files/charts/{output_img}"
+        chart_url = f"http://127.0.0.1:5001/api/serve-file/{relative_path}"
+        
+        return f'<img src="{chart_url}" alt="UDI Chart" style="max-width: 100%; height: 200px;" />'
+    else:
+        return f'<div class="image-error">❌ Error: Chart file not generated</div>'
