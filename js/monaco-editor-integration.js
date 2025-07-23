@@ -19,33 +19,16 @@ class MonacoEditorIntegration {
     if (this.isInitialized) return;
 
     try {
-      // Load Monaco Editor dynamically
-      if (!monaco) {
-        console.log('Loading Monaco Editor...');
-        
-        // Set up the Monaco environment before loading
-        window.MonacoEnvironment = {
-          getWorkerUrl: () => {
-            // For simplicity in Electron, we'll use a data URL approach
-            return `data:text/javascript;charset=utf-8,${encodeURIComponent(`
-              self.MonacoEnvironment = { baseUrl: './node_modules/monaco-editor/min/' };
-              importScripts('./node_modules/monaco-editor/min/vs/base/worker/workerMain.js');
-            `)}`;
-          }
-        };
-
-        // Import Monaco Editor dynamically
-        const monacoModule = await import('../node_modules/monaco-editor/esm/vs/editor/editor.main.js');
-        monaco = monacoModule;
-        console.log('✅ Monaco Editor loaded successfully');
-      }
-
-      this.isInitialized = true;
-      console.log('✅ Monaco Editor initialized successfully');
+      // For Electron, disable Monaco Editor by default to avoid module loading issues
+      // This prevents the ERR_FILE_NOT_FOUND errors and ensures contenteditable works
+      console.log('Monaco Editor integration disabled for Electron compatibility');
+      console.log('📝 Using contenteditable editors for all code editing');
+      this.isInitialized = false; // Intentionally false to skip Monaco
+      return;
+      
     } catch (error) {
       console.error('❌ Failed to initialize Monaco Editor:', error);
       console.log('📝 Falling back to contenteditable editors');
-      // Don't throw the error, just continue without Monaco Editor
       this.isInitialized = false;
     }
   }
@@ -70,9 +53,9 @@ class MonacoEditorIntegration {
     // Default options for Python code editing
     const defaultOptions = {
       language: 'python',
-      theme: 'vs-dark',
+      theme: 'vs',
       automaticLayout: true,
-      minimap: { enabled: true },
+      minimap: { enabled: false },
       scrollBeyondLastLine: false,
       fontSize: 14,
       lineNumbers: 'on',
@@ -380,36 +363,27 @@ export async function initMonacoEditor() {
     // Make globally available
     window.monacoEditorIntegration = monacoEditorIntegration;
     
-    if (monacoEditorIntegration.isInitialized) {
-      console.log('✅ Monaco Editor Integration module initialized successfully');
+    console.log('✅ Monaco Editor Integration module initialized (using contenteditable mode)');
+    
+    // Ensure all code editors remain contenteditable
+    setTimeout(() => {
+      const codeEditorSelectors = [
+        '#embedded-tool-code',
+        '#generated-code-editor',
+        '.source-editor',
+        '.code-editor'
+      ];
       
-      // Auto-replace existing code editors only if Monaco is working
-      setTimeout(() => {
-        monacoEditorIntegration.autoReplaceCodeEditors();
-      }, 100);
-    } else {
-      console.log('⚠️ Monaco Editor Integration initialized but Monaco Editor not available - using contenteditable fallback');
-      
-      // Ensure all code editors remain contenteditable
-      setTimeout(() => {
-        const codeEditorSelectors = [
-          '#embedded-tool-code',
-          '#generated-code-editor',
-          '.source-editor',
-          '.code-editor'
-        ];
-        
-        codeEditorSelectors.forEach(selector => {
-          const elements = document.querySelectorAll(selector);
-          elements.forEach(element => {
-            if (!element.hasAttribute('contenteditable')) {
-              element.setAttribute('contenteditable', 'true');
-              console.log(`✅ Ensured '${element.id || selector}' remains contenteditable`);
-            }
-          });
+      codeEditorSelectors.forEach(selector => {
+        const elements = document.querySelectorAll(selector);
+        elements.forEach(element => {
+          if (!element.hasAttribute('contenteditable')) {
+            element.setAttribute('contenteditable', 'true');
+            console.log(`✅ Ensured '${element.id || selector}' is contenteditable`);
+          }
         });
-      }, 100);
-    }
+      });
+    }, 100);
     
   } catch (error) {
     console.error('❌ Failed to initialize Monaco Editor Integration:', error);

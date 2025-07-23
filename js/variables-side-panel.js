@@ -1906,13 +1906,14 @@ class VariablesSidePanel {
     
     const existingVariables = variablesManager.getVariables();
     if (!this.editingVariableName && existingVariables[formData.name]) {
-      alert('Variable name already exists');
-      return false;
+      // Automatically overwrite existing variable - set as editing mode to trigger update instead of create
+      this.editingVariableName = formData.name;
+      console.log(`📝 Overwriting existing variable: ${formData.name}`);
     }
     
     if (this.editingVariableName && formData.name !== this.editingVariableName && existingVariables[formData.name]) {
-      alert('Variable name already exists');
-      return false;
+      // Automatically overwrite existing variable when renaming
+      console.log(`📝 Overwriting existing variable during rename: ${formData.name}`);
     }
 
     // Validate that either manual value or code generation is selected

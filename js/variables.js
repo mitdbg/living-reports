@@ -1300,17 +1300,16 @@ class VariablesManager {
       return false;
     }
     
-    // For updates, only check for duplicate names if the name has changed
+    // For updates, allow overwriting when renaming
     if (isUpdate) {
       if (formData.name !== originalVariableName && this.variables.has(formData.name)) {
-        alert('Variable name already exists');
-        return false;
+        // Automatically overwrite existing variable when renaming
+        console.log(`📝 Overwriting existing variable during rename: ${formData.name}`);
       }
     } else {
-      // For new variables, always check for duplicates
+      // For new variables, automatically overwrite if exists
       if (this.variables.has(formData.name)) {
-        alert('Variable name already exists');
-        return false;
+        console.log(`📝 Overwriting existing variable: ${formData.name}`);
       }
     }
     
