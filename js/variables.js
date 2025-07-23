@@ -1947,41 +1947,10 @@ class VariablesManager {
    * Show a brief notification when variables are updated
    */
   showVariableUpdateNotification() {
-    // Create or update notification element
-    let notification = document.getElementById('variable-update-notification');
-    
-    if (!notification) {
-      notification = document.createElement('div');
-      notification.id = 'variable-update-notification';
-      notification.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        background: #4CAF50;
-        color: white;
-        padding: 10px 15px;
-        border-radius: 5px;
-        font-size: 14px;
-        z-index: 10000;
-        opacity: 0;
-        transition: opacity 0.3s ease;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-      `;
-      document.body.appendChild(notification);
+    // Use the floating window instead
+    if (window.variableDependencyExecutor) {
+      window.variableDependencyExecutor.showSimpleCompletionNotification('Variable updated');
     }
-
-    notification.textContent = '✅ Variable updated - Template refreshed';
-    notification.style.opacity = '1';
-
-    // Hide after 2 seconds
-    setTimeout(() => {
-      notification.style.opacity = '0';
-      setTimeout(() => {
-        if (notification.parentNode) {
-          notification.parentNode.removeChild(notification);
-        }
-      }, 300);
-    }, 2000);
   }
 
   /**

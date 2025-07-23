@@ -14,6 +14,234 @@ class VariableDependencyExecutor {
   }
 
   /**
+   * Show floating execution indicator for dependency graph processing
+   */
+  showDependencyExecutionIndicator() {
+    let indicator = document.getElementById('dependency-execution-indicator');
+    
+    if (!indicator) {
+      indicator = document.createElement('div');
+      indicator.id = 'dependency-execution-indicator';
+      indicator.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+        color: white;
+        padding: 16px 20px;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        z-index: 10000;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-size: 14px;
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-width: 320px;
+        max-width: 450px;
+        animation: slideInRight 0.3s ease-out;
+      `;
+      
+      // Add keyframe animation if not already present
+      if (!document.querySelector('#dependency-indicator-styles')) {
+        const style = document.createElement('style');
+        style.id = 'dependency-indicator-styles';
+        style.textContent = `
+          @keyframes slideInRight {
+            from {
+              transform: translateX(100%);
+              opacity: 0;
+            }
+            to {
+              transform: translateX(0);
+              opacity: 1;
+            }
+          }
+          
+          @keyframes slideOutRight {
+            from {
+              transform: translateX(0);
+              opacity: 1;
+            }
+            to {
+              transform: translateX(100%);
+              opacity: 0;
+            }
+          }
+          
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+          
+          .dependency-spinner {
+            animation: spin 1s linear infinite;
+          }
+          
+          .dependency-progress-bar {
+            width: 100%;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 2px;
+            overflow: hidden;
+            margin-top: 8px;
+          }
+          
+          .dependency-progress-fill {
+            height: 100%;
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 2px;
+            transition: width 0.3s ease;
+            width: 0%;
+          }
+        `;
+        document.head.appendChild(style);
+      }
+      
+      document.body.appendChild(indicator);
+    }
+    
+    indicator.innerHTML = `
+      <div class="dependency-spinner" style="
+        width: 20px;
+        height: 20px;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        border-top: 2px solid white;
+        border-radius: 50%;
+        flex-shrink: 0;
+      "></div>
+      <div style="flex: 1;">
+        <div style="font-weight: 600; margin-bottom: 4px;">Executing Variables</div>
+        <div style="font-size: 12px; opacity: 0.9; margin-bottom: 4px;" id="dependency-current-variable">Processing dependency graph...</div>
+        <div class="dependency-progress-bar">
+          <div class="dependency-progress-fill" id="dependency-progress-fill" style="width: 0%;"></div>
+        </div>
+      </div>
+    `;
+    
+    indicator.style.display = 'flex';
+  }
+
+  /**
+   * Hide floating execution indicator
+   */
+  hideDependencyExecutionIndicator() {
+    const indicator = document.getElementById('dependency-execution-indicator');
+    if (indicator) {
+      indicator.style.animation = 'slideOutRight 0.3s ease-out';
+      setTimeout(() => {
+        if (indicator && indicator.parentNode) {
+          indicator.parentNode.removeChild(indicator);
+        }
+      }, 300);
+    }
+  }
+
+  /**
+   * Update execution progress
+   */
+  updateDependencyExecutionProgress(variableName, currentIndex, totalCount) {
+    const indicator = document.getElementById('dependency-execution-indicator');
+    if (indicator) {
+      const messageDiv = indicator.querySelector('#dependency-current-variable');
+      const progressBar = indicator.querySelector('#dependency-progress-fill');
+      
+      if (messageDiv) {
+        messageDiv.textContent = `Executing: ${variableName}`;
+      }
+      
+      if (progressBar && totalCount > 0) {
+        const progress = ((currentIndex + 1) / totalCount) * 100;
+        progressBar.style.width = `${progress}%`;
+      }
+    }
+  }
+
+  /**
+   * Show completion state
+   */
+  showDependencyExecutionComplete(executedCount, message = null) {
+    const indicator = document.getElementById('dependency-execution-indicator');
+    if (indicator) {
+      // Change color to green for completion
+      indicator.style.background = 'linear-gradient(135deg, #4CAF50 0%, #45a049 100%)';
+      
+      // Use custom message if provided, otherwise use default
+      const completionMessage = message || `Successfully executed ${executedCount} variable${executedCount !== 1 ? 's' : ''}`;
+      
+      indicator.innerHTML = `
+        <div style="
+          width: 20px;
+          height: 20px;
+          background: white;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #4CAF50;
+          font-weight: bold;
+          flex-shrink: 0;
+        ">✓</div>
+        <div style="flex: 1;">
+          <div style="font-weight: 600; margin-bottom: 4px;">Execution Complete</div>
+          <div style="font-size: 12px; opacity: 0.9;">${completionMessage}</div>
+        </div>
+      `;
+      
+      // Auto-hide after 3 seconds
+      setTimeout(() => {
+        this.hideDependencyExecutionIndicator();
+      }, 3000);
+    }
+  }
+
+  /**
+   * Show simple completion notification using floating window
+   */
+  showSimpleCompletionNotification(message) {
+    // Create or reuse the execution indicator for completion notifications
+    let indicator = document.getElementById('dependency-execution-indicator');
+    
+    if (!indicator) {
+      // Create indicator if it doesn't exist
+      this.showDependencyExecutionIndicator();
+      indicator = document.getElementById('dependency-execution-indicator');
+    }
+    
+    if (indicator) {
+      // Change to completion state immediately
+      indicator.style.background = 'linear-gradient(135deg, #4CAF50 0%, #45a049 100%)';
+      
+      indicator.innerHTML = `
+        <div style="
+          width: 20px;
+          height: 20px;
+          background: white;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #4CAF50;
+          font-weight: bold;
+          flex-shrink: 0;
+        ">✓</div>
+        <div style="flex: 1;">
+          <div style="font-weight: 600; margin-bottom: 4px;">Execution Complete</div>
+          <div style="font-size: 12px; opacity: 0.9;">${message}</div>
+        </div>
+      `;
+      
+      indicator.style.display = 'flex';
+      
+      // Auto-hide after 3 seconds
+      setTimeout(() => {
+        this.hideDependencyExecutionIndicator();
+      }, 3000);
+    }
+  }
+
+  /**
    * Add or update a variable in the system
    */
   async addVariable(variableName, variableInfo, isInitialLoad = false) {
@@ -439,18 +667,41 @@ class VariableDependencyExecutor {
     const executionOrder = this.getExecutionOrder(variableNames);
     const results = {};
 
-    for (const varName of executionOrder) {
-      try {
-        const result = await this.executeVariable(varName, forceReexecute);
-        results[varName] = result;
-      } catch (error) {
-        console.error(`Failed to execute variable ${varName}:`, error);
-        throw error;
-      }
+    // Only show indicator if we have variables to execute
+    if (executionOrder.length > 0) {
+      this.showDependencyExecutionIndicator();
     }
 
-    console.log('🎯 All variables executed successfully:', results);
-    return results;
+    try {
+      for (let i = 0; i < executionOrder.length; i++) {
+        const varName = executionOrder[i];
+        
+        // Update progress
+        this.updateDependencyExecutionProgress(varName, i, executionOrder.length);
+        
+        try {
+          const result = await this.executeVariable(varName, forceReexecute);
+          results[varName] = result;
+        } catch (error) {
+          console.error(`Failed to execute variable ${varName}:`, error);
+          this.hideDependencyExecutionIndicator();
+          throw error;
+        }
+      }
+
+      console.log('🎯 All variables executed successfully:', results);
+      
+      // Show completion state if we executed any variables
+      if (executionOrder.length > 0) {
+        this.showDependencyExecutionComplete(executionOrder.length);
+      }
+      
+      return results;
+    } catch (error) {
+      // Hide indicator on error
+      this.hideDependencyExecutionIndicator();
+      throw error;
+    }
   }
 
   /**
@@ -544,8 +795,8 @@ class VariableDependencyExecutor {
       // Show notification if requested (e.g., during template execution)
       if (showNotification && invalidated.length > 0) {
         const message = invalidated.length === 1 
-          ? `🔄 Re-executed 1 variable with updated dependencies: ${invalidated[0]}`
-          : `🔄 Re-executed ${invalidated.length} variables with updated dependencies: ${invalidated.join(', ')}`;
+          ? `Variable ${invalidated[0]} executed`
+          : `${invalidated.length} variables executed`;
         this.showTemporaryStatus(message);
       }
       
@@ -576,63 +827,65 @@ class VariableDependencyExecutor {
   showDependencyUpdateNotification(changedVariable, dependentVariables) {
     if (dependentVariables.length === 0) return;
     
-    const dependentList = dependentVariables.join(', ');
     const message = dependentVariables.length === 1 
-      ? `✅ Variable "${changedVariable}" changed. Automatically updated dependent variable: ${dependentList}`
-      : `✅ Variable "${changedVariable}" changed. Automatically updated ${dependentVariables.length} dependent variables: ${dependentList}`;
+      ? `Variable ${dependentVariables[0]} updated`
+      : `${dependentVariables.length} variables updated`;
     
-    console.log(`📢 ${message}`);
+    console.log(`📢 Variable "${changedVariable}" changed. Updated dependents: ${dependentVariables.join(', ')}`);
     
-    // Show a subtle notification (you could replace this with a better UI notification system)
-    if (typeof window !== 'undefined' && window.variablesSidePanel) {
-      // Use a temporary status message instead of alert to be less intrusive
-      this.showTemporaryStatus(message);
-    }
+    // Show a subtle notification using the floating window
+    this.showTemporaryStatus(message);
   }
 
   /**
-   * Show temporary status message (less intrusive than alert)
+   * Show temporary status message using floating window
    */
   showTemporaryStatus(message) {
-    // Create or update status element
-    let statusElement = document.getElementById('variable-dependency-status');
-    if (!statusElement) {
-      statusElement = document.createElement('div');
-      statusElement.id = 'variable-dependency-status';
-      statusElement.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        background: #4CAF50;
-        color: white;
-        padding: 12px 20px;
-        border-radius: 6px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-        z-index: 10000;
-        font-size: 14px;
-        max-width: 400px;
-        transition: opacity 0.3s ease;
-      `;
-      document.body.appendChild(statusElement);
-    }
-    
-    statusElement.textContent = message;
-    statusElement.style.opacity = '1';
-    
-    // Auto-hide after 4 seconds
-    setTimeout(() => {
-      if (statusElement) {
-        statusElement.style.opacity = '0';
-        setTimeout(() => {
-          if (statusElement && statusElement.parentNode) {
-            statusElement.parentNode.removeChild(statusElement);
-          }
-        }, 300);
-      }
-    }, 4000);
+    // Use the new floating window instead of the old status element
+    this.showSimpleCompletionNotification(message);
   }
 }
 
 // Create and export singleton instance
 export const variableDependencyExecutor = new VariableDependencyExecutor();
 export default variableDependencyExecutor;
+
+// Make it globally available
+window.variableDependencyExecutor = variableDependencyExecutor;
+
+// Test functions for debugging
+window.testDependencyIndicator = function() {
+  const executor = variableDependencyExecutor;
+  
+  executor.showDependencyExecutionIndicator();
+  
+  // Simulate variable execution progress
+  setTimeout(() => {
+    executor.updateDependencyExecutionProgress('variable_1', 0, 3);
+  }, 1000);
+  
+  setTimeout(() => {
+    executor.updateDependencyExecutionProgress('variable_2', 1, 3);
+  }, 2000);
+  
+  setTimeout(() => {
+    executor.updateDependencyExecutionProgress('variable_3', 2, 3);
+  }, 3000);
+  
+  // Show completion
+  setTimeout(() => {
+    executor.showDependencyExecutionComplete(3);
+  }, 4000);
+};
+
+// Test simple completion notification
+window.testSimpleNotification = function(message = 'All 3 variables executed') {
+  const executor = variableDependencyExecutor;
+  executor.showSimpleCompletionNotification(message);
+};
+
+// Test dependency update notification
+window.testDependencyUpdate = function() {
+  const executor = variableDependencyExecutor;
+  executor.showDependencyUpdateNotification('revenue', ['profit', 'margin']);
+};

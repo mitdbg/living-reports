@@ -848,9 +848,11 @@ class VariablesSidePanel {
       
       await variablesManager.saveVariables();
       
-      // Show success message
+      // Show success message using floating window
       const varCount = Object.keys(results).length;
-      alert(`✅ Successfully executed ${varCount} variables in dependency order!\n\nAll variables now have fresh values.`);
+      if (window.variableDependencyExecutor) {
+        window.variableDependencyExecutor.showSimpleCompletionNotification(`All ${varCount} variables executed`);
+      }
       
     } catch (error) {
       console.error('❌ Error during force execution:', error);
@@ -1896,9 +1898,10 @@ class VariablesSidePanel {
         // Update the variable value display
         this.updateValueDisplay(displayResult);
         
-        // Show success message
-        const shortResult = displayResult.length > 200 ? displayResult.substring(0, 200) + '...' : displayResult;
-        alert(`✅ Code execution successful!\n\nResult: ${shortResult}\n\n📝 Variable value has been set and ready to save.`);
+        // Show success message using floating window
+        if (window.variableDependencyExecutor) {
+          window.variableDependencyExecutor.showSimpleCompletionNotification('Variable value set and ready to save');
+        }
       } else {
         console.warn('Code execution returned no usable result');
         alert(`⚠️ Code executed but returned no result.\n\nThe code ran without errors, but didn't return a value that can be used as the variable value.\n\nTip: Make sure your code returns the final result.`);
