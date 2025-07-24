@@ -59,152 +59,118 @@ def GetPatientData(case_id: str) -> Dict[str, Any]:
     result = {"age": None, "sex": None, "x_ray_jpeg": [], "x_ray_dicom": []}
 
     # Create temporary directory for downloads and conversions
-    temp_dir = tempfile.mkdtemp(prefix="midrc_download_")
-
-    try:
-        # Initialize Gen3 authentication and query client
-        auth = Gen3Auth(
-            MIDRC_API, refresh_file=os.environ.get("MIDRC_CREDENTIALS_PATH")
-        )
-        query = Gen3Query(auth)
-
-        # Step 1: Get case information to extract patient demographics
-        logger.info(f"Querying case information for case_id: {case_id}")
-        case_info = query.raw_data_download(
-            data_type="case",
-            fields=None,
-            filter_object={
-                "AND": [
-                    {"IN": {"submitter_id": [case_id]}},
-                ]
-            },
-            sort_fields=[{"submitter_id": "asc"}],
-        )
-        # Extract patient demographics from case info
-        if case_info and len(case_info) > 0:
-            case_data = case_info[0]
-            result["age"] = case_data.get("age_at_index")
-            result["sex"] = case_data.get("sex")
-            result["measurements"] = case_data.get("measurements", [])
-            result["medications"] = case_data.get("medications", [])
-            logger.info(
-                f"Found patient demographics - Age: {result['age']}, Sex: {result['sex']}"
+    # temp_dir = tempfile.mkdtemp(prefix="midrc_download_")
+    case_dir = f"database/midr_files/{case_id}"
+    os.makedirs(case_dir, exist_ok=True)
+    result_cache = os.path.join(case_dir, "result_cache.json")
+    if os.path.exists(result_cache):
+        logger.info(f"Loading cached results for case {case_id}")
+        with open(result_cache, "r") as f:
+            return json.load(f)
+    else:
+        try:
+            # Initialize Gen3 authentication and query client
+            auth = Gen3Auth(
+                MIDRC_API, refresh_file=os.environ.get("MIDRC_CREDENTIALS_PATH")
             )
-        if len(case_info) > 0 and "submitter_id" in case_info[0]:
-            case_ids = [i["submitter_id"] for i in case_info]
+            query = Gen3Query(auth)
 
-        # Step 2: Get X-ray files associated with the case
-        logger.info(f"Querying X-ray files for case_id: {case_id}")
-        x_ray_files = query.raw_data_download(
-            data_type="data_file",
-            fields=None,
-            filter_object={
-                "AND": [
-                    {"IN": {"case_ids": case_ids}},
-                ]
-            },
-            sort_fields=[{"submitter_id": "asc"}],
-        )
+            # Step 1: Get case information to extract patient demographics
+            logger.info(f"Querying case information for case_id: {case_id}")
+            case_info = query.raw_data_download(
+                data_type="case",
+                fields=None,
+                filter_object={"IN": {"case_ids": [case_id]}},
+                sort_fields=[{"submitter_id": "asc"}],
+            )
+            # Extract patient demographics from case info
+            if case_info and len(case_info) > 0:
+                case_data = case_info[0]
+                result["age"] = case_data.get("age_at_index")
+                result["sex"] = case_data.get("sex")
+                result["measurements"] = case_data.get("measurements", [])
+                result["medications"] = case_data.get("medications", [])
+                logger.info(
+                    f"Found patient demographics - Age: {result['age']}, Sex: {result['sex']}"
+                )
 
-        # Step 3: Download and process X-ray files (DICOM and JPEG)
-        if x_ray_files:
-            logger.info(f"Found {len(x_ray_files)} X-ray files")
-            cred_path = os.environ.get("MIDRC_CREDENTIALS_PATH")
-            for file_info in x_ray_files:
-                if "object_id" in file_info:
-                    object_id = file_info["object_id"]
-                    logger.info(f"Downloading file with object_id: {object_id}")
-                    # Create subdirectory for this file
-                    file_output_dir = os.path.join(
-                        temp_dir, object_id.replace("/", "_")
-                    )
-                    os.makedirs(file_output_dir, exist_ok=True)
-                    # Download the file synchronously
-                    download_result = _download_file_sync(
-                        object_id, cred_path, file_output_dir
-                    )
-                    if download_result["success"]:
-                        # Flatten file structure first (like in the working code)
-                        _flatten_downloaded_files(file_output_dir)
-                        # Get updated file list after flattening
-                        updated_files = []
-                        for root, dirs, files in os.walk(file_output_dir):
-                            for file in files:
-                                file_path = os.path.join(root, file)
-                                updated_files.append(file_path)
-                        # Process downloaded DICOM files: store both DICOM and JPEG paths
-                        for downloaded_file in updated_files:
-                            if downloaded_file.lower().endswith((".dcm", ".dicom")):
-                                # Add DICOM file path
-                                result["x_ray_dicom"].append(downloaded_file)
-                                # Convert to JPEG and add JPEG path
-                                jpeg_path = _convert_dicom_to_jpeg(
-                                    downloaded_file, temp_dir
-                                )
-                                if jpeg_path:
-                                    result["x_ray_jpeg"].append(jpeg_path)
-                                    logger.info(f"Converted DICOM to JPEG: {jpeg_path}")
-                            elif downloaded_file.lower().endswith(
-                                (".zip", ".tar", ".gz")
-                            ):
-                                # Extract archives and process contents
-                                extracted_files = _extract_archive(
-                                    downloaded_file, file_output_dir
-                                )
-                                for extracted_file in extracted_files:
-                                    if extracted_file.lower().endswith(
-                                        (".dcm", ".dicom")
-                                    ):
-                                        # Add DICOM file path
-                                        result["x_ray_dicom"].append(extracted_file)
-                                        # Convert to JPEG and add JPEG path
-                                        jpeg_path = _convert_dicom_to_jpeg(
-                                            extracted_file, temp_dir
-                                        )
-                                        if jpeg_path:
-                                            result["x_ray_jpeg"].append(jpeg_path)
-                                            logger.info(
-                                                f"Converted DICOM to JPEG: {jpeg_path}"
-                                            )
-        logger.info(
-            f"Successfully processed case {case_id}. Found {len(result['x_ray_jpeg'])} JPEG and {len(result['x_ray_dicom'])} DICOM X-ray images."
-        )
-    except Exception as e:
-        logger.error(f"Error processing case {case_id}: {str(e)}")
-        raise
-    finally:
-        # Clean up temporary directory (comment out if you want to keep files)
-        # shutil.rmtree(temp_dir, ignore_errors=True)
-        pass
-    return result
+            # Step 2: Get X-ray files associated with the case
+            logger.info(f"Querying X-ray files for case_id: {case_id}")
+            x_ray_files = query.raw_data_download(
+                data_type="data_file",
+                fields=None,
+                filter_object={"IN": {"case_ids": [case_id]}},
+                sort_fields=[{"submitter_id": "asc"}],
+            )
+
+            # Step 3: Download and process X-ray files (DICOM and JPEG)
+            if x_ray_files:
+                logger.info(f"Found {len(x_ray_files)} X-ray files")
+                cred_path = os.environ.get("MIDRC_CREDENTIALS_PATH")
+                dicoms = []
+                jpegs = []
+                for file_info in x_ray_files:
+                    if "object_id" in file_info:
+                        object_id = file_info["object_id"]
+                        print(f"Downloading file with object_id: {object_id}")
+                        case_path = os.path.abspath(case_dir)
+                        _ = _download_file_sync(object_id, cred_path, case_path)
+
+                _flatten_directory(case_dir)
+                for f in os.listdir(case_dir):
+                    if f.lower().endswith((".zip", ".tar", ".gz")):
+                        _ = _extract_archive(os.path.join(case_dir, f), case_dir)
+                _flatten_directory(case_dir)
+
+                for f in os.listdir(case_dir):
+                    if f.lower().endswith((".dcm", ".dicom")):
+                        dicoms.append(os.path.join(case_dir, f))
+                        jpeg_path = _convert_dicom_to_jpeg(os.path.join(case_dir, f), case_dir)
+                        if jpeg_path:
+                            jpegs.append(jpeg_path)
+                            logger.info(f"Converted DICOM to JPEG: {jpeg_path}")
 
 
-def _flatten_downloaded_files(root_dir: str):
+                result["x_ray_jpeg"] = jpegs
+                result["x_ray_dicom"] = dicoms
+            # Store result in json cache
+            with open(result_cache, "w") as f:
+                json.dump(result, f, indent=2)
+
+            logger.info(
+                f"Successfully processed case {case_id}. Found {len(result['x_ray_jpeg'])} JPEG and {len(result['x_ray_dicom'])} DICOM X-ray images."
+            )
+
+        except Exception as e:
+            logger.error(f"Error processing case {case_id}: {str(e)}")
+            raise
+        return result
+
+
+def _flatten_directory(root_dir: str):
     """
     Flatten file structure by moving all files from subdirectories to the root directory.
     Based on the working MIDRC code.
     """
-    try:
-        for dirpath, dirnames, filenames in os.walk(root_dir):
-            if dirpath == root_dir:
-                continue
-            for filename in filenames:
-                src_path = os.path.join(dirpath, filename)
-                dst_path = os.path.join(root_dir, filename)
+    base_path = os.path.abspath(root_dir)
 
-                # Avoid overwriting files with the same name
-                if os.path.exists(dst_path):
-                    base, ext = os.path.splitext(filename)
-                    i = 1
-                    while os.path.exists(dst_path):
-                        new_filename = f"{base}_{i}{ext}"
-                        dst_path = os.path.join(root_dir, new_filename)
-                        i += 1
+    for root, dirs, files in os.walk(base_path, topdown=False):
+        if root == base_path:
+            continue  # Skip the base directory
 
-                shutil.move(src_path, dst_path)
-                logger.info(f"Moved {src_path} to {dst_path}")
-    except Exception as e:
-        logger.warning(f"Error flattening files: {e}")
+        for file in files:
+            src = os.path.join(root, file)
+            dst = os.path.join(base_path, file)
+            # If a file with the same name exists, skip it 
+            if os.path.exists(dst):
+                logger.info("Skipping file due to name conflict: %s", file)
+            else:
+                shutil.move(src, dst)
+
+        # Remove empty directory
+        for d in dirs:
+            shutil.rmtree(os.path.join(root, d), ignore_errors=True)
+        shutil.rmtree(root, ignore_errors=True)
 
 
 def _extract_archive(archive_path: str, output_dir: str) -> List[str]:
@@ -220,11 +186,11 @@ def _extract_archive(archive_path: str, output_dir: str) -> List[str]:
             # Find all extracted files
             for root, dirs, files in os.walk(output_dir):
                 for file in files:
-                    if file != os.path.basename(
-                        archive_path
-                    ):  # Skip the original archive
+                    if file != os.path.basename(archive_path):  # Skip the original archive
                         file_path = os.path.join(root, file)
                         extracted_files.append(file_path)
+
+        os.remove(archive_path)
 
         logger.info(f"Extracted {len(extracted_files)} files from {archive_path}")
     except Exception as e:
