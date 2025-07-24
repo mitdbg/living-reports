@@ -656,47 +656,55 @@ def GetPatientAgePlot(x_ray_dicom_files: List[str]) -> str:
         return f'<div class="image-error">❌ Error: Chart file not generated</div>'
 
 
-async def get_codes_from_natural_language(natural_language_query):
+def get_codes_from_natural_language(natural_language_query):
     BASE = "http://localhost:8000"
     
-    async with httpx.AsyncClient(timeout=10) as client:
-        r = await client.get(f"{BASE}/cuis", params={"query": natural_language_query})
+    r = requests.get(f"{BASE}/cuis", params={"query": natural_language_query}, timeout=60)
+    r.raise_for_status()
+    matches = r.json()
+    results = [m for m in matches["cuis"] if m["language_code"] == "ENG"]
+
+    codes = {m['cui']: m for m in results}
+    snomed_codes = {}
+    billing_codes = {}
+    for key, cui in codes.items():
+        r = requests.get(f"{BASE}/code-map/", params={"cui": key}, timeout=10)
         r.raise_for_status()
-        matches = r.json()
-        results = [m for m in matches["cuis"] if m["language_code"] == "ENG"]
+        matches = r.json()['code_maps']
+        for m in matches:
+            if m['sab'] == 'SNOMEDCT_US':
+                snomed_codes[key] = m
+                codes[key]['snomed'] = m
+            elif m['sab'] == 'ICD10CM':
+                billing_codes[key] = m
+                codes[key]['icd10m'] = m
 
-        codes = {m['cui']: m for m in results}
-        snomed_codes = {}
-        billing_codes = {}
-        for key, cui in codes.items():
-            r = await client.get(f"{BASE}/code-map/", params={"cui": key})
-            r.raise_for_status()
-            matches = r.json()['code_maps']
-            for m in matches:
-                if m['sab'] == 'SNOMEDCT_US':
-                    snomed_codes[key] = m
-                    codes[key]['snomed'] = m
-                elif m['sab'] == 'ICD10CM':
-                    billing_codes[key] = m
-                    codes[key]['icd10m'] = m
-            
-        # Retain only CUI codes that have both SNOMED and ICD10CM codes
-        return_codes = []
-        for key in list(codes.keys()):
-            if key in snomed_codes and key in billing_codes:
-                return_codes.append({
-                    "cui": key,
-                    "cui_name": codes[key]['name'],
-                    "snomed_code": snomed_codes[key]['code'],
-                    "snomed_name": snomed_codes[key]['name'],
-                    "icd10cm_code": billing_codes[key]['code'],
-                    "icd10cm_name": billing_codes[key]['name']
-                })
+    # Retain only CUI codes that have both SNOMED and ICD10CM codes
+    return_codes = []
+    for key in list(codes.keys()):
+        if key in snomed_codes and key in billing_codes:
+            return_codes.append({
+                "cui": key,
+                "cui_name": codes[key]['name'],
+                "snomed_code": snomed_codes[key]['code'],
+                "snomed_name": snomed_codes[key]['name'],
+                "icd10cm_code": billing_codes[key]['code'],
+                "icd10cm_name": billing_codes[key]['name']
+            })
 
-        return return_codes
+    if not return_codes:
+        return [{
+            "cui": "N/A",
+            "cui_name": "No matching CUI found",
+            "snomed_code": "N/A",
+            "snomed_name": "N/A",
+            "icd10cm_code": "N/A",
+            "icd10cm_name": "N/A"
+        }]
 
+    return return_codes
 
-def _get_medical_codes_for_finding(clinical_finding: str, snomed_code: str, snomed_description: str) -> list[dict]:
+def _get_medical_codes_for_finding(clinical_finding: str, snomed_code: str, snomed_description: str) -> List[Dict[str, str]]:
     """
     Helper function to generate appropriate medical codes based on clinical finding.
     
@@ -710,16 +718,15 @@ def _get_medical_codes_for_finding(clinical_finding: str, snomed_code: str, snom
     """
     # For now, return hardcoded values regardless of input
     # This can be extended later to use actual medical coding APIs/databases
-    return [{
-        'cui': 'C0020312',
-        'cui_name': 'transudative pleural effusion',
-        'snomed_code': '79231000',
-        'snomed_name': 'Hydrothorax (disorder)',
-        'icd10cm_code': 'J94.8',
-        'icd10cm_name': 'Hydrothorax'
-    }]
-
-    return asyncio.run(get_codes_from_natural_language(clinical_finding))
+    # return [{
+    #     'cui': 'C0020312',
+    #     'cui_name': 'transudative pleural effusion',
+    #     'snomed_code': '79231000',
+    #     'snomed_name': 'Hydrothorax (disorder)',
+    #     'icd10cm_code': 'J94.8',
+    #     'icd10cm_name': 'Hydrothorax'
+    # }]
+    return get_codes_from_natural_language(clinical_finding)
 
 def GetCodesFromNaturalLanguage(annotations_html_table: str) -> str:
     """
@@ -730,8 +737,8 @@ def GetCodesFromNaturalLanguage(annotations_html_table: str) -> str:
         annotations_html_table (str): HTML table string from GenerateAnnotations output
         
     Returns:
-        str: Enhanced HTML table with additional columns:
-             ['cui', 'cui_name', 'snomed_code', 'snomed_name', 'icd10cm_code', 'icd10cm_name']
+        str: Billing HTML table with additional columns:
+             ['cui', 'cui_name', 'icd10cm_code', 'icd10cm_name']
     """
     try:
         from bs4 import BeautifulSoup
@@ -750,7 +757,7 @@ def GetCodesFromNaturalLanguage(annotations_html_table: str) -> str:
         
         if not all_tables:
             return '<div class="annotation-error">❌ Error: No table found in input HTML</div>'
-            
+
         # Use only the first table to avoid duplication
         table = all_tables[0]
         
@@ -806,7 +813,7 @@ def GetCodesFromNaturalLanguage(annotations_html_table: str) -> str:
         if not any('icd' in col and 'name' in col for col in existing_columns_lower):
             new_headers.append('ICD-10-CM Name')
         
-        all_headers = original_headers + new_headers
+        all_headers = new_headers
         logger.info(f"Adding new columns: {new_headers}")
         
         # Extract data rows - ensure we don't have duplicate or malformed rows
@@ -853,14 +860,14 @@ def GetCodesFromNaturalLanguage(annotations_html_table: str) -> str:
             existing_snomed_code = ""
             existing_snomed_description = ""
             
-            for i, header in enumerate(original_headers):
-                if i < len(row_data):
-                    if 'clinical finding' in header.lower():
-                        clinical_finding = row_data[i]
-                    elif 'snomed_ct code' in header.lower() or 'snomed code' in header.lower():
-                        existing_snomed_code = row_data[i]
-                    elif 'snomed_ct description' in header.lower() or ('snomed' in header.lower() and 'description' in header.lower()):
-                        existing_snomed_description = row_data[i]
+            # for i, header in enumerate(all_headers):
+            #     if i < len(row_data):
+            #         if 'clinical finding' in header.lower():
+            #             clinical_finding = row_data[i]
+            #         elif 'snomed_ct code' in header.lower() or 'snomed code' in header.lower():
+            #             existing_snomed_code = row_data[i]
+            #         elif 'snomed_ct description' in header.lower() or ('snomed' in header.lower() and 'description' in header.lower()):
+            #             existing_snomed_description = row_data[i]
             
             # Generate medical codes based on clinical finding
             medical_codes = _get_medical_codes_for_finding(clinical_finding, existing_snomed_code, existing_snomed_description)
