@@ -7,6 +7,7 @@ import requests
 import subprocess
 from typing import Dict, List, Optional, Any
 import json
+import time
 import openai
 import urllib.parse
 import asyncio
@@ -37,10 +38,246 @@ logger = logging.getLogger("tools")
 
 MIDRC_API = "https://data.midrc.org"
 
+# Cache configuration
+PATIENT_CACHE_DIR = "database/files/patient_cache"
+CACHE_VERSION = "1.0"
+
+
+def _get_cache_directory(case_id: str) -> str:
+    """Get the cache directory path for a specific case ID."""
+    if not case_id:
+        raise ValueError("case_id cannot be None or empty")
+    return os.path.join(PATIENT_CACHE_DIR, case_id)
+
+
+def _get_cache_metadata_path(case_id: str) -> str:
+    """Get the cache metadata file path for a specific case ID."""
+    return os.path.join(_get_cache_directory(case_id), "cache_metadata.json")
+
+
+def _create_cache_directory(case_id: str) -> str:
+    """Create cache directory for a case ID and return the path."""
+    cache_dir = _get_cache_directory(case_id)
+    os.makedirs(cache_dir, exist_ok=True)
+    return cache_dir
+
+
+def _copy_files_to_cache(file_paths: List[str], cache_dir: str, file_type: str) -> List[str]:
+    """
+    Copy files from temp directories to permanent cache directory.
+    
+    Args:
+        file_paths: List of original file paths (potentially in temp directories)
+        cache_dir: Target cache directory
+        file_type: File type suffix for organizing (e.g., 'dicom', 'jpeg')
+        
+    Returns:
+        List of new permanent file paths
+    """
+    permanent_paths = []
+    
+    for file_path in file_paths:
+        # Skip None or empty paths
+        if not file_path or file_path is None:
+            logger.warning(f"Skipping None or empty file path in cache copy")
+            continue
+            
+        if not os.path.exists(file_path):
+            logger.warning(f"Source file not found during cache copy: {file_path}")
+            continue
+            
+        # Create a unique filename to avoid conflicts
+        original_name = os.path.basename(file_path)
+        name_without_ext = os.path.splitext(original_name)[0]
+        extension = os.path.splitext(original_name)[1]
+        
+        # Generate unique filename if needed
+        target_path = os.path.join(cache_dir, f"{name_without_ext}_{file_type}{extension}")
+        counter = 1
+        while os.path.exists(target_path):
+            target_path = os.path.join(cache_dir, f"{name_without_ext}_{file_type}_{counter}{extension}")
+            counter += 1
+            
+        try:
+            shutil.copy2(file_path, target_path)
+            permanent_paths.append(target_path)
+            logger.info(f"Cached file: {file_path} -> {target_path}")
+        except Exception as e:
+            logger.error(f"Failed to copy file to cache: {file_path} -> {target_path}: {e}")
+            
+    return permanent_paths
+
+
+def _validate_cached_files(file_paths: List[str]) -> bool:
+    """
+    Validate that all cached files still exist.
+    
+    Args:
+        file_paths: List of file paths to validate
+        
+    Returns:
+        True if all files exist, False otherwise
+    """
+    for file_path in file_paths:
+        # Skip None or empty paths
+        if not file_path or file_path is None:
+            logger.warning(f"Found None or empty file path in cache validation")
+            return False
+            
+        if not os.path.exists(file_path):
+            logger.warning(f"Cached file no longer exists: {file_path}")
+            return False
+    return True
+
+
+def _save_cache_metadata(case_id: str, result: Dict[str, Any]) -> None:
+    """
+    Save cache metadata to disk.
+    
+    Args:
+        case_id: The case ID
+        result: The result data to cache
+    """
+    cache_metadata = {
+        "case_id": case_id,
+        "timestamp": time.time(),
+        "cache_version": CACHE_VERSION,
+        "result": result
+    }
+    
+    metadata_path = _get_cache_metadata_path(case_id)
+    try:
+        with open(metadata_path, 'w') as f:
+            json.dump(cache_metadata, f, indent=2)
+        logger.info(f"Saved cache metadata for case {case_id}")
+    except Exception as e:
+        logger.error(f"Failed to save cache metadata for case {case_id}: {e}")
+
+
+def _load_cache_metadata(case_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Load cache metadata from disk.
+    
+    Args:
+        case_id: The case ID
+        
+    Returns:
+        Cache metadata dict or None if not found/invalid
+    """
+    metadata_path = _get_cache_metadata_path(case_id)
+    
+    if not os.path.exists(metadata_path):
+        return None
+        
+    try:
+        with open(metadata_path, 'r') as f:
+            metadata = json.load(f)
+            
+        # Validate cache version
+        if metadata.get("cache_version") != CACHE_VERSION:
+            logger.info(f"Cache version mismatch for case {case_id}, invalidating cache")
+            return None
+            
+        return metadata
+    except Exception as e:
+        logger.error(f"Failed to load cache metadata for case {case_id}: {e}")
+        return None
+
+
+def _get_cached_patient_data(case_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Retrieve cached patient data if available and valid.
+    
+    Args:
+        case_id: The case ID
+        
+    Returns:
+        Cached result or None if not available/invalid
+    """
+    if not case_id:
+        return None
+        
+    metadata = _load_cache_metadata(case_id)
+    if not metadata:
+        return None
+        
+    result = metadata.get("result")
+    if not result:
+        return None
+        
+    # Filter out any None values from cached file lists
+    x_ray_jpeg = [path for path in result.get("x_ray_jpeg", []) if path is not None and path.strip()]
+    x_ray_dicom = [path for path in result.get("x_ray_dicom", []) if path is not None and path.strip()]
+    
+    # Update result with filtered lists
+    result["x_ray_jpeg"] = x_ray_jpeg
+    result["x_ray_dicom"] = x_ray_dicom
+        
+    # Validate that all cached files still exist
+    all_files = x_ray_jpeg + x_ray_dicom
+    if not _validate_cached_files(all_files):
+        logger.warning(f"Some cached files missing for case {case_id}, invalidating cache")
+        return None
+        
+    logger.info(f"Cache hit for case {case_id}")
+    return result
+
+
+def _cache_patient_data(case_id: str, result: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Cache patient data with files copied to permanent locations.
+    
+    Args:
+        case_id: The case ID
+        result: The result data to cache
+        
+    Returns:
+        Updated result with permanent file paths
+    """
+    if not case_id:
+        logger.error("Cannot cache data: case_id is None or empty")
+        return result
+        
+    try:
+        cache_dir = _create_cache_directory(case_id)
+        
+        # Copy files to permanent cache locations
+        cached_result = result.copy()
+        
+        # Cache JPEG files - filter out None values first
+        jpeg_files = [f for f in result.get("x_ray_jpeg", []) if f is not None and f.strip()]
+        if jpeg_files:
+            cached_result["x_ray_jpeg"] = _copy_files_to_cache(
+                jpeg_files, cache_dir, "jpeg"
+            )
+        else:
+            cached_result["x_ray_jpeg"] = []
+            
+        # Cache DICOM files - filter out None values first
+        dicom_files = [f for f in result.get("x_ray_dicom", []) if f is not None and f.strip()]
+        if dicom_files:
+            cached_result["x_ray_dicom"] = _copy_files_to_cache(
+                dicom_files, cache_dir, "dicom"
+            )
+        else:
+            cached_result["x_ray_dicom"] = []
+            
+        # Save metadata
+        _save_cache_metadata(case_id, cached_result)
+        
+        logger.info(f"Cache miss - cached patient data for case {case_id}")
+        return cached_result
+        
+    except Exception as e:
+        logger.error(f"Failed to cache patient data for case {case_id}: {e}")
+        # Return original result if caching fails
+        return result
+
 
 def GetPatientData(case_id: str) -> Dict[str, Any]:
     """
     Download MIDRC data for a case ID and extract patient demographics and X-ray images.
+    Uses caching to avoid re-downloading data and ensures file availability.
 
     Args:
         case_id (str): The MIDRC case ID to download data for
@@ -49,9 +286,18 @@ def GetPatientData(case_id: str) -> Dict[str, Any]:
         Dict containing:
             - age: Patient age (int or None)
             - sex: Patient sex (str or None)
-            - x_ray_jpeg: List of X-ray image file paths in JPEG format
-            - x_ray_dicom: List of X-ray image file paths in DICOM format
+            - x_ray_jpeg: List of X-ray image file paths in JPEG format (permanent cache paths)
+            - x_ray_dicom: List of X-ray image file paths in DICOM format (permanent cache paths)
     """
+    # Validate input
+    if not case_id or case_id is None:
+        raise ValueError("case_id cannot be None or empty")
+    
+    # Check cache first
+    cached_result = _get_cached_patient_data(case_id)
+    if cached_result is not None:
+        return cached_result
+    
     # Initialize return structure for demographics and both image formats
     result = {"age": None, "sex": None, "x_ray_jpeg": [], "x_ray_dicom": []}
 
@@ -173,7 +419,103 @@ def GetPatientData(case_id: str) -> Dict[str, Any]:
         # Clean up temporary directory (comment out if you want to keep files)
         # shutil.rmtree(temp_dir, ignore_errors=True)
         pass
-    return result
+    
+    # Filter out any None values from file lists before caching
+    result["x_ray_jpeg"] = [path for path in result["x_ray_jpeg"] if path is not None and path.strip()]
+    result["x_ray_dicom"] = [path for path in result["x_ray_dicom"] if path is not None and path.strip()]
+    
+    # Cache the result with files copied to permanent locations
+    cached_result = _cache_patient_data(case_id, result)
+    return cached_result
+
+
+def clear_patient_cache(case_id: Optional[str] = None) -> None:
+    """
+    Clear cached patient data.
+    
+    Args:
+        case_id: Specific case ID to clear, or None to clear all cache
+    """
+    if case_id and case_id.strip():
+        # Clear cache for specific case
+        try:
+            cache_dir = _get_cache_directory(case_id)
+            if os.path.exists(cache_dir):
+                shutil.rmtree(cache_dir)
+                logger.info(f"Cleared cache for case {case_id}")
+            else:
+                logger.info(f"No cache found for case {case_id}")
+        except Exception as e:
+            logger.error(f"Failed to clear cache for case {case_id}: {e}")
+    else:
+        # Clear entire cache
+        if os.path.exists(PATIENT_CACHE_DIR):
+            try:
+                shutil.rmtree(PATIENT_CACHE_DIR)
+                logger.info("Cleared entire patient cache")
+            except Exception as e:
+                logger.error(f"Failed to clear entire patient cache: {e}")
+        else:
+            logger.info("No patient cache directory found")
+
+
+def get_cache_info() -> Dict[str, Any]:
+    """
+    Get information about the current cache state.
+    
+    Returns:
+        Dict with cache statistics and information
+    """
+    cache_info = {
+        "cache_directory": PATIENT_CACHE_DIR,
+        "cache_version": CACHE_VERSION,
+        "cached_cases": [],
+        "total_cached_files": 0,
+        "total_cache_size_bytes": 0
+    }
+    
+    if not os.path.exists(PATIENT_CACHE_DIR):
+        return cache_info
+        
+    try:
+        # Iterate through cached cases
+        for case_id in os.listdir(PATIENT_CACHE_DIR):
+            case_cache_dir = os.path.join(PATIENT_CACHE_DIR, case_id)
+            if not os.path.isdir(case_cache_dir):
+                continue
+                
+            metadata_path = _get_cache_metadata_path(case_id)
+            if os.path.exists(metadata_path):
+                try:
+                    with open(metadata_path, 'r') as f:
+                        metadata = json.load(f)
+                    
+                    # Count files and calculate size
+                    case_files = 0
+                    case_size = 0
+                    for root, dirs, files in os.walk(case_cache_dir):
+                        for file in files:
+                            file_path = os.path.join(root, file)
+                            case_files += 1
+                            case_size += os.path.getsize(file_path)
+                    
+                    cache_info["cached_cases"].append({
+                        "case_id": case_id,
+                        "timestamp": metadata.get("timestamp"),
+                        "files_count": case_files,
+                        "size_bytes": case_size
+                    })
+                    
+                    cache_info["total_cached_files"] += case_files
+                    cache_info["total_cache_size_bytes"] += case_size
+                    
+                except Exception as e:
+                    logger.warning(f"Error reading cache info for case {case_id}: {e}")
+    
+    except Exception as e:
+        logger.error(f"Error getting cache info: {e}")
+    
+    return cache_info
 
 
 def _flatten_downloaded_files(root_dir: str):
