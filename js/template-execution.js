@@ -439,8 +439,8 @@ function isRichHTMLContent(text) {
     /<table[^>]*style=[^>]*border-collapse/i,
     
     // Enhanced annotations table content
-    /<div[^>]*class="enhanced-annotations-table-container"/i,
-    /<table[^>]*class="enhanced-annotations-table"/i,
+    /<div[^>]*class="billing-table-container"/i,
+    /<table[^>]*class="billing-table"/i,
     
     // Markdown rendered content
     /<div[^>]*class="markdown-content"/i,

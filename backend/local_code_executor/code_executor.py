@@ -10,9 +10,9 @@ if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)
 
 def execute_code_locally(code, parameters):
-    print(f"{code}")
-    print("================================================")
-    print(f"parameters: {parameters}")
+    # print(f"{code}")
+    # print("================================================")
+    # print(f"parameters: {parameters}")
     
     if not code.strip():
         return {"output": {"error": "No code provided", "type": "ValueError"}}

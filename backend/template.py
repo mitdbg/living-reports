@@ -322,7 +322,14 @@ class Template:
                     # If the value is an <img> tag or HTML table, return as raw HTML
                     if isinstance(resolved_value, str) and resolved_value.strip().startswith('<img'):
                         return resolved_value
-                    if isinstance(resolved_value, str) and (resolved_value.strip().startswith('<div class="annotations-table-container"') or resolved_value.strip().startswith('<div class="enhanced-annotations-table-container"')):
+                    if isinstance(resolved_value, str) and (
+                        resolved_value.strip().startswith(
+                            '<div class="annotations-table-container"'
+                        )
+                        or resolved_value.strip().startswith(
+                            '<div class="billing-table-container"'
+                        )
+                    ):
                         return resolved_value
                     # Otherwise, wrap in span
                     return f'<span class="var-ref" data-var="{var_name}" data-instance="{variable_instances[var_name]}" data-value="{value}">{resolved_value}</span>'
@@ -350,7 +357,14 @@ class Template:
                     
                     if isinstance(resolved_value, str) and resolved_value.strip().startswith('<img'):
                         return resolved_value
-                    if isinstance(resolved_value, str) and (resolved_value.strip().startswith('<div class="annotations-table-container"') or resolved_value.strip().startswith('<div class="enhanced-annotations-table-container"')):
+                    if isinstance(resolved_value, str) and (
+                        resolved_value.strip().startswith(
+                            '<div class="annotations-table-container"'
+                        )
+                        or resolved_value.strip().startswith(
+                            '<div class="billing-table-container"'
+                        )
+                    ):
                         return resolved_value
                     return f'<span class="var-ref" data-var="{var_name}" data-instance="{variable_instances[var_name]}" data-value="{value}">{resolved_value}</span>'
                 else:
@@ -382,7 +396,14 @@ class Template:
                     
                     if isinstance(resolved_value, str) and resolved_value.strip().startswith('<img'):
                         return resolved_value
-                    if isinstance(resolved_value, str) and (resolved_value.strip().startswith('<div class="annotations-table-container"') or resolved_value.strip().startswith('<div class="enhanced-annotations-table-container"')):
+                    if isinstance(resolved_value, str) and (
+                        resolved_value.strip().startswith(
+                            '<div class="annotations-table-container"'
+                        )
+                        or resolved_value.strip().startswith(
+                            '<div class="billing-table-container"'
+                        )
+                    ):
                         return resolved_value
                     return f'<span class="var-ref" data-var="{var_name}" data-instance="{variable_instances[var_name]}" data-value="{value}">{resolved_value}</span>'
                 else:

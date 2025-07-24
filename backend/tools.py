@@ -1,3 +1,4 @@
+import io
 import os
 import tempfile
 import shutil
@@ -6,6 +7,7 @@ import zipfile
 import httpx
 import requests
 import subprocess
+import pandas as pd
 from typing import Dict, List, Optional, Any
 import json
 import openai
@@ -290,12 +292,6 @@ def _convert_dicom_to_jpeg(dicom_path: str, output_dir: str) -> Optional[str]:
         # Debug: Check if handlers are available
         from pydicom.pixel_data_handlers import gdcm_handler, pylibjpeg_handler
 
-        logger.info(f"GDCM handler available: {gdcm_handler.is_available()}")
-        logger.info(f"PyLibJPEG handler available: {pylibjpeg_handler.is_available()}")
-        logger.info(
-            f"Registered handlers: {[h.__name__ for h in pydicom.config.pixel_data_handlers]}"
-        )
-
         # Read DICOM file with force=True to bypass some validation
         dicom_data = pydicom.dcmread(dicom_path, force=True)
 
@@ -476,16 +472,13 @@ def _convert_csv_to_html_table(csv_content: str) -> str:
     try:
         # Split content into lines and clean up
         lines = csv_content.strip().split("\n")
-        
+
         # Filter out markdown code block markers and empty lines
         clean_lines = []
         for line in lines:
             line = line.strip()
             # Skip markdown code block markers and empty lines
-            if (line.startswith('```') or 
-                line == '```csv' or 
-                line == '```' or 
-                not line):
+            if line.startswith("```") or line == "```csv" or line == "```" or not line:
                 continue
             clean_lines.append(line)
 
@@ -503,7 +496,7 @@ def _convert_csv_to_html_table(csv_content: str) -> str:
         for line in clean_lines:
             # Split by comma, handling quoted fields
             fields = _parse_csv_line(line)
-            
+
             # Skip empty field arrays
             if not fields or all(not f.strip() for f in fields):
                 continue
@@ -596,21 +589,23 @@ def _make_udi_spec(csv_path):
     )
     return spec
 
+
 def _make_udi_spec_visitdate(csv_path):
     chart = (
         Chart()
-        .source('dicom', csv_path)
-        .groupby(['StudyDate'])
-        .rollup('count', count=Op.count())
-        .mark('bar')
-        .x(field='StudyDate', type='nominal')
-        .y(field='count', type='quantitative')
+        .source("dicom", csv_path)
+        .groupby(["StudyDate"])
+        .rollup("count", count=Op.count())
+        .mark("bar")
+        .x(field="StudyDate", type="nominal")
+        .y(field="count", type="quantitative")
     )
     spec = chart.to_dict()
-    for t in spec['transformation']:
-        if 'rollup' in t and isinstance(t['rollup'], str):
-            t['rollup'] = {'count': {'op': 'count'}}
+    for t in spec["transformation"]:
+        if "rollup" in t and isinstance(t["rollup"], str):
+            t["rollup"] = {"count": {"op": "count"}}
     return spec
+
 
 def GetPatientAgePlot(x_ray_dicom_files: List[str]) -> str:
     """
@@ -649,26 +644,28 @@ def GetPatientAgePlot(x_ray_dicom_files: List[str]) -> str:
     output_img = f"udi_chart_{rand_tag}.png"
     # Render the image (Jupyter supports top-level await)
     asyncio.run(udi_to_png(udi_spec, output_img))
-    
+
     # Copy the generated image to a location that can be served by the backend
     chart_dir = "database/files/charts"
     os.makedirs(chart_dir, exist_ok=True)
     chart_path = os.path.join(chart_dir, output_img)
-    
+
     # Copy the generated chart to the serveable location
     if os.path.exists(output_img):
         import shutil
+
         shutil.copy2(output_img, chart_path)
         # Clean up the original file
         os.remove(output_img)
-        
+
         # Create URL for serving the chart
         relative_path = f"database/files/charts/{output_img}"
         chart_url = f"http://127.0.0.1:5001/api/serve-file/{relative_path}"
-        
+
         return f'<img src="{chart_url}" alt="UDI Chart" style="max-width: 100%; height: 200px;" />'
     else:
         return f'<div class="image-error">❌ Error: Chart file not generated</div>'
+
 
 def GetVisitDatePlot(x_ray_dicom_files: List[str]) -> str:
     """
@@ -707,286 +704,128 @@ def GetVisitDatePlot(x_ray_dicom_files: List[str]) -> str:
     output_img = f"udi_chart_{rand_tag}.png"
     # Render the image (Jupyter supports top-level await)
     asyncio.run(udi_to_png(udi_spec, output_img))
-    
+
     # Copy the generated image to a location that can be served by the backend
     chart_dir = "database/files/charts"
     os.makedirs(chart_dir, exist_ok=True)
     chart_path = os.path.join(chart_dir, output_img)
-    
+
     # Copy the generated chart to the serveable location
     if os.path.exists(output_img):
         import shutil
+
         shutil.copy2(output_img, chart_path)
         # Clean up the original file
         os.remove(output_img)
-        
+
         # Create URL for serving the chart
         relative_path = f"database/files/charts/{output_img}"
         chart_url = f"http://127.0.0.1:5001/api/serve-file/{relative_path}"
-        
+
         return f'<img src="{chart_url}" alt="UDI Chart" style="max-width: 100%; height: 200px;" />'
     else:
         return f'<div class="image-error">❌ Error: Chart file not generated</div>'
 
 
-
 def get_codes_from_natural_language(natural_language_query):
     BASE = "http://localhost:8000"
-    
-    r = requests.get(f"{BASE}/cuis", params={"query": natural_language_query}, timeout=60)
+
+    r = requests.get(
+        f"{BASE}/cuis", params={"query": natural_language_query}, timeout=60
+    )
     r.raise_for_status()
     matches = r.json()
     results = [m for m in matches["cuis"] if m["language_code"] == "ENG"]
 
-    codes = {m['cui']: m for m in results}
+    codes = {m["cui"]: m for m in results}
     snomed_codes = {}
     billing_codes = {}
     for key, cui in codes.items():
-        r = requests.get(f"{BASE}/code-map/", params={"cui": key}, timeout=10)
+        r = requests.get(f"{BASE}/code-map/", params={"cui": key}, timeout=60)
         r.raise_for_status()
-        matches = r.json()['code_maps']
+        matches = r.json()["code_maps"]
         for m in matches:
-            if m['sab'] == 'SNOMEDCT_US':
+            if m["sab"] == "SNOMEDCT_US":
                 snomed_codes[key] = m
-                codes[key]['snomed'] = m
-            elif m['sab'] == 'ICD10CM':
+                codes[key]["snomed"] = m
+            elif m["sab"] == "ICD10CM":
                 billing_codes[key] = m
-                codes[key]['icd10m'] = m
+                codes[key]["icd10m"] = m
 
     # Retain only CUI codes that have both SNOMED and ICD10CM codes
     return_codes = []
     for key in list(codes.keys()):
         if key in snomed_codes and key in billing_codes:
-            return_codes.append({
-                "cui": key,
-                "cui_name": codes[key]['name'],
-                "snomed_code": snomed_codes[key]['code'],
-                "snomed_name": snomed_codes[key]['name'],
-                "icd10cm_code": billing_codes[key]['code'],
-                "icd10cm_name": billing_codes[key]['name']
-            })
+            return_codes.append(
+                {
+                    "cui": key,
+                    "cui_name": codes[key]["name"],
+                    "snomed_code": snomed_codes[key]["code"],
+                    "snomed_name": snomed_codes[key]["name"],
+                    "icd10cm_code": billing_codes[key]["code"],
+                    "icd10cm_name": billing_codes[key]["name"],
+                }
+            )
 
     if not return_codes:
-        return [{
-            "cui": "N/A",
-            "cui_name": "No matching CUI found",
-            "snomed_code": "N/A",
-            "snomed_name": "N/A",
-            "icd10cm_code": "N/A",
-            "icd10cm_name": "N/A"
-        }]
+        return [
+            {
+                "cui": "N/A",
+                "cui_name": "No matching CUI found",
+                "snomed_code": "N/A",
+                "snomed_name": "N/A",
+                "icd10cm_code": "N/A",
+                "icd10cm_name": "N/A",
+            }
+        ]
 
     return return_codes
 
-def _get_medical_codes_for_finding(clinical_finding: str, snomed_code: str, snomed_description: str) -> List[Dict[str, str]]:
-    """
-    Helper function to generate appropriate medical codes based on clinical finding.
-    
-    Args:
-        clinical_finding (str): The clinical finding description
-        snomed_code (str): The SNOMED CT code
-        snomed_description (str): The SNOMED CT description
-        
-    Returns:
-        dict: Dictionary containing CUI, SNOMED, and ICD-10-CM codes and descriptions
-    """
-    # For now, return hardcoded values regardless of input
-    # This can be extended later to use actual medical coding APIs/databases
-    # return [{
-    #     'cui': 'C0020312',
-    #     'cui_name': 'transudative pleural effusion',
-    #     'snomed_code': '79231000',
-    #     'snomed_name': 'Hydrothorax (disorder)',
-    #     'icd10cm_code': 'J94.8',
-    #     'icd10cm_name': 'Hydrothorax'
-    # }]
-    return get_codes_from_natural_language(clinical_finding)
 
-def GetCodesFromNaturalLanguage(annotations_html_table: str) -> str:
+def GetBillingTable(annotations_html_table: str) -> str:
     """
-    Takes HTML table output from GenerateAnnotations and returns an enhanced HTML table 
-    with additional medical coding columns (CUI, SNOMED, ICD-10-CM).
-    
+    Takes HTML table output from GenerateAnnotations and returns a billing HTML table with columns containing the billing codes (ICD-10-CM).
+
     Args:
         annotations_html_table (str): HTML table string from GenerateAnnotations output
-        
+
     Returns:
-        str: Billing HTML table with additional columns:
+        str: Billing HTML table with columns containing the billing codes (ICD-10-CM).
              ['cui', 'cui_name', 'icd10cm_code', 'icd10cm_name']
     """
-    try:
-        from bs4 import BeautifulSoup
-        import re
-        
-        # Debug logging to understand input structure
-        logger.info(f"Input HTML length: {len(annotations_html_table)}")
-        logger.info(f"Input HTML preview: {annotations_html_table[:500]}...")
-        
-        # Parse the HTML table and ensure we only process one table
-        soup = BeautifulSoup(annotations_html_table, 'html.parser')
-        
-        # Find all tables and log count for debugging
-        all_tables = soup.find_all('table')
-        logger.info(f"Found {len(all_tables)} table(s) in input HTML")
-        
-        if not all_tables:
-            return '<div class="annotation-error">❌ Error: No table found in input HTML</div>'
 
-        # Use only the first table to avoid duplication
-        table = all_tables[0]
-        
-        # Extract headers and data rows
-        thead = table.find('thead')
-        tbody = table.find('tbody')
-        
-        if not thead or not tbody:
-            return '<div class="annotation-error">❌ Error: Invalid table structure</div>'
-        
-        # Get original headers - use only the first header row to avoid duplicates
-        header_rows = thead.find_all('tr')
-        if not header_rows:
-            return '<div class="annotation-error">❌ Error: No header row found</div>'
-            
-        header_cells = header_rows[0].find_all('th')
-        original_headers = [cell.get_text().strip() for cell in header_cells]
-        
-        logger.info(f"Original headers: {original_headers}")
-        
-        # Validate headers - skip if we see malformed data like 'csv' as header
-        if any(header.lower() in ['csv', '```csv', '```'] for header in original_headers):
-            return '<div class="annotation-error">❌ Error: Malformed table headers detected</div>'
-        
-        # Check which columns already exist to avoid duplication
-        existing_columns_lower = {header.lower().replace('_', ' ').replace('-', ' ') for header in original_headers}
-        logger.info(f"Existing columns (normalized): {existing_columns_lower}")
-        
-        # Only add columns that don't already exist - be more specific about SNOMED detection
-        new_headers = []
-        
-        # Check for CUI columns
-        if not any('cui' in col and 'name' not in col for col in existing_columns_lower):
-            new_headers.append('CUI')
-        if not any('cui' in col and 'name' in col for col in existing_columns_lower):
-            new_headers.append('CUI Name')
-            
-        # Check for SNOMED columns - don't add if SNOMED_CT versions exist
-        has_snomed_code = any('snomed' in col and ('code' in col or 'ct code' in col) for col in existing_columns_lower)
-        has_snomed_name = any('snomed' in col and ('description' in col or 'name' in col or 'ct description' in col) for col in existing_columns_lower)
-        
-        logger.info(f"Has SNOMED code: {has_snomed_code}, Has SNOMED name: {has_snomed_name}")
-        
-        # Don't add duplicate SNOMED columns
-        # if not has_snomed_code:
-        #     new_headers.append('SNOMED Code')
-        # if not has_snomed_name:
-        #     new_headers.append('SNOMED Name')
-            
-        # Check for ICD-10-CM columns
-        if not any('icd' in col and 'code' in col for col in existing_columns_lower):
-            new_headers.append('ICD-10-CM Code')
-        if not any('icd' in col and 'name' in col for col in existing_columns_lower):
-            new_headers.append('ICD-10-CM Name')
-        
-        all_headers = new_headers
-        logger.info(f"Adding new columns: {new_headers}")
-        
-        # Extract data rows - ensure we don't have duplicate or malformed rows
-        data_rows = []
-        processed_rows = set()  # Track unique rows to avoid duplicates
-        
-        for row in tbody.find_all('tr'):
-            cells = row.find_all('td')
-            row_data = [cell.get_text().strip() for cell in cells]
-            
-            # Skip empty rows or rows with wrong number of columns
-            if not row_data or len(row_data) != len(original_headers):
-                logger.warning(f"Skipping malformed row: {row_data}")
-                continue
-                
-            # Create a row signature to detect duplicates
-            row_signature = '|'.join(row_data)
-            if row_signature in processed_rows:
-                logger.warning(f"Skipping duplicate row: {row_data}")
-                continue
-                
-            processed_rows.add(row_signature)
-            data_rows.append(row_data)
-            
-        logger.info(f"Processing {len(data_rows)} unique data rows")
-        
+    try:
+        annotations_df = pd.read_html(io.StringIO(annotations_html_table), header=0)[0]
+        conditions = annotations_df["Clinical Finding"].tolist()
+        return_table = []
+        for cond in conditions:
+            logger.info(f"Mapping condition: {cond}")
+            billing_codes = get_codes_from_natural_language(cond)
+            logger.info(f"Billing codes found: {billing_codes}")
+            return_table.extend(billing_codes)
+
+        return_df = pd.DataFrame(return_table)
+
         # Build enhanced HTML table
-        html = '<div class="enhanced-annotations-table-container" style="display: block; width: 100%; overflow-x: auto;">\n'
-        html += '<table class="enhanced-annotations-table" style="display: table; width: 100%; border-collapse: collapse; margin: 0; padding: 0;">\n'
-        
-        # Add enhanced header
+        html = '<div class="billing-table-container" style="display: block; width: 100%; overflow-x: auto;">\n'
+        html += '<table class="billing-table" style="display: table; width: 100%; border-collapse: collapse; margin: 0; padding: 0;">\n'
+
         html += '<thead>\n<tr>\n'
-        for header in all_headers:
+        for header in return_df.columns:
             html += f'<th style="border: 1px solid #ddd; padding: 8px; text-align: left; background-color: #f2f2f2; font-weight: bold;">{header}</th>\n'
         html += '</tr>\n</thead>\n<tbody>\n'
         
         # Process each data row and add medical codes
-        for row_data in data_rows:
-            if len(row_data) < len(original_headers):
-                continue  # Skip incomplete rows
-                
-            # Extract existing data from original columns
-            clinical_finding = ""
-            existing_snomed_code = ""
-            existing_snomed_description = ""
-            
-            # for i, header in enumerate(all_headers):
-            #     if i < len(row_data):
-            #         if 'clinical finding' in header.lower():
-            #             clinical_finding = row_data[i]
-            #         elif 'snomed_ct code' in header.lower() or 'snomed code' in header.lower():
-            #             existing_snomed_code = row_data[i]
-            #         elif 'snomed_ct description' in header.lower() or ('snomed' in header.lower() and 'description' in header.lower()):
-            #             existing_snomed_description = row_data[i]
-            
-            # Generate medical codes based on clinical finding
-            medical_codes = _get_medical_codes_for_finding(clinical_finding, existing_snomed_code, existing_snomed_description)
-            medical_codes = medical_codes[0] if medical_codes else {
-                "cui": "",
-                "cui_name": "",
-                "snomed_code": existing_snomed_code,
-                "snomed_name": existing_snomed_description,
-                "icd10cm_code": "",
-                "icd10cm_name": ""
-            }
-            
-            # Build row with original data + only the new columns
+        for index, row in return_df.iterrows():
             html += '<tr>\n'
-            
-            # Add original columns
-            # for cell_data in row_data:
-                # html += f'<td style="border: 1px solid #ddd; padding: 8px; text-align: left;">{cell_data}</td>\n'
-            
-            # Add only the new medical code columns that were determined to be missing
-            for new_header in new_headers:
-                if new_header == 'CUI':
-                    html += f'<td style="border: 1px solid #ddd; padding: 8px; text-align: left;">{medical_codes["cui"]}</td>\n'
-                elif new_header == 'CUI Name':
-                    html += f'<td style="border: 1px solid #ddd; padding: 8px; text-align: left;">{medical_codes["cui_name"]}</td>\n'
-                elif new_header == 'ICD-10-CM Code':
-                    html += f'<td style="border: 1px solid #ddd; padding: 8px; text-align: left;">{medical_codes["icd10cm_code"]}</td>\n'
-                elif new_header == 'ICD-10-CM Name':
-                    html += f'<td style="border: 1px solid #ddd; padding: 8px; text-align: left;">{medical_codes["icd10cm_name"]}</td>\n'
+            for col in return_df.columns:
+                html += f'<td style="border: 1px solid #ddd; padding: 8px; text-align: left;">{row[col]}</td>\n'
             
             html += '</tr>\n'
-        
-        html += '</tbody>\n</table>\n</div>'
-        
-        # Final validation - ensure we created exactly one table
-        validation_soup = BeautifulSoup(html, 'html.parser')
-        final_tables = validation_soup.find_all('table')
-        
-        if len(final_tables) != 1:
-            logger.error(f"ERROR: Generated HTML contains {len(final_tables)} tables instead of 1!")
-            return '<div class="annotation-error">❌ Error: Internal table generation error</div>'
-        
-        logger.info(f"Successfully enhanced annotations table with medical codes - {len(data_rows)} rows processed")
+
+        html += "</tbody>\n</table>\n</div>"
         return html
         
     except Exception as e:
         logger.error(f"Error processing annotations table: {str(e)}")
-        return f'<div class="annotation-error">❌ Error enhancing annotations: {str(e)}</div>'
+        return f'<div class="annotation-error">❌ Error processing billing tabl {str(e)}</div>'

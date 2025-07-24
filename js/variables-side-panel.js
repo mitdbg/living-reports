@@ -2256,7 +2256,7 @@ class VariablesSidePanel {
         // Check if value contains HTML content (particularly table content)
         if (typeof value === 'string' && 
             (value.includes('<table') || 
-             value.includes('<div class="enhanced-annotations-table-container"') || 
+             value.includes('<div class="billing-table-container"') || 
              value.includes('<div class="annotations-table-container"') || 
              value.includes('<img'))) {
           // For HTML content, use innerHTML but ensure we don't duplicate content

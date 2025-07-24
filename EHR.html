@@ -1,11 +1,11 @@
 <h2><strong>ELECTRONIC HEALTH RECORD (EHR)</strong></h2>
-<p><strong>Patient ID:</strong> {{case_id}}<br>
-<strong>Date of Record:</strong> {{date_of_record}}</p>
+<p><strong>Patient ID:</strong> {{patient_id}}<br>
+<strong>Date of report:</strong> {{today}}</p>
 
 <hr>
-<h3><strong>Patient Demographics</strong></h3>
+<h3><strong>Patient Information</strong></h3>
 <ul>
-  <li><strong>Full Name:</strong> name</li>
+  <li><strong>Name:</strong> name</li>
   <li><strong>Age:</strong> {{age}}</li>
   <li><strong>Sex:</strong> {{sex}}</li>
 </ul>
@@ -15,101 +15,27 @@
 <h3><strong>Imaging</strong></h3>
 <ul>
  <strong> 📷  Chest X-ray:</strong><br>
-   <em> {{chest_xray_image_path}}</em> <br>
-    <strong>Date Taken:</strong> 2025-07-13<br>
-    <strong>AI findings</strong> <br>
-    {{x_ray_annotations}}
+   <em> {{midrc_xrays}}</em> <br>
+    <strong>AI Generated Annotations</strong> <br>
+    {{xray_annotations}}
 </ul>
 
 <hr>
 
-<h3><strong>Physician</strong></h3>
-<p><strong>Dr. Abby Cee, MD</strong>
-Pulmonologist
-License No.: 12345
-Contact: <a href="mailto:abc@hospital.com">abc@hospital.com
-
-
+<h2><b>Analytical Insights</b></h2>
+<p>Plot number of exams taken per day (Using UDI image generation tools)</p>
+{{udi_plot_image}}
+<hr>
 
 <h2><b>Billing Information</b></h2>
 
-<p><b>MEDICAL BILLING REPORT</b><br>
-<b>Patient ID:</b> P-002947<br>
-<b>Patient Name:</b> John Doe<br>
-<b>Date of Service:</b> 2025-07-13<br>
-<b>Provider:</b> Dr. Abby Cee, MD<br>
-<b>NPI #:</b> 1234567<br>
-<b>Facility:</b> General Pulmonary Clinic<br>
-<b>Insurance Provider:</b> Insurance Co.</p>
-
+<p><b>Ai Generated Billing Summary</b><br>
+<p>(Using Geneial UMLS mapping tool) </p>
+  {{billing_codes}}
 <hr>
 
-<h3><b>Billing Summary</b></h3>
-
-<table>
-  <thead>
-    <tr>
-      <th><b>CPT/ICD Code</b></th>
-      <th><b>Description</b></th>
-      <th><b>Units</b></th>
-      <th><b>Charge/Unit</b></th>
-      <th><b>Total</b></th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr><td><b>99214</b></td><td>Office Visit - Established Patient, 25 min</td><td>1</td><td>$145.00</td><td>$145.00</td></tr>
-    <tr><td><b>71045</b></td><td>Chest X-Ray, single view</td><td>1</td><td>$80.00</td><td>$80.00</td></tr>
-    <tr><td><b>94010</b></td><td>Spirometry (Pulmonary Function Test)</td><td>1</td><td>$125.00</td><td>$125.00</td></tr>
-    <tr><td><b>J7620</b></td><td>Albuterol inhalation treatment</td><td>1</td><td>$35.00</td><td>$35.00</td></tr>
-    <tr><td><b>G0439</b></td><td>Annual Wellness Visit (Medicare)</td><td>1</td><td>$160.00</td><td>$160.00</td></tr>
-    <tr><td><b>ICD-10 J44.9</b></td><td>COPD, unspecified</td><td>-</td><td>-</td><td>-</td></tr>
-    <tr><td><b>ICD-10 I10</b></td><td>Essential (Primary) Hypertension</td><td>-</td><td>-</td><td>-</td></tr>
-    <tr><td><b>ICD-10 K21.9</b></td><td>GERD, unspecified</td><td>-</td><td>-</td><td>-</td></tr>
-  </tbody>
-</table>
-
-<hr>
-
-<h3><b>Total Charges</b></h3>
-
-<ul>
-  <li><b>Subtotal:</b> $545.00</li>
-  <li><b>Insurance Adjustment:</b> -$145.00</li>
-  <li><b>Patient Responsibility:</b> $50.00 (Co-pay)</li>
-  <li><b>Amount Billed to Insurance:</b> $350.00</li>
-</ul>
-
-<hr>
-
-<h3><b>Notes</b></h3>
-
-<ul>
-  <li>Preauthorization not required for CPT 99214.</li>
-  <li>ICD-10 codes included for diagnosis justification.</li>
-  <li>All services provided are medically necessary and documented in the EHR.</li>
-</ul>
-
-<hr>
-
-<h3><b>Submission Information</b></h3>
-
-<p>
-<b>Billing Department Contact:</b> <a href="mailto:billing@generalpulmclinic.org">billing@generalpulmclinic.org</a><br>
-<b>Phone:</b> (555) 123-4567<br>
-<b>Fax:</b> (555) 123-4568<br>
-<b>EIN:</b> 12-3456789<br>
-<b>Claim Form Used:</b> CMS-1500
-</p>
-
-
-<h3><strong>Presenting Complaint</strong></h3>
-<blockquote>
-  <p>Progressive shortness of breath over the past 3 months, persistent dry cough, occasional chest tightness.</p>
-</blockquote>
-
-<hr>
-
-<h3><b> Medication History </b> </h3>
-{{medications_history}}
-
-<hr>
+<h2><b>Physician</b></h2>
+<p><strong>Dr. Abby Cee, MD</strong><br>
+   Pulmonologist<br>
+   License No.: 12345<br>
+   Contact: <a href="mailto:abc@hospital.com">abc@hospital.com</a>

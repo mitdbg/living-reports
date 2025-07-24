@@ -1,20 +1,22 @@
 
+419639-011274
+419639-005297
 
-case id = case id
-patient data = patient data
-age = age
-x_ray_image = x_ray_image
-annotations = annotations
+A string representing a JSON dictionary containing the data about patient with caseid. This includes age, sex, and file paths to x-ray images of the patient. Do not include anything else.
 
-Case ID of a patient
+Age of the patient
+
+x_ray_images = Rendering all X-Ray images of the patient
+
+xray_annotations = 
+Annotations of the the rendering of the last X-Ray image of the patient
+
+udi_plot_image
+A UDI visualization plot showing the visit date distribution from the DICOM files
+
+billing_codes = 
+Billing medical or procedural codes related to the patient's case
+
 
 419639-010183
 419639-017559
-
-A string representing a JSON dictionary containing the data about patient with caseid. This includes age, sex, and file paths to x-ray images of the patient.
-
-Age of the patient
-x_ray_image = Rendering of the last X-Ray image of the patient
-annotations = Annotations of the the rendering of the last X-Ray image of the patient
-
-additional_codes = Additional medical or procedural codes related to the patient's case

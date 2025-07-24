@@ -41,7 +41,7 @@ from pdf_processor import process_pdf_file
 from local_code_executor.code_executor import execute_code_locally
 from task_manager import TaskManager
 from pathlib import Path
-from tools import GetPatientData, GenerateAnnotations, GetCodesFromNaturalLanguage, GetVisitDatePlot
+from tools import GetPatientData, GenerateAnnotations, GetBillingTable, GetVisitDatePlot
 
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -605,7 +605,7 @@ def execute_template():
 
         print(f"📊 Document ID: {document_id}")
         print(f"📊 Session ID: {session_id}")
-        print(f"📊 Template Text: {template_text}")
+        # print(f"📊 Template Text: {template_text}")
 
         # **FIRST: Load and merge variables from multiple sources**
         template_variables = variables_storage.get(document_id, {})
@@ -2491,9 +2491,9 @@ html_plot = GetVisitDatePlot([\"/path/to/file1.dcm\", \"/path/to/file2.dcm\"])
             "import_statement": "from tools import GetVisitDatePlot",
         },
         {
-            "name": "GetCodesFromNaturalLanguage",
-            "description": "Takes HTML table output from GenerateAnnotations and enhances it with additional medical coding columns (CUI, SNOMED, ICD-10-CM).",
-            "function_signature": "GetCodesFromNaturalLanguage(annotations_html_table: str) -> str",
+            "name": "GetBillingTable",
+            "description": "Takes HTML table output from GenerateAnnotations and returns a billing HTML table with columns containing the billing codes (ICD-10-CM).",
+            "function_signature": "GetBillingTable(annotations_html_table: str) -> str",
             "parameters": [
                 {
                     "name": "annotations_html_table",
@@ -2503,13 +2503,13 @@ html_plot = GetVisitDatePlot([\"/path/to/file1.dcm\", \"/path/to/file2.dcm\"])
             ],
             "returns": {
                 "type": "str",
-                "description": "Enhanced HTML table with additional columns for CUI, CUI Name, SNOMED Code, SNOMED Name, ICD-10-CM Code, and ICD-10-CM Name",
+                "description": "Billing HTML table with columns containing the billing codes (ICD-10-CM).",
             },
             "usage_example": """# Example usage - typically used after GenerateAnnotations:
 annotations_table = GenerateAnnotations("/path/to/xray.jpg")
-enhanced_table = GetCodesFromNaturalLanguage(annotations_table)
+billing_table = GetBillingTable(annotations_table)
 """,
-            "import_statement": "from tools import GetCodesFromNaturalLanguage",
+            "import_statement": "from tools import GetBillingTable",
         },
     ]
 
@@ -2866,9 +2866,9 @@ def execute_code_endpoint():
             return jsonify({"success": False, "error": "Code is required"}), 400
 
         result = execute_code_locally(code, parameters)
-        print("================================================")
-        print(result)
-        print("================================================")
+        # print("================================================")
+        # print(result)
+        # print("================================================")
         if result.get("status") and result.get("status") == "success":
             # The actual result is in result.result.result, not result.result.output
             execution_result = result.get("result", {})
