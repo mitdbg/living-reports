@@ -218,8 +218,11 @@ def _download_file_sync(
         # Use the proven working command from the provided code
         cmd = f"gen3 --auth {cred_path} --endpoint data.midrc.org drs-pull object {object_id} --output-dir {output_dir}"
 
-        ret = os.system(cmd)
-        if ret == 0:
+        result = subprocess.run(
+            cmd, shell=True, capture_output=True, text=True, timeout=300
+        )
+
+        if result.returncode == 0:
             logger.info(f"Successfully downloaded {object_id}")
 
             # Find all downloaded files
@@ -231,7 +234,7 @@ def _download_file_sync(
 
             return {"success": True, "files": downloaded_files}
         else:
-            logger.error(f"Download failed for {object_id}: {ret}")
+            logger.error(f"Download failed for {object_id}: {result.stderr}")
             return {"success": False, "files": []}
 
     except Exception as e:
