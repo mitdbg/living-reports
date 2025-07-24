@@ -41,7 +41,7 @@ from pdf_processor import process_pdf_file
 from local_code_executor.code_executor import execute_code_locally
 from task_manager import TaskManager
 from pathlib import Path
-from tools import GetPatientData, GenerateAnnotations, GetPatientAgePlot, GetCodesFromNaturalLanguage
+from tools import GetPatientData, GenerateAnnotations, GetCodesFromNaturalLanguage, GetVisitDatePlot
 
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -2471,9 +2471,9 @@ image_container = RenderImage("/var/folders/midrc_download_goy6na3v/1.2.826.0.1.
             "import_statement": "from tools import RenderImage",
         },
         {
-            "name": "GetPatientAgePlot",
-            "description": "Generate a visualization plot showing patient age distribution from a list of DICOM files.",
-            "function_signature": "GetPatientAgePlot(x_ray_dicom_files: List[str]) -> str",
+            "name": "GetVisitDatePlot",
+            "description": "Generate a visualization plot showing visit date distribution from a list of DICOM files.",
+            "function_signature": "GetVisitDatePlot(x_ray_dicom_files: List[str]) -> str",
             "parameters": [
                 {
                     "name": "x_ray_dicom_files",
@@ -2483,12 +2483,12 @@ image_container = RenderImage("/var/folders/midrc_download_goy6na3v/1.2.826.0.1.
             ],
             "returns": {
                 "type": "str",
-                "description": "HTML string containing the rendered visualization plot image. The plot shows patient age distribution grouped by modality and sex.",
+                "description": "HTML string containing the rendered visualization plot image. The plot shows visit date distribution grouped by modality and sex.",
             },
             "usage_example": """# Example usage:
-html_plot = GetPatientAgePlot([\"/path/to/file1.dcm\", \"/path/to/file2.dcm\"])
+html_plot = GetVisitDatePlot([\"/path/to/file1.dcm\", \"/path/to/file2.dcm\"])
 """,
-            "import_statement": "from tools import GetPatientAgePlot",
+            "import_statement": "from tools import GetVisitDatePlot",
         },
         {
             "name": "GetCodesFromNaturalLanguage",

@@ -547,24 +547,55 @@ class VariablesSidePanel {
         return;
       }
 
+      // CRITICAL: Skip if clicking on any button or interactive element in the variables panel
+      if (e.target && (
+        e.target.closest('.variables-panel-dialog') ||
+        e.target.closest('.variables-side-panel') ||
+        e.target.tagName === 'BUTTON' ||
+        e.target.classList.contains('btn') ||
+        e.target.classList.contains('btn-primary') ||
+        e.target.classList.contains('btn-secondary') ||
+        e.target.closest('button')
+      )) {
+        console.log('⏭️ Mouse up from button/panel interaction, ignoring');
+        this.hideFloatingButton();
+        return;
+      }
+
       const selection = window.getSelection();
       
-      // Early validation (same as original)
+      // Early validation (same as original)  
       if (selection.rangeCount === 0) {
         console.log('❌ No selection range, hiding button');
         this.hideFloatingButton();
         return;
       }
       
-      const selectedText = selection.toString().trim();
       const range = selection.getRangeAt(0);
+      
+      // CRITICAL FIX: Check if selection is collapsed (just a cursor position, not selected text)
+      if (range.collapsed) {
+        console.log('❌ Selection is collapsed (just cursor position), hiding button');
+        this.hideFloatingButton();
+        return;
+      }
+      
+      const selectedText = selection.toString().trim();
       const rect = range.getBoundingClientRect();
 
       console.log('📝 Selected text:', `"${selectedText}"`);
+      console.log('📐 Selection dimensions:', { width: rect.width, height: rect.height });
       
-      // Check for valid text selection with visible dimensions (same as original)
-      if (selectedText.length === 0 || rect.width === 0 || rect.height === 0) {
-        console.log('❌ Invalid selection dimensions, hiding button');
+      // Enhanced validation: must have actual text content AND visible dimensions
+      if (selectedText.length === 0) {
+        console.log('❌ No text content selected, hiding button');
+        this.hideFloatingButton();
+        return;
+      }
+      
+      // Additional check for meaningful selection size
+      if (rect.width < 5 || rect.height < 5) {
+        console.log('❌ Selection too small to be meaningful text, hiding button');
         this.hideFloatingButton();
         return;
       }
@@ -619,12 +650,20 @@ class VariablesSidePanel {
       return;
     }
     
-    const selectedText = selection.toString().trim();
     const range = selection.getRangeAt(0);
+    
+    // CRITICAL FIX: Double-check that selection is not collapsed
+    if (range.collapsed) {
+      console.log('❌ Selection is collapsed in handler, hiding button');
+      this.hideFloatingButton();
+      return;
+    }
+    
+    const selectedText = selection.toString().trim();
     const rect = range.getBoundingClientRect();
     
-    // Final validation
-    if (selectedText.length > 0 && rect.width > 0 && rect.height > 0) {
+    // Enhanced final validation
+    if (selectedText.length > 0 && rect.width >= 5 && rect.height >= 5) {
       const isInTemplate = this.isInTemplateContentSimple(selection);
       
       if (isInTemplate) {
