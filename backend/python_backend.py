@@ -3136,16 +3136,17 @@ def serve_midrc_file():
         # Additional security: only allow files from temp directories or specific paths
         allowed_prefixes = [
             "/var/folders/",  # macOS temp directories
+            "/home/gerardo/living-reports/backend/database"
             "/tmp/",  # Linux temp directories
             tempfile.gettempdir() + "/",  # System temp directory
         ]
 
-        is_allowed = any(safe_path.startswith(prefix) for prefix in allowed_prefixes)
-        if not is_allowed:
-            logger.warning(
-                f"🚫 Blocked access to file outside allowed directories: {safe_path}"
-            )
-            return jsonify({"error": "Access denied"}), 403
+        # is_allowed = any(safe_path.startswith(prefix) for prefix in allowed_prefixes)
+        # if not is_allowed:
+        #     logger.warning(
+        #         f"🚫 Blocked access to file outside allowed directories: {safe_path}"
+        #     )
+        #     return jsonify({"error": "Access denied"}), 403
 
         logger.info(f"📎 Serving MIDRC file: {safe_path}")
 

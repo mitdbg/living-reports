@@ -101,7 +101,7 @@ def GetPatientData(case_id: str) -> Dict[str, Any]:
                 fields=None,
                 filter_object={"IN": {"case_ids": [case_id]}},
                 sort_fields=[{"submitter_id": "asc"}],
-            )
+            )[:10]
 
             # Step 3: Download and process X-ray files (DICOM and JPEG)
             if x_ray_files:
@@ -127,9 +127,8 @@ def GetPatientData(case_id: str) -> Dict[str, Any]:
                         dicoms.append(os.path.join(case_dir, f))
                         jpeg_path = _convert_dicom_to_jpeg(os.path.join(case_dir, f), case_dir)
                         if jpeg_path:
-                            jpegs.append(jpeg_path)
+                            jpegs.append(case_dir+jpeg_path)
                             logger.info(f"Converted DICOM to JPEG: {jpeg_path}")
-
 
                 result["x_ray_jpeg"] = jpegs
                 result["x_ray_dicom"] = dicoms
@@ -219,11 +218,8 @@ def _download_file_sync(
         # Use the proven working command from the provided code
         cmd = f"gen3 --auth {cred_path} --endpoint data.midrc.org drs-pull object {object_id} --output-dir {output_dir}"
 
-        result = subprocess.run(
-            cmd, shell=True, capture_output=True, text=True, timeout=300
-        )
-
-        if result.returncode == 0:
+        ret = os.system(cmd)
+        if ret == 0:
             logger.info(f"Successfully downloaded {object_id}")
 
             # Find all downloaded files
@@ -235,7 +231,7 @@ def _download_file_sync(
 
             return {"success": True, "files": downloaded_files}
         else:
-            logger.error(f"Download failed for {object_id}: {result.stderr}")
+            logger.error(f"Download failed for {object_id}: {ret}")
             return {"success": False, "files": []}
 
     except Exception as e:
@@ -315,9 +311,12 @@ def RenderImage(x_ray_jpeg: str) -> str:
         str: HTML string containing the image display container
     """
     try:
+        logger.info(f"Rendering image: {x_ray_jpeg}")
         # Validate file exists
+        exist_image = os.path.exists(x_ray_jpeg)
+        logger.info(f"Image exists: {exist_image}")
         if not os.path.exists(x_ray_jpeg):
-            return f'<div class="image-error">⚠️ Image file not found: {os.path.basename(x_ray_jpeg)}</div>'
+            return f'<div class="image-error">⚠️ Image file not found: {x_ray_jpeg}</div>'
 
         # Validate it's an image file
         image_extensions = [

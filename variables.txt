@@ -6,7 +6,8 @@ A string representing a JSON dictionary containing the data about patient with c
 
 Age of the patient
 
-x_ray_images = Rendering all X-Ray images of the patient
+xray_images = 
+Rendering all X-Ray images of the patient
 
 xray_annotations = 
 Annotations of the the rendering of the last X-Ray image of the patient
