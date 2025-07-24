@@ -3138,14 +3138,18 @@ def serve_midrc_file():
             "/var/folders/",  # macOS temp directories
             "/tmp/",  # Linux temp directories
             tempfile.gettempdir() + "/",  # System temp directory
+            os.path.abspath("database/files/patient_cache/"),  # Patient cache directory (absolute)
+            "database/files/patient_cache/",  # Patient cache directory (relative)
         ]
 
         is_allowed = any(safe_path.startswith(prefix) for prefix in allowed_prefixes)
         if not is_allowed:
             logger.warning(
-                f"🚫 Blocked access to file outside allowed directories: {safe_path}"
+                f"🚫 Blocked access to file outside allowed directories: {safe_path} (allowed: {allowed_prefixes})"
             )
             return jsonify({"error": "Access denied"}), 403
+        
+        logger.info(f"✅ File access allowed: {safe_path}")
 
         logger.info(f"📎 Serving MIDRC file: {safe_path}")
 

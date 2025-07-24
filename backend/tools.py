@@ -745,6 +745,13 @@ def RenderImage(x_ray_jpeg: str) -> str:
         encoded_path = urllib.parse.quote(x_ray_jpeg, safe="")
         image_url = f"http://127.0.0.1:5001/api/serve-midrc-file?path={encoded_path}"
 
+        # Debug logging
+        logger.info(f"RenderImage debug - Original path: {x_ray_jpeg}")
+        logger.info(f"RenderImage debug - Encoded path: {encoded_path}")
+        logger.info(f"RenderImage debug - Image URL: {image_url}")
+        logger.info(f"RenderImage debug - File exists: {os.path.exists(x_ray_jpeg)}")
+        logger.info(f"RenderImage debug - File size: {file_size} bytes")
+
         # Return just the image URL instead of full HTML to avoid template processing issues
         # The template system will handle the HTML rendering
         logger.info(f"Successfully rendered image: {file_name}")
