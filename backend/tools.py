@@ -595,6 +595,21 @@ def _make_udi_spec(csv_path):
     )
     return spec
 
+def _make_udi_spec_visitdate(csv_path):
+    chart = (
+        Chart()
+        .source('dicom', csv_path)
+        .groupby(['StudyDate'])
+        .rollup('count', count=Op.count())
+        .mark('bar')
+        .x(field='StudyDate', type='nominal')
+        .y(field='count', type='quantitative')
+    )
+    spec = chart.to_dict()
+    for t in spec['transformation']:
+        if 'rollup' in t and isinstance(t['rollup'], str):
+            t['rollup'] = {'count': {'op': 'count'}}
+    return spec
 
 def GetPatientAgePlot(x_ray_dicom_files: List[str]) -> str:
     """
@@ -653,6 +668,65 @@ def GetPatientAgePlot(x_ray_dicom_files: List[str]) -> str:
         return f'<img src="{chart_url}" alt="UDI Chart" style="max-width: 100%; height: 200px;" />'
     else:
         return f'<div class="image-error">❌ Error: Chart file not generated</div>'
+
+def GetVisitDatePlot(x_ray_dicom_files: List[str]) -> str:
+    """
+    Generate a visualization plot showing visit date distribution from DICOM files.
+
+    Args:
+        x_ray_dicom_files (List[str]): List of paths to DICOM files containing patient data
+
+    Returns:
+        str: HTML string containing the rendered visualization plot image
+             The plot shows visit date distribution grouped by modality and sex
+    """
+    rand_tag = "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
+    csv_path = f"usecase_col_{rand_tag}.csv"
+    extract_usecase_columns(x_ray_dicom_files, csv_path)
+
+    local_csv = csv_path
+    bucket = "neural-science"
+
+    # Construct the AWS CLI command
+    cmd = f"aws s3 cp {local_csv} s3://{bucket}/{csv_path}"
+
+    # Run the command and print output
+    result = os.system(cmd)
+    if result == 0:
+        print(f"Successfully uploaded {local_csv} to s3://{bucket}/{csv_path}")
+    else:
+        print("Upload failed. Make sure AWS CLI is installed and configured.")
+
+    csv_path_s3 = f"https://neural-science.s3.us-east-1.amazonaws.com/{csv_path}"
+    udi_spec = _make_udi_spec_visitdate(csv_path_s3)
+    print(json.dumps(udi_spec, indent=2))
+
+    # Generate a random tag for the filename
+    rand_tag = "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
+    output_img = f"udi_chart_{rand_tag}.png"
+    # Render the image (Jupyter supports top-level await)
+    asyncio.run(udi_to_png(udi_spec, output_img))
+    
+    # Copy the generated image to a location that can be served by the backend
+    chart_dir = "database/files/charts"
+    os.makedirs(chart_dir, exist_ok=True)
+    chart_path = os.path.join(chart_dir, output_img)
+    
+    # Copy the generated chart to the serveable location
+    if os.path.exists(output_img):
+        import shutil
+        shutil.copy2(output_img, chart_path)
+        # Clean up the original file
+        os.remove(output_img)
+        
+        # Create URL for serving the chart
+        relative_path = f"database/files/charts/{output_img}"
+        chart_url = f"http://127.0.0.1:5001/api/serve-file/{relative_path}"
+        
+        return f'<img src="{chart_url}" alt="UDI Chart" style="max-width: 100%; height: 200px;" />'
+    else:
+        return f'<div class="image-error">❌ Error: Chart file not generated</div>'
+
 
 
 def _get_medical_codes_for_finding(clinical_finding: str, snomed_code: str, snomed_description: str) -> dict:
